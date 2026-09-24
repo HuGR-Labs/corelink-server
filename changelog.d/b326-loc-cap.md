@@ -1,4 +1,6 @@
-# B-326: enforce the Tech Lead 500-LOC source-file cap
+### Added
+
+- # B-326: enforce the Tech Lead 500-LOC source-file cap
 
 - Added a committed origin/main-equivalent source-path manifest and a stdlib
   verifier that fail closed when new `.rs`, `.ts`, or `.tsx` files exceed the

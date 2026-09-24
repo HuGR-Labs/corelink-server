@@ -1,4 +1,6 @@
-# B-069 authenticated admin UI E2E
+### Added
+
+- # B-069 authenticated admin UI E2E
 
 - The nine legacy authenticated UI journeys now execute as real Playwright
   tests with a serialized, warmed Next route tree. DSR access and category

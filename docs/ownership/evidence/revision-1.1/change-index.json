@@ -1,0 +1,656 @@
+{
+  "baseline": "unmodified extracted version 1.0",
+  "excludes": "new evidence files and FILE-MANIFEST.json (enumerated in delivery manifest)",
+  "changes": [
+    {
+      "path": "COMMON.md",
+      "change": "ADDED",
+      "sha256": "2519e39ee38cc59f727f8750599fa0fc1d292872a0838cf90548d28511166df2"
+    },
+    {
+      "path": "CORRECTIONS.md",
+      "change": "ADDED",
+      "sha256": "2324b7c0de8832e9cbfef74f53dcdedd486f9cd1668dd907757f0cfbef52374b"
+    },
+    {
+      "path": "README.md",
+      "change": "MODIFIED",
+      "sha256": "ccbfea762fa9b9f8c1848740d3cb02362f9e7851cbbf76236127ce8950838d57"
+    },
+    {
+      "path": "STANDARD.md",
+      "change": "MODIFIED",
+      "sha256": "f9dad29060135b993b45a427078865ef3d0f7141437d44813b7802e415046b4a"
+    },
+    {
+      "path": "VALIDATION-MATRIX.md",
+      "change": "ADDED",
+      "sha256": "f87a63695d95bc9689fbf54cfeb575e7a5f06cf78e7331935754242dd008a46b"
+    },
+    {
+      "path": "issue-drafts/fuzz-candidates/crates__corelink-ac__fuzz.md",
+      "change": "MODIFIED",
+      "sha256": "cd3a4c4e32928bf3f09148a1f3be527a0f615a4a75a3dd4ae62dd788fcbf8bc8"
+    },
+    {
+      "path": "issue-drafts/fuzz-candidates/crates__corelink-audit-chain__fuzz.md",
+      "change": "MODIFIED",
+      "sha256": "e440ba88479fe7dc306cc44c9eb3a4413d9731cbe65148b8b2f0c9d3db09fd3c"
+    },
+    {
+      "path": "issue-drafts/fuzz-candidates/crates__corelink-byok__fuzz.md",
+      "change": "MODIFIED",
+      "sha256": "6ed7254affdba048ef36f41c381908faada3186d5c298fbaa8d32274fcbf65a9"
+    },
+    {
+      "path": "issue-drafts/fuzz-candidates/crates__corelink-client-verify__fuzz.md",
+      "change": "MODIFIED",
+      "sha256": "b1f78391367d644bea97bdb621ed0f0814d1dde5512f24e6a84515c1d89d3b35"
+    },
+    {
+      "path": "issue-drafts/fuzz-candidates/crates__corelink-hash__fuzz.md",
+      "change": "MODIFIED",
+      "sha256": "75280a0a7c106b2b74339c41b556f7394cb1fa8503e76cab70cffedb1f31f65e"
+    },
+    {
+      "path": "issue-drafts/fuzz-candidates/crates__corelink-meta__fuzz.md",
+      "change": "MODIFIED",
+      "sha256": "ab10e3c6c506b51641fad86a75d38c12399d2ebccc33e533bbeddd0b039c84c5"
+    },
+    {
+      "path": "issue-drafts/fuzz-candidates/crates__corelink-reapi__fuzz.md",
+      "change": "MODIFIED",
+      "sha256": "8f3af9a5e24c4e19b201517fd10d0cf9d1736a42e0e48bd0abcc728f9a43b45f"
+    },
+    {
+      "path": "issue-drafts/fuzz-candidates/crates__corelink-worker__fuzz.md",
+      "change": "MODIFIED",
+      "sha256": "74a89c3c583aa907d84e421772cd4bbb029e3b67dce070c76842171b733df251"
+    },
+    {
+      "path": "issue-drafts/fuzz-candidates/crates__tenant-path__fuzz.md",
+      "change": "MODIFIED",
+      "sha256": "a86dd401aa3fd4f6e80a80a494d8ed45f45719bcf2c38e79870c27465344e8dc"
+    },
+    {
+      "path": "issue-drafts/workspace/apps__migrate-single-to-multi-region.md",
+      "change": "MODIFIED",
+      "sha256": "ffcee0dfd8b85d2e797887c3f4e4ac00943c33d0c2192f023095b739177e012c"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-ac.md",
+      "change": "MODIFIED",
+      "sha256": "109f905176a1390c4c05c7dcc1a85f864557a7b0b7c7b6a151112af68c33f8fe"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-adapter-host.md",
+      "change": "MODIFIED",
+      "sha256": "179f2d7846f252bcab57455a7e2c11ec0d03680f47d36e4af39fac44ad248b7b"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-adapters-cloud.md",
+      "change": "MODIFIED",
+      "sha256": "36307d4e1800166a7be068e05d4403b77835680b0337f35ab42e17d1efdf3e0f"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-adapters-vault.md",
+      "change": "MODIFIED",
+      "sha256": "f809f20202415039b117241aa1337cdc7599ff257002d7540eb8cd33b3da02db"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-analytics.md",
+      "change": "MODIFIED",
+      "sha256": "e231dce3abcfd62ac9377e78c1fdb2ecb3add75b21bdaa8cfc292a412bb7b0ad"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-audit-chain.md",
+      "change": "MODIFIED",
+      "sha256": "54ab3c51b79bca97f47b822459e9ec5e0ece6e858cdf3bd3be404ca8cc030d12"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-audit.md",
+      "change": "MODIFIED",
+      "sha256": "9ff9d94d55979c18b02ce6ff558770e5e92e052e50e1d1b6d8984b205c3c8d15"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-auth.md",
+      "change": "MODIFIED",
+      "sha256": "916faabf39712f3b4773e100f489ef33e378a3483b7ae71e982247079cb4ad29"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-bazel-bridge.md",
+      "change": "MODIFIED",
+      "sha256": "7d5d02c0b57aef6fcbea223af07335e6be0b448ee156a74d032a1c45ec498631"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-billing-aggregator.md",
+      "change": "MODIFIED",
+      "sha256": "156215b98a35f4cb9cdb955ee86676b0563fdbe3ee377a40aaa8752bb3b3a792"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-billing-emit.md",
+      "change": "MODIFIED",
+      "sha256": "1ff2cfcd44f5a7b859cf2dabc2737db080dcadd36bc042408a60d75b102a9d3f"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-billing-reconcile.md",
+      "change": "MODIFIED",
+      "sha256": "34e0eb1b7c0a6b6e74c43f9513882b2874644e8c1ee9eacec729983bcaad8a94"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-billing-stripe-materializer.md",
+      "change": "MODIFIED",
+      "sha256": "fc81096a90f1a32483be5681010f6e01b0cc00ad9439221cec1f83905480dbe3"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-billing-stripe-traits.md",
+      "change": "MODIFIED",
+      "sha256": "835236598b6d7fdd0ebd886f28cb18f69ed2dcbae4e80eb9357814c1e294bea4"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-billing-stripe.md",
+      "change": "MODIFIED",
+      "sha256": "5acbc70bef969bd4cf21b059264d5478d6f147b9e4e665b606cfc1b05aea3021"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-billing.md",
+      "change": "MODIFIED",
+      "sha256": "03a843658207be70950c8a1387c3e905000e917aae82a1768b15b1cee923e5cc"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-byok.md",
+      "change": "MODIFIED",
+      "sha256": "86c1fb982d354b8c85bec10d91891ec6beb90c1a6bd83e951bd30c479831190a"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-cas.md",
+      "change": "MODIFIED",
+      "sha256": "23f80e0bbf045f00ac4412200373f690d783dbe63fe45a8b4ff644c815e2b675"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-cf-bindings.md",
+      "change": "MODIFIED",
+      "sha256": "bec4d38e554cce575bc3d965c22094188f0ebdec6c6d7db61da8e19a8c46f227"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-chaos-scheduler.md",
+      "change": "MODIFIED",
+      "sha256": "49a5e223805956b588f265e2f793817099476cff5b6efda328a0e29dfe1b612c"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-clerk-cf.md",
+      "change": "MODIFIED",
+      "sha256": "3f2a4bf083c48f48445a80d3973e38cdcd78a22a7e2bf99ffc17e7cbe373a9c4"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-clerk.md",
+      "change": "MODIFIED",
+      "sha256": "b2a289d0e8b40bc0804ded1aacd83fd540f2e531066e71b872a9ccf2bdc86d41"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-client-verify.md",
+      "change": "MODIFIED",
+      "sha256": "6bd3e84fad6e75bf5fef8faf05c130200d677528ec6ed409954df3f5309f45d8"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-config-do.md",
+      "change": "MODIFIED",
+      "sha256": "5915bdf2b84465adb188143c487810e4fd420489619074a0a5df269527a01944"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-container.md",
+      "change": "MODIFIED",
+      "sha256": "f34ca21e63b37d7f237382dfe4448c062d80f3b46a27c1285af3b72fcf37a214"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-core.md",
+      "change": "MODIFIED",
+      "sha256": "7ec4a238b8d5a0f90c8a431128e7337e8de85667777f36c968076656562cc77c"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-crypto.md",
+      "change": "MODIFIED",
+      "sha256": "3dac2cc3b78559d9b6d4425d7f6628b4d5792d43d118b7c51fd6180861d75b45"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-dpa-acceptance.md",
+      "change": "MODIFIED",
+      "sha256": "a2d45f59a0de037d50d01cd76f6295773abd8965222fde04fa0a46dd3356731c"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-dsr-statuspage-scheduler.md",
+      "change": "MODIFIED",
+      "sha256": "b2875cf7c3dde39833b9de51a20a14f109ab9c32e1b0a3d9fd716b47f758f570"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-dsr.md",
+      "change": "MODIFIED",
+      "sha256": "acaaf92b97b1c06e04c15842d1f87e8e388b4520b959c0d78eb12bbaa2d4eace"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-dt-webhook.md",
+      "change": "MODIFIED",
+      "sha256": "579d755235212c10b1005a93f7c576dc10e3efe3920ce3886debea2c8edd33d8"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-dual-approval.md",
+      "change": "MODIFIED",
+      "sha256": "18a4fb56d6c7301a3b25521a610005dc2a7aaf6045110228bb560a97bda36c54"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-enterprise-inquiry.md",
+      "change": "MODIFIED",
+      "sha256": "657267376b457810c016c55119d2d52b39d3f8db6c8788557189ac07a1646657"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-erasure-attestation.md",
+      "change": "MODIFIED",
+      "sha256": "b4a71d0f24925603ea05a99912da670c73d772bccc26846130a799595910ab1e"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-eviction.md",
+      "change": "MODIFIED",
+      "sha256": "5be8abe2f0bc21e4064a1f4fee40b9324f0141df1e5cf1b24eeec343f2b0e403"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-failover-router.md",
+      "change": "MODIFIED",
+      "sha256": "e648b82ad239936877fb11d080fbe4c1f747ee6a0069741dc770ce0e92ed0a2c"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-gc.md",
+      "change": "MODIFIED",
+      "sha256": "7dddf9c7c4f6cc20bbe566ba552a45b1219b124ea45f1f6149b967cf8d5c011e"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-handler-ac.md",
+      "change": "MODIFIED",
+      "sha256": "053be562ed051eaae3f9d312dd8661eb77c75707bae5c7324f797f8e25c55659"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-handler-admin.md",
+      "change": "MODIFIED",
+      "sha256": "dfaa806802d4b427bc742d780cc16c5faa323e49b824506ef9ae379ed85a1669"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-handler-cas-erase.md",
+      "change": "MODIFIED",
+      "sha256": "bb82bdb3cf9f6fb2056539c0de21691e31eaa26994900a8c45174acf669bd26e"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-handler-cas.md",
+      "change": "MODIFIED",
+      "sha256": "88997ba26eb5db9d6ab4e7d548cd0d34da57c805b1a44248638ba5fc8efb92ea"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-handler-customer.md",
+      "change": "MODIFIED",
+      "sha256": "7d96accd84659ed9e68c5e1b2acfffc53a53f29d7c7ce981b609fddf60ea9544"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-hash.md",
+      "change": "MODIFIED",
+      "sha256": "fd81394b1d8cdea2eeebb0e2ec180c366608c790b3019a7eadd9e1dddc28312c"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-meta.md",
+      "change": "MODIFIED",
+      "sha256": "0898ad2a2e4f29bdd9c82a0ef615073c992e23694aa7fb420158a9266fc5b308"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-ops.md",
+      "change": "MODIFIED",
+      "sha256": "cb26aeafbcab0d0495ed65ce337657eca92fb7a3bd4247c4b225d116a56457ec"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-pat.md",
+      "change": "MODIFIED",
+      "sha256": "d959566ff26699b0e790b249e9e606e2a00c5aa1b415495a1be58f611477153e"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-privacy-erasure-worker.md",
+      "change": "MODIFIED",
+      "sha256": "5e3f9f14f9bc5ed68a358a40f1019b0cd2b9a318db767d538e79f06713d1831e"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-privacy-pseudonymize.md",
+      "change": "MODIFIED",
+      "sha256": "2d6cdb694b3e7b160b3badd34afd43807f713927b706745b928dbbca0652a86d"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-privacy.md",
+      "change": "MODIFIED",
+      "sha256": "5e8226c2fb378a1e0d7eafcf8b9f875c2582e2c3fd256f21f8c546635f0e3868"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-r2-multipart.md",
+      "change": "MODIFIED",
+      "sha256": "03a42c1eefc578a7b725d06fc7554643e3c714df9821eb48fb10f9e1a24b2783"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-rate-headers.md",
+      "change": "MODIFIED",
+      "sha256": "0bc9f8c90304f6dfaa830b112550743ea292c4717c952092b62a081b67949866"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-ratelimit.md",
+      "change": "MODIFIED",
+      "sha256": "1a70e3f6ea81d6a63b5bcda065eab71da8faadd7002cfe5a3bba4ee0a4199e0a"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-reapi.md",
+      "change": "MODIFIED",
+      "sha256": "b293f6967696300344665a6375d9dcde1e6b407c5c2bc9a11f074e489a70ab6a"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-region.md",
+      "change": "MODIFIED",
+      "sha256": "47f2deaef0ce3c90621beb3cb2f46428bd081155af7d7fc2f126919731ea6ce5"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-replica-worker.md",
+      "change": "MODIFIED",
+      "sha256": "2fadcd66ee80207da2970b0ee8516cdb625ccb8335a77cbee10cbb7c4e08b528"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-replication-coordinator.md",
+      "change": "MODIFIED",
+      "sha256": "98ad193927a54168aeb683a7ed9ffca6214679df0cd475fdb9e9dcbd65997fc3"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-replication.md",
+      "change": "MODIFIED",
+      "sha256": "2451d37c28f5582968f3b2e90f8a41457d39bba97737aed4a7b6dde7046d2d43"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-rotation-adapters.md",
+      "change": "MODIFIED",
+      "sha256": "207fd37b385120d6c8ffef71c3768a384bacdc0a8fb4b6661072ad92fd7c3494"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-runbook-tracker.md",
+      "change": "MODIFIED",
+      "sha256": "840e90f3683b3526e97131343b778a948820ea0891bb9cff361ca5eed8a40d04"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-runner-aggregate.md",
+      "change": "MODIFIED",
+      "sha256": "7482a541e16bc60761eb7311858cf6d978fcf62351558b5c66f181963f96677f"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-runner-overage.md",
+      "change": "MODIFIED",
+      "sha256": "be0edf460e8100d3f3df2f419f24c04766d6a43f8e8946e28be9eb0880327692"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-signup.md",
+      "change": "MODIFIED",
+      "sha256": "575361bbe381e6b14bc6c31350b3ea90f9a072b4fe1c20b7b23d6947eb888a2b"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-slack-real.md",
+      "change": "MODIFIED",
+      "sha256": "e31bbda340df93fb3dc1c633ee5e338fb3c21451b41e539b225ead490786a305"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-slo.md",
+      "change": "MODIFIED",
+      "sha256": "8264015ca52700ca1d7a0412e3dfd3f405d15ac8720557dc6a3c158d846a0d9c"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-statuspage-real.md",
+      "change": "MODIFIED",
+      "sha256": "907746ae939f89d8400cf67d9f70890b842300bbed1577b069eedc2a4c67ee18"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-stripe-real.md",
+      "change": "MODIFIED",
+      "sha256": "4468e7a76805009a647de3690c78d8cf3e28b985cec3bddd722e8e9e1da097ba"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-telemetry.md",
+      "change": "MODIFIED",
+      "sha256": "dcf792896e45b6a7180eed6af988de58198fb5a6aa9f8fd4f71cd43cd0414a86"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-terraform-drift-consumer.md",
+      "change": "MODIFIED",
+      "sha256": "2ef340bb8989e1dca3e06905a3f1071d53ccaf3580e8b5f7aac1a8fb9bf485ab"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-tier-selection.md",
+      "change": "MODIFIED",
+      "sha256": "d800337f8bf2ad5450d43c48c8e6c3996e9eb2460fdb57f0a5aac2dc2e4a9971"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-tracing.md",
+      "change": "MODIFIED",
+      "sha256": "9ba6ca27928536f0cc7a890764b58d5d488aa35087031ae0f56f5437ef1f1eef"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-transparency-log.md",
+      "change": "MODIFIED",
+      "sha256": "1b913f69fd88e417a8c4b0b4d6efea902244daadfbe4118e339c2a4a1ecbeeca"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-turbo-bridge.md",
+      "change": "MODIFIED",
+      "sha256": "d0844fd7abfe510438413aa4d5d5d75ee058cb5d5eaa05557515232d0e2cb3ce"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-wasm.md",
+      "change": "MODIFIED",
+      "sha256": "42f0a87cc0de3f8b0c23fb62ac701453197f097afdba215b67e835c1e9af46b0"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__corelink-worker.md",
+      "change": "MODIFIED",
+      "sha256": "cf5dd472a6bfd88365eacd1e91b44f0fba5f4e5d7a09ff98e4895a59f1b84098"
+    },
+    {
+      "path": "issue-drafts/workspace/crates__tenant-path.md",
+      "change": "MODIFIED",
+      "sha256": "f1218145b89bd674089c843845c46642aa6b4d0aa970f9a5171ac557fa0ebe32"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__chaos.md",
+      "change": "MODIFIED",
+      "sha256": "b151b57d1ca096216862817471ed72665931646c818555ec7b2140554c208e05"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-billing-flow.md",
+      "change": "MODIFIED",
+      "sha256": "42dfb6f8c778cf7d2e83ff22ee9fe6e1661ba5d25a4cbfdd3730bc315e5f7bd2"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-byok-revoke.md",
+      "change": "MODIFIED",
+      "sha256": "85f2dfa5a9fd4e704f9cbbd8137fb2659b3af7bbaea2e8797b1473150bd84477"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-chaos.md",
+      "change": "MODIFIED",
+      "sha256": "0efc6d37555c5405fedea5202fa4bd244218d42254880ce015884caeb62bb485"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-dsr.md",
+      "change": "MODIFIED",
+      "sha256": "94d5f5363bd206d164dda8f17216872126dc3a638dd852c48e3a62d95e591ea4"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-failover-router.md",
+      "change": "MODIFIED",
+      "sha256": "99e16f828f13d1a7226415ed10a70d627471073b21aec6381b702eca5a6e613c"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-pilot-onboarding.md",
+      "change": "MODIFIED",
+      "sha256": "0e6e5b7e28cda1df8c5b21cb41f0668f3ee3bf0a97a6621db3b8aadfc0d6c35e"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-replication-failover.md",
+      "change": "MODIFIED",
+      "sha256": "f848b059c799858343135efe93728c5e9cf07ef75898d86833fe4cd0c46467c8"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-resilience.md",
+      "change": "MODIFIED",
+      "sha256": "507733d8ee0f7d571745bc9486453df1986d17ee529b1e7f810698aecc12c4bf"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-signup-flow.md",
+      "change": "MODIFIED",
+      "sha256": "6c44805a44752e98cd5a46440f7f6c28a05e2b6775f77404dbe887964f13a3dc"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-tenant-isolation.md",
+      "change": "MODIFIED",
+      "sha256": "04b6458ca27f3ebae690d2b64e3d9a10d5453dc3d053b7ba2737c01ad566862f"
+    },
+    {
+      "path": "issue-drafts/workspace/tests__e2e-user-journeys.md",
+      "change": "MODIFIED",
+      "sha256": "1d651a965ae667728d1d01edeb1918bec8b36c6bdb75a2f0a1205a78c587ff2e"
+    },
+    {
+      "path": "issue-drafts/workspace/tools__cli.md",
+      "change": "MODIFIED",
+      "sha256": "9c8049b7b3b54e25dc0904e9e618015a4a6e734fc60e5e5ad5fcb509bcb45ebc"
+    },
+    {
+      "path": "issue-drafts/workspace/tools__dt-cli.md",
+      "change": "MODIFIED",
+      "sha256": "e366c01eada58f2139ac84bc4ba5d11b0ac1f4f2ebc8ff0f8fbd19e53d5e2bfa"
+    },
+    {
+      "path": "issue-drafts/workspace/tools__dt-reconcile.md",
+      "change": "MODIFIED",
+      "sha256": "89a4ccf38dd2c47b1dc592defaaff2e4892bf515bb387bf1da03c668cd01741c"
+    },
+    {
+      "path": "issue-drafts/workspace/tools__openapi.md",
+      "change": "MODIFIED",
+      "sha256": "87c86fb2158c114bbedd20b82e7ccd1e300d42bcea170c627f4356a454a7a2a8"
+    },
+    {
+      "path": "issue-drafts/workspace/tools__sbom-publish.md",
+      "change": "MODIFIED",
+      "sha256": "a77f89d6cbaaaa31cf973800e619ad20590c6b9e87db8ccb402a0b6a9dc03621"
+    },
+    {
+      "path": "issue-drafts/workspace/tools__sdks__go.md",
+      "change": "MODIFIED",
+      "sha256": "92bfe4cff7445c70f6c8c5889f0517ca8ca4462072d41833b811251cbde38f91"
+    },
+    {
+      "path": "issue-drafts/workspace/tools__sdks__python.md",
+      "change": "MODIFIED",
+      "sha256": "17c8ae8dd48dc4600286ab3807682bd42d09810594a10e6740eb438dead60c8c"
+    },
+    {
+      "path": "plans/PREPARATION.md",
+      "change": "ADDED",
+      "sha256": "b2a4073b150352bd0a65057d8009d40cddda9f531996ceb05336b44fcc15129f"
+    },
+    {
+      "path": "plans/publication-ledger.json",
+      "change": "ADDED",
+      "sha256": "9d8633ee2d88a7ee317e73d59ada64651850a3a21197cc7f5af60d1b59e3b838"
+    },
+    {
+      "path": "requirements.txt",
+      "change": "ADDED",
+      "sha256": "a859789be968c129010e275ca4a0537303d041bac76c3497b1e88b8f715dffdb"
+    },
+    {
+      "path": "schemas/package-record.schema.json",
+      "change": "ADDED",
+      "sha256": "5289e9332d800fe51333ffcca5076a5d1a0f34a45a7a4790110d8afccdd75a15"
+    },
+    {
+      "path": "templates/BLAST_RADIUS.md.tmpl",
+      "change": "MODIFIED",
+      "sha256": "413883875655da96473d87b3944a528d680af299c689bccbb815e0e32587ab2e"
+    },
+    {
+      "path": "templates/COLD_REVIEW.md",
+      "change": "MODIFIED",
+      "sha256": "fb94221f6b44b6626990b25d9b1d252e1ff797b436b4b49f7df1ae742127c912"
+    },
+    {
+      "path": "templates/ISSUE.md.tmpl",
+      "change": "MODIFIED",
+      "sha256": "c924e9ed93f2b2ebb5b3ca7d61e4e23365b98ea71bbef5ba02a56ee49098eb18"
+    },
+    {
+      "path": "templates/MAINTENANCE.md.tmpl",
+      "change": "MODIFIED",
+      "sha256": "9bdb6fc1448e64f11531a1c3fc58a850ad3d24d0647cc807729a869da337dfec"
+    },
+    {
+      "path": "templates/REFERENCE.md.tmpl",
+      "change": "MODIFIED",
+      "sha256": "1f0e9c11b1a575c1412f4dd2c22c9e7494f2901dce8b8ae82e7b9b84c9758494"
+    },
+    {
+      "path": "templates/SKILL.md.tmpl",
+      "change": "MODIFIED",
+      "sha256": "bfcfc6eed9a4809272f01b255d91d1a0440829580e84273efd309d7095431099"
+    },
+    {
+      "path": "templates/review-record.json",
+      "change": "MODIFIED",
+      "sha256": "8eb96db086397b3d720e046f791f4d269f57d19d541d539ff1d6a160920f3dc8"
+    },
+    {
+      "path": "tests/adversarial_probe.py",
+      "change": "ADDED",
+      "sha256": "619dbc95d333a02bfa3965344df80333f54340e99154790a97b47f709e0a77f6"
+    },
+    {
+      "path": "tests/test_preparation.py",
+      "change": "ADDED",
+      "sha256": "c02d79d55904bfc210ceb54a793aabde9d0e7547187e7457f7816861048fd9ba"
+    },
+    {
+      "path": "tests/test_publication.py",
+      "change": "ADDED",
+      "sha256": "0336c5cf420e02e2e9f589159f7aee80cd31baea80293fe04a10546b37d92b37"
+    },
+    {
+      "path": "tests/test_revision.py",
+      "change": "ADDED",
+      "sha256": "ed5be80cccb67a921ad3fbb15ffb194a1751e173dfeb609da52447e38c47b28a"
+    },
+    {
+      "path": "tools/README.md",
+      "change": "MODIFIED",
+      "sha256": "35fbfd4d5a82015f9fc84c6806292056f4bf0dad2915425a32d95ae4aa59a5ab"
+    },
+    {
+      "path": "tools/check_docs.py",
+      "change": "MODIFIED",
+      "sha256": "84d093bc9e95b79644fac56ca35e34b4e0ced9cd2b24ec1704485343236585b8"
+    },
+    {
+      "path": "tools/ownership_gate.py",
+      "change": "ADDED",
+      "sha256": "bf7947ad0f94c56b597716dd864a8a89ec1a094ebf8bc9c483e7da89f857f400"
+    },
+    {
+      "path": "tools/prepare_census.py",
+      "change": "MODIFIED",
+      "sha256": "05f488fe662437c202eb351be31979de0a798111ee8a5c919c47e7f4a37c355b"
+    },
+    {
+      "path": "tools/publication_gate.py",
+      "change": "ADDED",
+      "sha256": "d24b09c68b0a859f5118b4ca00e11c470fa855f00c491439d8de63a0164832c2"
+    },
+    {
+      "path": "tools/render_issue.py",
+      "change": "ADDED",
+      "sha256": "4034414c17f3297ead2f04f933e07e9ea4a14cdeb34d0bd77802c2923fe4b2ab"
+    }
+  ]
+}

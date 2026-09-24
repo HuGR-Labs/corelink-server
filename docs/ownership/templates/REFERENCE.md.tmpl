@@ -1,0 +1,121 @@
+---
+schema: corelink-ownership/1.1
+document: reference
+package: "{{PACKAGE}}"
+manifest: "{{MANIFEST}}"
+source_commit: "{{SOURCE_COMMIT}}"
+profile: "{{S_OU_H}}"
+state: draft
+evidence_set: "{{EVIDENCE_SET}}"
+---
+
+# {{PACKAGE}} — referência de ownership
+
+[Identidade](#r01) · [Fronteiras](#r02) · [Implementação](#r03) ·
+[Contratos](#r04) · [Estado e invariantes](#r05) · [Configuração](#r06) ·
+[Falhas](#r07) · [Verificação](#r08).
+
+<a id="r01"></a>
+## R01 — Identidade e função
+
+{{RESUMO_ATE_120_PALAVRAS_SEM_HISTORICO}}
+
+| Campo | Valor verificado |
+|---|---|
+| Package / manifesto | {{PACKAGE}} / {{MANIFEST}} |
+| Library / binaries / outros targets | {{TARGETS_REAIS_NAO_SO_PASTAS}} |
+| Papel | {{LEAF_FACADE_HIBRIDO_ADAPTER_ROOT_TOOL_HARNESS}} |
+| Licença / publish efetivos | {{VALORES_RESOLVIDOS_POR_PACKAGE}} |
+| Implementação / wiring / runtime observado | {{ESTADOS_SEPARADOS_COM_EVIDENCIA}} |
+
+<a id="r02"></a>
+## R02 — Fronteiras e ownership
+
+| Superfície | Dono da implementação | Dono do contrato | Operação / escalonamento |
+|---|---|---|---|
+| {{SUPERFICIE}} | {{OWNER_VERIFICADO}} | {{OWNER_VERIFICADO}} | {{ROTA_VERIFICADA}} |
+
+**Não faz:** {{EXCLUSOES_VERIFICADAS}}.
+**Conceitos canônicos:** {{LINKS_RELATIVOS_OKF_ADR}}.
+**Absorções e aliases:** {{ANTIGOS_PACKAGES_HOSPEDEIROS_E_REEXPORTS}}.
+
+<a id="r03"></a>
+## R03 — Mapa da implementação
+
+| Módulo / entradas | Papel e dado sob ownership | Natureza | Contratos / evidências |
+|---|---|---|---|
+| {{MODULO_CAMINHOS_SIMBOLOS}} | {{RESPONSABILIDADE_CONCRETA}} | {{OWNED_REEXPORT_ADAPTER_FAKE_GENERATED}} | {{API_IDS_E_FONTES}} |
+
+**Inventário:** {{CONTAGEM_FONTE_METODO_E_EXCLUSOES_JUSTIFICADAS}}.
+
+<a id="r04"></a>
+## R04 — Contratos públicos
+
+**Índice de contratos:** [API-001](#api-001) {{DEMAIS_CONTRATOS_ENUMERADOS}}.
+
+<a id="api-001"></a>
+### API-001 — {{NOME_DO_CONTRATO}}
+
+**Símbolos exatos:** {{LISTA_COMPLETA_DA_FAMILIA_SEM_ETC}}.
+**Entrada / unidade / pré-condição:** {{CONTRATO}}.
+**Saída / pós-condição / efeitos:** {{CONTRATO}}.
+**Erros / compatibilidade:** {{CONTRATO}}.
+**Vínculos e prova:** {{INV_REL_TESTE_FONTE}}.
+
+[Índice de contratos](#r04)
+
+<a id="r05"></a>
+## R05 — Estado, fluxos e invariantes
+
+| Estado / recurso | Chave e owner | Persistência / vida útil | Escrita / leitura / durabilidade |
+|---|---|---|---|
+| {{DADO}} | {{PARTICAO_TENANT_E_OWNER}} | {{LOCAL_EXTERNA_TTL}} | {{SIMBOLOS_E_PONTO_DE_COMMIT}} |
+
+**Índice:** [INV-001](#inv-001) · [FLOW-001](#flow-001) {{DEMAIS_REGISTROS}}.
+
+<a id="inv-001"></a>
+### INV-001 — {{PREDICADO_FALSIFICAVEL}}
+
+**Regra:** {{PREDICADO_E_LINK_CANONICO_SE_HERDADO}}.
+**Imposição:** {{SIMBOLO_E_CONDICOES}}.
+**Violação / prova:** {{CONTRAEXEMPLO_TESTE_EVIDENCIA_ESTADO}}.
+
+[Índice de estado](#r05)
+
+<a id="flow-001"></a>
+### FLOW-001 — {{GATILHO_E_RESULTADO}}
+
+{{ATE_OITO_PASSOS_COM_ESTADO_CONCORRENCIA_FALHA_E_COMPENSACAO}}
+
+[Índice de estado](#r05)
+
+<a id="r06"></a>
+## R06 — Configuração, targets e features
+
+| Nome / fonte | Default efetivo | Quando é lido | Target / condição | Efeito / falha |
+|---|---|---|---|---|
+| {{NOME_SEM_VALOR_SECRETO}} | {{DEFAULT}} | {{BUILD_BOOT_REQUEST}} | {{CONDICAO}} | {{EFEITO}} |
+
+**Matriz suportada:** {{PACKAGE_BINARY_TARGET_FEATURES_COMANDO_FONTE}}.
+**Combinações recusadas / stubs:** {{CONDICOES_E_PORQUE}}.
+
+<a id="r07"></a>
+## R07 — Erros e observabilidade
+
+| Sinal / erro | Causa no contrato | Estado após falha | Diagnóstico / procedimento |
+|---|---|---|---|
+| {{ERRO_OU_METRICA_REAL}} | {{CAUSA_LIMITADA}} | {{EFEITO_REAL_NAO_SUPOR_ROLLBACK}} | {{PROC_E_FONTE}} |
+
+**Limites:** {{CARDINALIDADE_REDACAO_CUSTO_CONCORRENCIA_APLICAVEIS}}.
+
+<a id="r08"></a>
+## R08 — Verificação e evidências
+
+| API / INV / FLOW | Fonte e revisão | Teste / método | Resultado e limite |
+|---|---|---|---|
+| {{ID}} | {{PATH_SIMBOLO_BLOB_OU_PERMALINK}} | {{COMANDO_EXATO}} | {{EXECUTADO_OU_NAO_EXECUTADO}} |
+
+**Desconhecidos e contradições:** {{LISTA_COM_DISPOSICAO_SEM_APROVACAO_FICTICIA}}.
+**Continuar:** [Impactos](BLAST_RADIUS.md#b01) · [Manutenção](MAINTENANCE.md#m01).
+
+[Voltar ao início](#r01)

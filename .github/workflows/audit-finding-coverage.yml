@@ -38,6 +38,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  b373-admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install the hermetic Python verifier environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --quiet --upgrade pip
+          .venv/bin/python3 -m pip install --quiet -r requirements-ci.txt
+      - name: Prove B-373 alert admission and per-alert decisions
+        run: .venv/bin/python3 -m pytest tests/test_audit_finding_coverage.py -q -k b373_dependabot_census_has_one_exact_b101_decision_per_alert
+
   verify:
     # This gate deliberately stays on GitHub-hosted ubuntu-24.04 (Bundle 2 migration
 # from self-hosted): parsing local evidence needs no paid hosted runner and

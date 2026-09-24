@@ -1,0 +1,70 @@
+[
+  {
+    "path": "COMMON.md",
+    "sha256": "2519e39ee38cc59f727f8750599fa0fc1d292872a0838cf90548d28511166df2"
+  },
+  {
+    "path": "STANDARD.md",
+    "sha256": "2ac02a0849c6af2565423ab6948ffc1b8dfa90d991459b9082670a14df101653"
+  },
+  {
+    "path": "VALIDATION-MATRIX.md",
+    "sha256": "f87a63695d95bc9689fbf54cfeb575e7a5f06cf78e7331935754242dd008a46b"
+  },
+  {
+    "path": "schemas/package-record.schema.json",
+    "sha256": "5289e9332d800fe51333ffcca5076a5d1a0f34a45a7a4790110d8afccdd75a15"
+  },
+  {
+    "path": "templates/BLAST_RADIUS.md.tmpl",
+    "sha256": "413883875655da96473d87b3944a528d680af299c689bccbb815e0e32587ab2e"
+  },
+  {
+    "path": "templates/COLD_REVIEW.md",
+    "sha256": "fb94221f6b44b6626990b25d9b1d252e1ff797b436b4b49f7df1ae742127c912"
+  },
+  {
+    "path": "templates/ISSUE.md.tmpl",
+    "sha256": "c924e9ed93f2b2ebb5b3ca7d61e4e23365b98ea71bbef5ba02a56ee49098eb18"
+  },
+  {
+    "path": "templates/MAINTENANCE.md.tmpl",
+    "sha256": "9bdb6fc1448e64f11531a1c3fc58a850ad3d24d0647cc807729a869da337dfec"
+  },
+  {
+    "path": "templates/REFERENCE.md.tmpl",
+    "sha256": "1f0e9c11b1a575c1412f4dd2c22c9e7494f2901dce8b8ae82e7b9b84c9758494"
+  },
+  {
+    "path": "templates/SKILL.md.tmpl",
+    "sha256": "bfcfc6eed9a4809272f01b255d91d1a0440829580e84273efd309d7095431099"
+  },
+  {
+    "path": "templates/review-record.json",
+    "sha256": "8eb96db086397b3d720e046f791f4d269f57d19d541d539ff1d6a160920f3dc8"
+  },
+  {
+    "path": "tests/test_tools.py",
+    "sha256": "ef70109fb2a3ce6d4cab529ec6d493417e127ee402505eb6122d4b1517e2f4c5"
+  },
+  {
+    "path": "tools/check_docs.py",
+    "sha256": "84d093bc9e95b79644fac56ca35e34b4e0ced9cd2b24ec1704485343236585b8"
+  },
+  {
+    "path": "tools/ownership_gate.py",
+    "sha256": "bf7947ad0f94c56b597716dd864a8a89ec1a094ebf8bc9c483e7da89f857f400"
+  },
+  {
+    "path": "tools/prepare_census.py",
+    "sha256": "e0911b8f3b6b5a985beecae60bd30cd6aaeedd48efea6f732317fc9d9bf2e0b3"
+  },
+  {
+    "path": "tools/publication_gate.py",
+    "sha256": "d24b09c68b0a859f5118b4ca00e11c470fa855f00c491439d8de63a0164832c2"
+  },
+  {
+    "path": "tools/render_issue.py",
+    "sha256": "4034414c17f3297ead2f04f933e07e9ea4a14cdeb34d0bd77802c2923fe4b2ab"
+  }
+]

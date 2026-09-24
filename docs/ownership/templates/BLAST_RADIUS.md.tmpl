@@ -1,0 +1,88 @@
+---
+schema: corelink-ownership/1.1
+document: blast_radius
+package: "{{PACKAGE}}"
+manifest: "{{MANIFEST}}"
+source_commit: "{{SOURCE_COMMIT}}"
+profile: "{{S_OU_H}}"
+state: draft
+evidence_set: "{{EVIDENCE_SET}}"
+---
+
+# {{PACKAGE}} — blast radius
+
+[Escopo](#b01) · [Método](#b02) · [Relações](#b03) ·
+[Propagação](#b04) · [Mudanças](#b05) · [Cobertura](#b06).
+
+<a id="b01"></a>
+## B01 — Leitura rápida e escopo
+
+{{RESUMO_ATE_120_PALAVRAS_COM_FRONTEIRAS_DE_MAIOR_RISCO}}
+
+**Builds avaliados:** {{PACKAGE_BINARY_TARGET_FEATURES_EVENTO_ARTEFATO}}.
+**Ambientes não observados:** {{LIMITES_EXPLICITOS}}.
+Não confundir dependência declarada, resolução, chamada traçada e runtime observado.
+
+<a id="b02"></a>
+## B02 — Inventário e método
+
+| População | Fontes / comando | Seleção / revisão | Limite do levantamento |
+|---|---|---|---|
+| Declarações Cargo | {{METADATA_E_MANIFESTOS}} | {{BASELINE}} | {{DECLARADO_NAO_E_EXECUTADO}} |
+| Resolução e inversas | {{GRAFO_TARGET_FEATURES_WORKSPACE}} | {{BUILD_EVENTO}} | {{LIMITE}} |
+| Runtime, dados e contratos externos | {{BUSCAS_ENTRYPOINTS_SQL_TS_SCHEMAS}} | {{REVISOES_REAIS}} | {{LIMITE}} |
+| Build, operação e testes | {{CONFIG_WORKFLOWS_TOOLS}} | {{REVISOES_REAIS}} | {{LIMITE}} |
+
+<a id="b03"></a>
+## B03 — Registro completo de relações diretas
+
+| ID | Tipo / direção | Superfície | Ativação | Owner do contrato |
+|---|---|---|---|---|
+| [REL-001](#rel-001) | {{TIPO_ORIGEM_DESTINO}} | {{SIMBOLO_RECURSO}} | {{CONDICAO}} | {{OWNER}} |
+
+<!-- Repita a ficha para cada fronteira distinta. Máximo: 120 palavras / 14 linhas. -->
+<a id="rel-001"></a>
+### REL-001 — {{NOME_PRECISO}}
+**Identidade:** {{REL_KEY_COMPARTILHADA_E_LINK_DO_PEER}}.
+**Dependência / fluxo / impacto:** {{TRES_DIRECOES_COM_SEMANTICA_POR_TIPO}}.
+**Superfície:** {{SIMBOLOS_ENDPOINTS_RECURSOS_E_TODOS_OS_CALL_SITES}}.
+**Ativação:** {{TARGET_FEATURE_BUILD_BOOT_REQUEST_OU_NA_JUSTIFICADO}}.
+**Contrato:** {{TIPO_UNIDADE_PRE_POS_CONDICAO_COMPATIBILIDADE}}.
+**Estado / efeitos:** {{OWNER_PARTICAO_DURABILIDADE_OU_SEM_ESTADO_JUSTIFICADO}}.
+**Falha / propagação:** {{CAUSA_MECANISMO_CONSUMIDOR_EFEITO}}.
+**Contenção:** {{ONDE_PARA_COM_PROVA_OU_DESCONHECIDO_EXPLICITO}}.
+**Validação:** {{TESTE_PREDICADO_NEGATIVO_E_EVIDENCIA_DE_EXECUCAO}}.
+**Coordenação / fontes:** {{OWNER_PR_CONSUMIDORES_PATH_SIMBOLO_REVISAO}}.
+[Índice de relações](#b03)
+
+<a id="b04"></a>
+## B04 — Propagação transitiva
+
+| Destino | Caminho por RELs | Condição | Efeito causal | Contenção / validação |
+|---|---|---|---|---|
+| {{NO_INTERNO_OU_FRONTEIRA_EXTERNA}} | {{RELS_ENUMERADOS}} | {{CONDICAO}} | {{MECANISMO}} | {{PROVA}} |
+
+**Cobertura:** {{TODOS_OS_NOS_INTERNOS_ALCANCADOS_COM_CAMINHO_TESTEMUNHA}}.
+**Caminhos alternativos materiais:** {{DIFERENCAS_DE_FALHA_ATIVACAO_OU_DADOS}}.
+**Não alcance comprovado:** {{SELECAO_METODO_E_RESULTADO_SEM_GENERALIZAR}}.
+
+<a id="b05"></a>
+## B05 — Mudança → impacto → validação
+
+| Mudança | API / INV / REL afetados | Consumidores / estado | Validação necessária | Coordenação / recuperação |
+|---|---|---|---|---|
+| {{MUDANCA_CONCRETA}} | {{IDS}} | {{EFEITO}} | {{TESTE_E_RESULTADO_EXIGIDO}} | {{OWNER_E_PROC}} |
+
+<a id="b06"></a>
+## B06 — Cobertura e desconhecidos
+
+| População | Descobertos | Documentados | Excluídos com motivo | Desconhecidos |
+|---|---:|---:|---:|---:|
+| {{POPULACAO}} | {{N}} | {{N}} | {{N}} | {{N}} |
+
+**Exclusões enumeradas:** {{ELEMENTO_E_MOTIVO_CADA_UM}}.
+**Diferenças para o censo independente:** {{ACHADOS_E_RESOLUCAO}}.
+**O que não foi observado:** {{ESPECIFICAR_SEM_ESTENDER_A_ALEGACAO}}.
+A igualdade de contagens não prova a completude da descoberta.
+
+[Referência](REFERENCE.md#r01) · [Manutenção](MAINTENANCE.md#m01) · [Início](#b01).

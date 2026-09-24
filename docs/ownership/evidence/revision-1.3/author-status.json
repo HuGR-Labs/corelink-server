@@ -1,0 +1,62 @@
+{
+  "schema": "corelink-ownership-author-status/1",
+  "package": "corelink-hash",
+  "state": "DRAFT",
+  "independent_review": false,
+  "cargo_census_executed": false,
+  "rust_tests_executed": false,
+  "publication_ready": false,
+  "source_module_bodies_read": 5,
+  "api_records": 16,
+  "invariant_records": 5,
+  "relation_records": 19,
+  "procedure_records": 6,
+  "completed_pilots": 0,
+  "procedures": [
+    {
+      "id": "PROC-001",
+      "review_status": "AUTHOR_REVIEWED",
+      "execution_status": "REVIEWED_NOT_EXECUTED",
+      "required_for_acceptance": true
+    },
+    {
+      "id": "PROC-002",
+      "review_status": "AUTHOR_REVIEWED",
+      "execution_status": "REVIEWED_NOT_EXECUTED",
+      "required_for_acceptance": true
+    },
+    {
+      "id": "PROC-003",
+      "review_status": "AUTHOR_REVIEWED",
+      "execution_status": "REVIEWED_NOT_EXECUTED",
+      "required_for_acceptance": true
+    },
+    {
+      "id": "PROC-004",
+      "review_status": "AUTHOR_REVIEWED",
+      "execution_status": "REVIEWED_NOT_EXECUTED",
+      "required_for_acceptance": true
+    },
+    {
+      "id": "PROC-005",
+      "review_status": "AUTHOR_REVIEWED",
+      "execution_status": "REVIEWED_NOT_EXECUTED",
+      "required_for_acceptance": true
+    },
+    {
+      "id": "PROC-006",
+      "review_status": "AUTHOR_REVIEWED",
+      "execution_status": "REVIEWED_NOT_EXECUTED",
+      "required_for_acceptance": true
+    }
+  ],
+  "blocking": [
+    "complete_reverse_and_alias_census",
+    "complete_relationship_population",
+    "rust_procedure_execution",
+    "independent_cold_review",
+    "five_complete_pilots_and_capacity_freeze",
+    "backlog_and_duplicates",
+    "repository_integration"
+  ]
+}
