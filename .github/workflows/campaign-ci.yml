@@ -792,7 +792,28 @@ jobs:
           set -euo pipefail
           # Static repository proof only: no D1 provider state, credentials,
           # database provisioning, or legal instrument mutation.
-          python3 -S scripts/verify_b086_d1_residency.py 2>&1 | tee artifacts/campaign-ci/i1654-d1-residency-contract.log
+          capture_commit="$(python3 -S - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          value = json.loads(
+              Path("evidence/owner-actions/B-086/d1-residency-resolution.json").read_text(
+                  encoding="utf-8"
+              )
+          ).get("capture_commit")
+          if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value):
+              raise SystemExit("B-086 capture_commit must be a 40-character lowercase SHA")
+          print(value)
+          PY
+          )"
+          # The packet verifier hashes sources at this historical, read-only
+          # capture commit. Fetch only that object for the shallow checkout.
+          git fetch --no-tags --depth=1 origin "$capture_commit"
+          {
+            python3 -S scripts/verify_b086_d1_residency.py
+            python3 -S scripts/verify_owner_action_packets.py --id B-086
+          } 2>&1 | tee artifacts/campaign-ci/i1654-d1-residency-contract.log
 
       - name: i1655 SLA credit contract (credentialless)
         if: ${{ inputs.suite == 'i1655-sla-credit-contract' }}
