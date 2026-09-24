@@ -6023,6 +6023,7 @@ dependencies: []
 next-action: "For DD-085: remediate the finding titled \"CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 64); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
 acceptance: "Evidence for DD-085: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
 verify: |
+  python3 scripts/verify_b101_closures.py --id B-229 --expect done && \
   python3 scripts/verify_b229_clerk_webhook.py && \
   python3 scripts/verify_b229_clerk_webhook.py --self-test && \
   python3 -m unittest tests/test_verify_b229_clerk_webhook.py

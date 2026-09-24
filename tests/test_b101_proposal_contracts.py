@@ -291,7 +291,7 @@ def test_missing_backlog_record_is_red(tmp_path: Path) -> None:
         guard.verify(root, "B-171")
 
 
-@pytest.mark.parametrize("field", ("next-action", "acceptance"))
+@pytest.mark.parametrize("field", ("next-action", "acceptance", "verify"))
 def test_completed_proposal_backlog_contract_drift_is_red(tmp_path: Path, field: str) -> None:
     root = fixture_tree(tmp_path)
     path = root / guard.BACKLOG
