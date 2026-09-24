@@ -57,10 +57,7 @@ jobs:
           REF_PROTECTED: ${{ github.ref_protected }}
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REPOSITORY" == "HuGR-dev/corelink-server" ]]
-          [[ "$GITHUB_REF" == "refs/heads/main" && "$REF_PROTECTED" == "true" ]]
-          [[ "$CONFIRM" == "i1721-r2-lock-proof" ]]
-          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ && "$EXPECTED_SHA" == "$GITHUB_SHA" ]]
+          bash scripts/validate_i1721_r2_dispatch.sh
 
   proof:
     if: github.event_name == 'workflow_dispatch' && needs.preflight.result == 'success'
@@ -72,8 +69,8 @@ jobs:
     permissions:
       contents: read
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.TF_BACKEND_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_BACKEND_SECRET_ACCESS_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_TF_BACKEND_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_TF_BACKEND_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: auto
       AWS_EC2_METADATA_DISABLED: 'true'
       TF_BACKEND_BUCKET: corelink-terraform-staging-state
