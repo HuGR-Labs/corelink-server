@@ -211,7 +211,10 @@ def _lint_negative_fixture(directory: Path) -> Path:
                 "  negative:",
                 "    runs-on: ubuntu-latest",
                 "    steps:",
-                "      - run: true && false || echo fallback",
+                "      - run: |",
+                "          U=example",
+                "          P=example",
+                '          [ -n "$U" ] && [ -n "$P" ] || { echo missing; exit 1; }',
             ]
         )
         + "\n",
