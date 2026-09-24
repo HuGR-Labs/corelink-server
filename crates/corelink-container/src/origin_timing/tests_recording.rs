@@ -170,23 +170,28 @@ async fn active_window_is_released_when_a_timed_future_is_cancelled() {
 }
 
 #[tokio::test]
-async fn overlapping_sibling_scopes_coalesce_to_one_window() {
+async fn nested_reentry_of_the_same_phase_records_once() {
     let ledger = Arc::new(PhaseLedger::new());
-    let barrier = Arc::new(tokio::sync::Barrier::new(2));
-
-    async fn sibling(ledger: Arc<PhaseLedger>, barrier: Arc<tokio::sync::Barrier>) {
-        let _scope = PhaseScope::with_handle(Some(ledger), Phase::Store);
-        barrier.wait().await;
-        tokio::task::yield_now().await;
-    }
-
-    tokio::join!(
-        sibling(Arc::clone(&ledger), Arc::clone(&barrier)),
-        sibling(Arc::clone(&ledger), Arc::clone(&barrier)),
-    );
+    let started = std::time::Instant::now();
+    super::scope_for_test(Arc::clone(&ledger), async {
+        let _outer = PhaseScope::enter(Phase::Store);
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        {
+            // This mirrors MoatCache's outer bridge plus R2CasHandler's
+            // inner Store scope.  Both represent one storage window.
+            let _inner = PhaseScope::enter(Phase::Store);
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    let wall_us = i64::try_from(started.elapsed().as_micros()).unwrap_or(i64::MAX);
     assert_eq!(ledger.completed_windows_for_test(Phase::Store), 1);
     assert_eq!(ledger.active_depth_for_test(Phase::Store), 0);
     assert_eq!(ledger.recordings_for_test(Phase::Store), 1);
+    assert!(
+        ledger.micros(Phase::Store).unwrap_or_default() <= wall_us,
+        "same-phase re-entry must not make ostore exceed its wall-clock window"
+    );
 }
 
 #[tokio::test]
