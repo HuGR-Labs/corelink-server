@@ -110,7 +110,14 @@ def check_current_path(manifest: dict[str, Any]) -> None:
     if path != expected:
         raise ContractError("current cache path contract drifted")
     workflow = text(path=".github/workflows/corelink-reapi.yml")
-    require(workflow, "runs-on: corelink", "pilot workflow")
+    # The retained B-105 observation used the legacy CoreLink fabric.  The
+    # observation itself remains immutable, while the same PR lane is allowed
+    # to move to the campaign's credentialless GitHub-hosted selector.  Do not
+    # accept any other runner: that would make a restored self-hosted selector
+    # look like a harmless migration.
+    runners = re.findall(r"(?m)^    runs-on: ([^\n#]+)", workflow)
+    if not runners or any(runner.strip() not in {"corelink", "ubuntu-24.04"} for runner in runners):
+        raise ContractError("pilot workflow must use only the legacy or approved hosted runner")
     require(workflow, "vars.CORELINK_SCCACHE_PILOT == 'on'", "pilot workflow")
     require(workflow, "echo \"RUSTC_WRAPPER=sccache\"", "pilot workflow")
     require(workflow, "SCCACHE_WEBDAV_ENDPOINT=https://corelink-api.humangr.com/cargo/${SCCACHE_TENANT}", "pilot workflow")
