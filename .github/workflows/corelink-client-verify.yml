@@ -227,19 +227,19 @@ jobs:
 
   fuzz-smoke:
     name: cargo-fuzz smoke (60s, both targets)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-      # ROOT FIX (2026-06-17): do NOT use `dtolnay/rust-toolchain@nightly` here.
-      # It runs `rustup` channel-update + component ops against the SHARED
-      # ~/.rustup on the self-hosted Mac, deleting the `rustup` shim mid-run so
-      # every ~/.cargo/bin/cargo symlink dangles → `os error 2` / exit-127
-      # `cargo: command not found` on every other Rust gate AND the clw build box
-      # (same host). The 89270bb9 fix did this for the other fuzz jobs but missed
-      # this file. Put the pre-installed host nightly toolchain on PATH instead.
+        with:
+          persist-credentials: false
+      # cargo-fuzz requires nightly; provision it on the GitHub-hosted runner
+      # and put its Linux binary directory on PATH for the existing commands.
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: nightly
       - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
-        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
       # `cargo install` compiles cargo-fuzz's OWN dependency tree (aws-lc-sys, syn,
       # tokio, ctutils, parking_lot …) into whatever CARGO_HOME points at. Pointed at
       # the SHARED `~/.cargo`, it mutates the registry that every other concurrent
@@ -280,19 +280,19 @@ jobs:
 
   fuzz-nightly:
     name: cargo-fuzz nightly (1h each)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-      # ROOT FIX (2026-06-17): do NOT use `dtolnay/rust-toolchain@nightly` here.
-      # It runs `rustup` channel-update + component ops against the SHARED
-      # ~/.rustup on the self-hosted Mac, deleting the `rustup` shim mid-run so
-      # every ~/.cargo/bin/cargo symlink dangles → `os error 2` / exit-127
-      # `cargo: command not found` on every other Rust gate AND the clw build box
-      # (same host). The 89270bb9 fix did this for the other fuzz jobs but missed
-      # this file. Put the pre-installed host nightly toolchain on PATH instead.
+        with:
+          persist-credentials: false
+      # cargo-fuzz requires nightly; provision it on the GitHub-hosted runner
+      # and put its Linux binary directory on PATH for the existing commands.
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: nightly
       - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
-        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
       # `cargo install` compiles cargo-fuzz's OWN dependency tree (aws-lc-sys, syn,
       # tokio, ctutils, parking_lot …) into whatever CARGO_HOME points at. Pointed at
       # the SHARED `~/.cargo`, it mutates the registry that every other concurrent
@@ -333,17 +333,17 @@ jobs:
 
   mutants-nightly:
     name: cargo-mutants kill-rate >= 80%
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+        with:
+          persist-credentials: false
+      # GitHub-hosted runners are ephemeral, so install the workspace-pinned
+      # toolchain before the existing helper adds it to PATH.
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: "1.91.1"
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         run: bash scripts/ci-use-host-toolchain.sh
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
