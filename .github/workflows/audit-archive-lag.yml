@@ -117,10 +117,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.ref_protected == true &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    # Self-hosted `corelink` per the zero-hosted-Actions mandate. No cargo
-    # build here — this job is python3 + curl only, so it needs neither the
-    # host toolchain step nor a cargo cache.
-    runs-on: corelink
+    # No cargo build: the hosted job uses only Python 3 and curl.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout repo
