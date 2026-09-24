@@ -46,6 +46,16 @@ class HostedReceiptValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "run_id does not match"):
             validate_successful_receipt(self.receipt, self.run, self.sha)
 
+    def test_rejects_missing_run_attempt(self) -> None:
+        self.run.pop("attempt")
+        with self.assertRaisesRegex(ValueError, "run_attempt does not match"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+
+    def test_rejects_mismatched_run_attempt(self) -> None:
+        self.receipt["run_attempt"] = "2"
+        with self.assertRaisesRegex(ValueError, "run_attempt does not match"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+
     def test_rejects_non_exact_sha(self) -> None:
         with self.assertRaisesRegex(ValueError, "expected exact SHA"):
             validate_successful_receipt(self.receipt, self.run, "b" * 40)
