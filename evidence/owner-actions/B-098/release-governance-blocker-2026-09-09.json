@@ -10,7 +10,7 @@
     "status": "PASS",
     "rust_packages": 95,
     "crate_directories": 75,
-    "okf_concepts": 173,
+    "okf_concepts": 174,
     "specs_full_schema": 488,
     "specs_yaml_only": 11,
     "specs_total": 499,

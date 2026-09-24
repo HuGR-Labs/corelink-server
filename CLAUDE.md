@@ -20,7 +20,7 @@ It already exposes multiple cache surfaces: native CAS/AC, **Bazel REAPI v2**
 
 ## Architecture wiki (OKF)
 
-`docs/knowledge/` is the **code-grounded architecture wiki** — **173 OKF concepts**
+`docs/knowledge/` is the **code-grounded architecture wiki** — **174 OKF concepts**
 (recount with `python3 scripts/validate_okf.py`; `index.md` and `log.md` are reserved),
 each naming the `source_files` it explains (anti-drift gated against them).
 Browse `docs/knowledge/index.md`, or the rendered site `docs/okf-wiki-site/index.html` (search + cross-link graph; regen via `scripts/okf_render.py`). **Rule: before modifying a
