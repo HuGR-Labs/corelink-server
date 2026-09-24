@@ -8,6 +8,7 @@ an owner records every protected input, isolated resource, and cleanup receipt.
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 import sys
@@ -19,6 +20,25 @@ PACKET = ROOT / "docs/handoff/2026-09-22-i1650-real-integration-readiness.json"
 MANIFEST = ROOT / "scripts/real-ignored-harness-manifest.json"
 WORKFLOW = ROOT / ".github/workflows/real-ignored-harnesses.yml"
 PROFILES = ("d1", "r2", "stripe", "neon")
+REQUIRED_RESOURCES = {
+    "d1": (
+        ("Cloudflare account", "provider account", "dedicated test account; no production writes"),
+        ("D1 database", "D1 database", "dedicated integration database"),
+        ("R2 test bucket", "R2 bucket", "dedicated disposable bucket; cleanup after receipt"),
+    ),
+    "r2": (
+        ("Cloudflare account", "provider account", "dedicated test account; no production writes"),
+        ("D1 database", "D1 database", "dedicated integration database for audit path"),
+        ("R2 test bucket", "R2 bucket", "dedicated disposable bucket; cleanup after receipt"),
+    ),
+    "stripe": (
+        ("HuGR wallet broker test reference", "wallet broker account", "stripe-prod-test only; test mode"),
+        ("Starter test price", "Stripe price", "test-mode price_* only"),
+    ),
+    "neon": (
+        ("Neon shadow database", "PostgreSQL database", "staging shadow branch; disposable tenant data only"),
+    ),
+}
 FORBIDDEN = ("-----BEGIN ", "github_pat_", "ghp_", "gho_", "sk_live_", "whsec_")
 
 
@@ -50,12 +70,9 @@ def load(path: Path) -> dict[str, Any]:
     return value
 
 
-def validate() -> bool:
-    packet = load(PACKET)
-    manifest = load(MANIFEST)
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+def validate_packet(packet: dict[str, Any], manifest: dict[str, Any], workflow: str) -> bool:
     walk(packet)
-    if packet.get("schema_version") != "i1650.real-integration-readiness.v1":
+    if packet.get("schema_version") != "i1650.real-integration-readiness.v2":
         fail("unsupported packet schema")
     if packet.get("issue") != 1650 or packet.get("credentialless") is not True:
         fail("packet is not bound to issue 1650 and credentialless")
@@ -77,11 +94,13 @@ def validate() -> bool:
         fail("executor manifest profile set drifted")
     for profile in PROFILES:
         item = profiles[profile]
+        if not isinstance(item, dict):
+            fail(f"{profile} packet shape is invalid")
         expected = list(manifest_profiles[profile].get("required_env", ()))
         env = item.get("environment")
         if item.get("status") not in {"blocked", "ready"} or not isinstance(env, list):
             fail(f"{profile} packet shape is invalid")
-        if [entry.get("name") for entry in env] != expected:
+        if [entry.get("name") for entry in env if isinstance(entry, dict)] != expected or any(not isinstance(entry, dict) for entry in env):
             fail(f"{profile} environment inventory does not match executor manifest")
         if any(set(entry) != {"name", "kind", "scope", "status"} for entry in env):
             fail(f"{profile} environment entry shape drifted")
@@ -89,14 +108,50 @@ def validate() -> bool:
             fail(f"{profile} environment status is invalid")
         resources = item.get("resources")
         cleanup = item.get("cleanup")
-        if not isinstance(resources, list) or not resources or not isinstance(cleanup, list) or not cleanup or any(not isinstance(x, str) or not x.strip() for x in cleanup):
+        if not isinstance(resources, list) or not isinstance(cleanup, list) or not cleanup or any(not isinstance(x, str) or not x.strip() for x in cleanup):
             fail(f"{profile} resource/cleanup inventory is incomplete")
+        if any(not isinstance(resource, dict) for resource in resources):
+            fail(f"{profile} resource entry shape is invalid")
+        actual_resources = [
+            tuple(resource.get(key) for key in ("name", "kind", "scope"))
+            for resource in resources
+        ]
+        if actual_resources != list(REQUIRED_RESOURCES[profile]):
+            fail(f"{profile} resource identity, kind, or test-only scope differs from the reviewed profile")
+        for resource in resources:
+            if set(resource) != {"name", "kind", "scope", "status", "evidence_ref"}:
+                fail(f"{profile} resource entry shape drifted")
+            if any(not isinstance(resource[key], str) or not resource[key].strip() for key in ("name", "kind", "scope")):
+                fail(f"{profile} resource identity is incomplete")
+            if resource["status"] not in {"missing", "verified"}:
+                fail(f"{profile} resource status is invalid")
+            reference = resource["evidence_ref"]
+            if resource["status"] == "verified" and (not isinstance(reference, str) or not reference.strip()):
+                fail(f"{profile} verified resource has no redacted evidence reference")
+            if resource["status"] == "missing" and reference is not None:
+                fail(f"{profile} missing resource must not carry a verification reference")
+        cleanup_receipt = item.get("cleanup_receipt")
+        if not isinstance(cleanup_receipt, dict) or set(cleanup_receipt) != {"status", "owner_reviewed", "evidence_ref"}:
+            fail(f"{profile} cleanup receipt shape is invalid")
+        if cleanup_receipt["status"] not in {"missing", "verified"} or not isinstance(cleanup_receipt["owner_reviewed"], bool):
+            fail(f"{profile} cleanup receipt status is invalid")
+        receipt_ref = cleanup_receipt["evidence_ref"]
+        if cleanup_receipt["status"] == "verified":
+            if not cleanup_receipt["owner_reviewed"] or not isinstance(receipt_ref, str) or not receipt_ref.strip():
+                fail(f"{profile} verified cleanup receipt lacks owner review or a redacted evidence reference")
+        elif cleanup_receipt["owner_reviewed"] or receipt_ref is not None:
+            fail(f"{profile} missing cleanup receipt must not claim review or evidence")
         blockers = item.get("blockers")
         if not isinstance(blockers, list) or any(not isinstance(x, str) or not x.strip() for x in blockers):
             fail(f"{profile} blockers are invalid")
         ready = item["status"] == "ready"
-        if ready and (blockers or any(x["status"] != "verified" for x in env)):
-            fail(f"{profile} claims ready without verified inputs")
+        if ready and (
+            blockers
+            or any(x["status"] != "verified" for x in env)
+            or any(x["status"] != "verified" for x in resources)
+            or cleanup_receipt["status"] != "verified"
+        ):
+            fail(f"{profile} claims ready without verified inputs, resources, and cleanup evidence")
     if packet["status"] == "ready" and any(profiles[p]["status"] != "ready" for p in PROFILES):
         fail("packet claims ready while a profile is blocked")
 
@@ -112,11 +167,64 @@ def validate() -> bool:
             fail(f"real executor missing safety marker: {marker}")
     if re.search(r"(?m)^\s*if:\s*.*secrets\.", workflow):
         fail("workflow condition interpolates a secret")
-    # No owner packet can authorize the secret PAT seed harness.
     if any(token in workflow for token in ("CORELINK_PAT_SIGNING_KEY_HEX", "emit_e2e_seed", "PAT_PLAINTEXT", "SEED_SQL")):
         fail("forbidden PAT seed input reached the real executor")
     return packet["status"] == "ready"
 
+
+def mutation_checks(packet: dict[str, Any], manifest: dict[str, Any], workflow: str) -> None:
+    """Prove READY rejects missing resources and owner-reviewed cleanup evidence."""
+    ready_packet = copy.deepcopy(packet)
+    ready_packet["status"] = "ready"
+    for profile in PROFILES:
+        item = ready_packet["profiles"][profile]
+        item["status"] = "ready"
+        item["blockers"] = []
+        for entry in item["environment"]:
+            entry["status"] = "verified"
+        for resource in item["resources"]:
+            resource["status"] = "verified"
+            resource["evidence_ref"] = "synthetic://resource-evidence"
+        item["cleanup_receipt"] = {
+            "status": "verified",
+            "owner_reviewed": True,
+            "evidence_ref": "synthetic://cleanup-receipt",
+        }
+    if not validate_packet(ready_packet, manifest, workflow):
+        fail("complete synthetic readiness fixture did not validate")
+    for profile in PROFILES:
+        missing_resource = copy.deepcopy(ready_packet)
+        resource = missing_resource["profiles"][profile]["resources"][0]
+        resource["status"] = "missing"
+        resource["evidence_ref"] = None
+        expect_rejected(f"{profile} ready with a missing resource", missing_resource, manifest, workflow)
+        missing_cleanup = copy.deepcopy(ready_packet)
+        missing_cleanup["profiles"][profile]["cleanup_receipt"] = {
+            "status": "missing",
+            "owner_reviewed": False,
+            "evidence_ref": None,
+        }
+        expect_rejected(f"{profile} ready without owner-reviewed cleanup", missing_cleanup, manifest, workflow)
+
+    production_scope = copy.deepcopy(ready_packet)
+    production_scope["profiles"]["d1"]["resources"][0]["scope"] = "production account; production writes allowed"
+    expect_rejected("ready profile with production resource scope", production_scope, manifest, workflow)
+
+
+def expect_rejected(label: str, packet: dict[str, Any], manifest: dict[str, Any], workflow: str) -> None:
+    try:
+        validate_packet(packet, manifest, workflow)
+    except ValueError:
+        return
+    fail(f"readiness mutation was accepted: {label}")
+
+
+def validate() -> bool:
+    packet = load(PACKET)
+    manifest = load(MANIFEST)
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    mutation_checks(packet, manifest, workflow)
+    return validate_packet(packet, manifest, workflow)
 
 def main() -> int:
     try:
