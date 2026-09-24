@@ -42,7 +42,7 @@ def write_registry(root: Path, registry: dict) -> None:
 
 
 def test_live_registry_covers_all_73_specific_contracts() -> None:
-    assert guard.verify(ROOT) == {"records": 73, "unfinished": 2, "done": 71}
+    assert guard.verify(ROOT) == {"records": 73, "unfinished": 0, "done": 73}
 
 
 def test_global_guard_accepts_later_shared_done_verifier() -> None:
@@ -51,7 +51,7 @@ def test_global_guard_accepts_later_shared_done_verifier() -> None:
 
 def test_open_state_rule_set_is_dense_and_executable() -> None:
     assert set(open_guard.RULES) == {f"B-{number}" for number in range(171, 244)}
-    assert open_guard.verify(ROOT) == {"records": 2, "unfinished": 2}
+    assert open_guard.verify(ROOT) == {"records": 0, "unfinished": 0}
 
 
 def test_open_state_missing_artifact_is_red(tmp_path: Path) -> None:
@@ -289,6 +289,41 @@ def test_missing_backlog_record_is_red(tmp_path: Path) -> None:
     path.write_text(text[:start] + text[end:], encoding="utf-8")
     with pytest.raises(guard.ProposalVerificationError, match="heading is missing"):
         guard.verify(root, "B-171")
+
+
+@pytest.mark.parametrize("field", ("next-action", "acceptance", "verify"))
+def test_completed_proposal_backlog_contract_drift_is_red(tmp_path: Path, field: str) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / guard.BACKLOG
+    text = path.read_text(encoding="utf-8")
+    start = text.index("### B-229 — ")
+    end = text.index("### B-230 — ", start)
+    section = text[start:end]
+    if field == "verify":
+        original_line = "  python3 scripts/verify_b101_closures.py --id B-229 --expect done"
+        mutated_line = "  python3 scripts/wrong_closure.py --id B-229 --expect done"
+    else:
+        original_line = next(line for line in section.splitlines() if line.startswith(f"{field}: "))
+        mutated_line = f'{field}: "divergent completed proposal metadata"'
+    path.write_text(text[:start] + section.replace(original_line, mutated_line, 1) + text[end:], encoding="utf-8")
+
+    with pytest.raises(guard.ProposalVerificationError, match=f"backlog contract missing or mismatched {field.replace('-', '_')}"):
+        guard.verify(root, "B-229")
+
+
+def test_completed_proposal_requires_executable_closure_witness(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    for relative in (
+        Path("scripts/verify_b101_closures.py"),
+        Path("tests/audit/b101/closures/B-229.py"),
+    ):
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+    (root / "tests/audit/b101/closures/B-229.py").unlink()
+
+    with pytest.raises(guard.ProposalVerificationError, match="missing its executable closure witness"):
+        guard.verify(root, "B-229")
 
 
 def test_backlog_owner_mutation_is_red(tmp_path: Path) -> None:

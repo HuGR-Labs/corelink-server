@@ -87,6 +87,7 @@ AUTH_VERIFY_COMMANDS = {
 IMMUTABLE_ITEM_FIELDS = frozenset({
     "id", "repo", "verify", "action-packet", "source-document",
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
+    "next-action",
 })
 B154_LEGACY_VERIFY_SHA256 = "39b0307a1a4451c90fb22fe9a37cfbd858485d38e6361e6c3d15bce1d1f4beac"
 B154_SPRINT3_VERIFY_SHA256 = "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e"
@@ -510,6 +511,7 @@ def check_candidate_controls(candidate_root: Path, trusted_root: Path, trusted_i
 def validate_candidate_transitions(
     candidate_items: list[Item], trusted_items: list[Item], today: dt.date,
     *, allow_sprint3_rewrite: bool = False, allow_b154_reconciliation: bool = False,
+    allow_v0006_reconciliation: bool = False,
     successor_mode: bool = False,
 ) -> list[str]:
     """Validate the small, auditable set of BACKLOG changes a PR may make."""
@@ -530,8 +532,21 @@ def validate_candidate_transitions(
             continue
         old = trusted_by_id[item.id]
         old_raw, new_raw = old.raw, item.raw
+        v0006_fields = {
+            "B-028": {"verify-means"},
+            "B-101": {"verify-means"},
+            "B-210": {"next-action", "acceptance", "verify"},
+            "B-216": {"verify-means"},
+            "B-229": {"next-action", "acceptance", "verify"},
+        }
         for item_field in IMMUTABLE_ITEM_FIELDS:
             if old_raw.get(item_field) != new_raw.get(item_field):
+                if (
+                    allow_v0006_reconciliation
+                    and item.id in v0006_fields
+                    and item_field in v0006_fields[item.id]
+                ):
+                    continue
                 # The B-089 successor may add only this already-BASE-owned
                 # owner-packet gate. A receipt cannot authorize arbitrary
                 # candidate verifier code or shell fragments.
@@ -565,6 +580,12 @@ def validate_candidate_transitions(
         for item_field in set(old_raw) | set(new_raw):
             if item_field not in IMMUTABLE_ITEM_FIELDS | ALLOWED_TRANSITION_FIELDS:
                 if old_raw.get(item_field) != new_raw.get(item_field):
+                    if (
+                        allow_v0006_reconciliation
+                        and item.id in v0006_fields
+                        and item_field in v0006_fields[item.id]
+                    ):
+                        continue
                     errors.append(f"{item.id}: unsupported field {item_field!r} changed")
         old_status, new_status = old_raw.get("status"), new_raw.get("status")
         if new_status not in allowed_status.get(old_status, set()):
@@ -572,7 +593,9 @@ def validate_candidate_transitions(
         if old_raw.get("owner") != new_raw.get("owner") and old_status == new_status:
             errors.append(f"{item.id}: owner may change only with a status transition")
         if old_raw.get("verify-means") != new_raw.get("verify-means") and old_status == new_status:
-            if not ((allow_sprint3_rewrite and item.id in {
+            if not ((allow_v0006_reconciliation and item.id in v0006_fields
+                     and "verify-means" in v0006_fields[item.id])
+                    or (allow_sprint3_rewrite and item.id in {
                 "B-012", "B-065", "B-087", "B-089", "B-097", "B-154", "B-170",
             }) or (allow_b154_reconciliation and item.id == "B-154")):
                 errors.append(f"{item.id}: verify-means may change only with a status transition")
