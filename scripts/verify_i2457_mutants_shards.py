@@ -102,6 +102,17 @@ def mutant_ids(raw: Any) -> list[str]:
     return ids
 
 
+def inventory_mutant_ids(value: Any) -> list[str]:
+    """Validate the redacted identity list stored in an inventory receipt."""
+    if not isinstance(value, list):
+        raise VerificationError("inventory mutant_ids must be a JSON array")
+    if not value or any(not isinstance(name, str) or not name for name in value):
+        raise VerificationError("inventory mutant_ids must contain non-empty string identities")
+    if len(value) != len(set(value)):
+        raise VerificationError("inventory mutant_ids has duplicate identities")
+    return value
+
+
 def membership(ids: list[str], shard: int) -> list[str]:
     if shard < 0 or shard >= SHARD_COUNT:
         raise VerificationError("shard index is outside the frozen denominator")
@@ -136,7 +147,7 @@ def validate_inventory(document: Mapping[str, Any]) -> list[str]:
         raise VerificationError("inventory configuration digest is not canonical")
     if document.get("shard_count") != SHARD_COUNT or document.get("sharding") != SHARDING:
         raise VerificationError("inventory shard definition drifted")
-    ids = mutant_ids(document.get("mutant_ids"))
+    ids = inventory_mutant_ids(document.get("mutant_ids"))
     if document.get("inventory_digest") != digest(ids):
         raise VerificationError("inventory digest does not bind its identities")
     return ids
@@ -462,6 +473,8 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
     missing = [marker for marker in required if marker not in text]
     if missing:
         raise VerificationError("workflow is missing required #2457 controls: " + ", ".join(missing))
+    if text.count("retention-days: 30") != 4 or text.count("retention-days:") != 4:
+        raise VerificationError("workflow must retain each of the four bounded evidence artifacts for exactly 30 days")
     forbidden = (
         "self-hosted",
         "runs-on: corelink",
