@@ -1,0 +1,76 @@
+name: Issue CI pack (manual, bounded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pack_id:
+        description: Reviewed closed-catalog pack identifier
+        required: true
+        type: choice
+        options:
+          - issue-2440-ci-scoping
+      expected_sha:
+        description: Exact candidate head SHA for this dispatch ref
+        required: true
+        type: string
+      target_base_sha:
+        description: Exact target base SHA used to construct the candidate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-ci-pack-${{ inputs.pack_id }}-${{ inputs.expected_sha }}
+  cancel-in-progress: false
+
+jobs:
+  pack:
+    if: github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the exact dispatched revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.expected_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind the dispatch to the exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ACTUAL_SHA: ${{ github.sha }}
+          PACK_ID: ${{ inputs.pack_id }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SHA" == "$ACTUAL_SHA" ]]
+          [[ "$PACK_ID" == 'issue-2440-ci-scoping' ]]
+
+      - name: Install pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -version
+
+      - name: Validate every repository workflow
+        run: ./actionlint -color -verbose
+
+      - name: Verify pack contract and adversarial controls
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          TARGET_BASE_SHA: ${{ inputs.target_base_sha }}
+          PACK_ID: ${{ inputs.pack_id }}
+        run: |
+          set -euo pipefail
+          python3 -S scripts/verify_ci_issue_packs.py \
+            --candidate-sha "$EXPECTED_SHA" \
+            --actual-sha "$ACTUAL_SHA" \
+            --target-base-sha "$TARGET_BASE_SHA" \
+            --pack-id "$PACK_ID" \
+            --run-self-test
