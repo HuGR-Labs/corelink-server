@@ -81,6 +81,7 @@ impl ContentAddressableStorage for CasUnaryService {
         require_sha256(body.digest_function)?;
         require_batch_count(body.digests.len())?;
         require_identity_acceptable(&body.acceptable_compressors)?;
+        let dispatch_budget = batch_read_dispatch_budget(&body.digests);
         let admitted = self
             .ingress
             .authorize(&metadata, &body.instance_name, Access::Read)
@@ -88,8 +89,15 @@ impl ContentAddressableStorage for CasUnaryService {
 
         let mut responses = Vec::with_capacity(body.digests.len());
         let mut returned_bytes = 0_i64;
-        for digest in body.digests {
-            let result = batch_read_entry(&admitted, &digest).await;
+        for (digest, within_declared_budget) in body.digests.into_iter().zip(dispatch_budget) {
+            let result = if within_declared_budget {
+                batch_read_entry(&admitted, &digest).await
+            } else {
+                Err(Status::new(
+                    Code::FailedPrecondition,
+                    "REAPI batch response requires ByteStream read",
+                ))
+            };
             let (data, status) = match result {
                 Ok(data) => {
                     let data_len = i64::try_from(data.len()).map_err(|_| {
@@ -181,6 +189,29 @@ fn require_identity_acceptable(compressors: &[i32]) -> Result<(), Status> {
             "REAPI batch reads require identity compression",
         ))
     }
+}
+
+/// Reserve the inline response budget from valid declared digest sizes before
+/// any decorated read is dispatched. Invalid entries remain eligible for
+/// per-entry validation below, where they receive their protocol status.
+fn batch_read_dispatch_budget(digests: &[Digest]) -> Vec<bool> {
+    let mut declared_bytes = 0_i64;
+    digests
+        .iter()
+        .map(|digest| {
+            if validate_cas_digest(digest).is_err() {
+                return true;
+            }
+            let Some(next) = declared_bytes.checked_add(digest.size_bytes) else {
+                return false;
+            };
+            if next > MAX_BATCH_TOTAL_SIZE_BYTES {
+                return false;
+            }
+            declared_bytes = next;
+            true
+        })
+        .collect()
 }
 
 fn require_update_batch_bytes(

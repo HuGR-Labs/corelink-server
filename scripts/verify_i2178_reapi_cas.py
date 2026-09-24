@@ -30,6 +30,8 @@ def violations(service: str, ingress: str) -> list[str]:
         "MAX_BATCH_TOTAL_SIZE_BYTES",
         "MAX_CAS_BLOB_SIZE_BYTES",
         "MAX_FIND_MISSING_BATCH_SIZE",
+        "batch_read_dispatch_budget",
+        "let dispatch_budget = batch_read_dispatch_budget(&body.digests);",
         "duplicate REAPI digest in batch",
         "Code::NotFound, \"CAS object not found\"",
         "ContentAddressableStorageServer::new(self)",
@@ -67,6 +69,15 @@ def self_test() -> list[str]:
         (service.replace(".cas_write(", ".write("), ingress, "decorated write bypass"),
         (service.replace("Access::Write", "Access::Read", 1), ingress, "write authorization bypass"),
         (service.replace("digest_function::Value::Sha256", "digest_function::Value::Sha512", 1), ingress, "digest policy drift"),
+        (
+            service.replace(
+                "let dispatch_budget = batch_read_dispatch_budget(&body.digests);",
+                "let dispatch_budget = vec![true; body.digests.len()];",
+                1,
+            ),
+            ingress,
+            "batch-read dispatch budget bypass",
+        ),
         (service.replace("Code::NotFound, \"CAS object not found\"", "Code::PermissionDenied, \"CAS object not found\""), ingress, "cross-tenant disclosure"),
         (service + "\nRouter::new();", ingress, "public mount"),
     )

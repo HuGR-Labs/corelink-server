@@ -438,15 +438,6 @@ impl CasWriteHandler for CasWriteSpy {
     ) -> Result<CasWriteResponse, corelink_handler_cas::CasHandlerError> {
         let hash = request.claimed_hash.clone();
         self.calls.lock().unwrap().push(request);
-        let request = self.calls.lock().unwrap();
-        let request = request.last().expect("write spy recorded its request");
-        let actual = sha256_digest(&request.bytes);
-        if actual != request.claimed_hash {
-            return Err(corelink_handler_cas::CasHandlerError::HashMismatch {
-                claimed: request.claimed_hash.clone(),
-                actual,
-            });
-        }
         Ok(CasWriteResponse::new(hash, true))
     }
 }
@@ -643,15 +634,14 @@ async fn cas_unary_denials_and_invalid_entries_never_reach_storage() {
         .responses;
     assert_eq!(
         statuses[0].status.as_ref().unwrap().code,
-        Code::DataLoss as i32
+        Code::InvalidArgument as i32
     );
     assert!(statuses[1..]
         .iter()
         .all(|entry| entry.status.as_ref().unwrap().code == Code::InvalidArgument as i32));
-    // A body/hash mismatch reaches the decorated writer, which audits it and
-    // rejects before persistence. Duplicate/compressor failures are rejected
-    // by the REAPI boundary and never invoke that writer.
-    assert_eq!(writes.lock().unwrap().len(), 1);
+    // The ingress rejects a body/hash mismatch before handler dispatch.
+    // Duplicate/compressor failures are likewise rejected at the REAPI boundary.
+    assert!(writes.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -705,7 +695,7 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
 
     let bytes = vec![7; (corelink_reapi::MAX_BATCH_TOTAL_SIZE_BYTES / 2 + 1) as usize];
     let digest = cas_digest(&bytes);
-    let (ingress, _reads, _writes) = cas_ingress_for_test(
+    let (ingress, reads, _writes) = cas_ingress_for_test(
         Ok(("tenant-a".into(), true)),
         Ok(()),
         Ok(CasReadResponse::new(bytes, digest.hash.clone())),
@@ -729,6 +719,11 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
     assert_eq!(
         aggregate.responses[1].status.as_ref().unwrap().code,
         Code::FailedPrecondition as i32
+    );
+    assert_eq!(
+        reads.lock().unwrap().len(),
+        1,
+        "the declared aggregate limit skips the second backend dispatch"
     );
 
     let (ingress, _reads, _writes) = cas_ingress_for_test(
