@@ -1,4 +1,4 @@
-name: issue-1650-real-integration-contract
+name: issue-1650-credentialless-real-integration-pack
 
 # This job checks the real harness selector as data. It has no protected
 # environment, secrets, provider access, or workflow dispatch permission.
@@ -10,6 +10,8 @@ on:
       - "scripts/run-real-ignored-harnesses.sh"
       - "scripts/real-ignored-harness-manifest.json"
       - "scripts/verify_real_ignored_harnesses.py"
+      - "scripts/verify_i1650_real_integration_readiness.py"
+      - "docs/handoff/2026-09-22-i1650-real-integration-readiness.json"
       - "crates/corelink-pat/tests/emit_e2e_seed.rs"
       - "crates/corelink-container/src/routes/tier_select_store.rs"
       - "crates/corelink-container/src/storage/d1_http.rs"
@@ -24,7 +26,7 @@ permissions:
 
 jobs:
   contract:
-    name: validate credentialless real integration contract
+    name: validate credentialless real integration pack
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -33,5 +35,17 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
-      - name: Audit exact harness inventory and mutation guards
-        run: python3 scripts/verify_real_ignored_harnesses.py
+      - name: Audit exact harness inventory and readiness packet
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ""
+          CF_API_TOKEN: ""
+          D1_DATABASE_ID: ""
+          R2_S3_ENDPOINT: ""
+          R2_S3_ACCESS_KEY_ID: ""
+          R2_S3_SECRET_ACCESS_KEY: ""
+          HUGR_WALLET_TOKEN: ""
+          NEON_TEST_DSN: ""
+        run: |
+          set -euo pipefail
+          python3 -S scripts/verify_real_ignored_harnesses.py
+          python3 -S scripts/verify_i1650_real_integration_readiness.py

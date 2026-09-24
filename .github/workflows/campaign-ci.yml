@@ -627,11 +627,21 @@ jobs:
       - name: i1650 credential-free ignored-harness manifest contract
         if: ${{ inputs.suite == 'i1650-contract' }}
         shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ""
+          CF_API_TOKEN: ""
+          D1_DATABASE_ID: ""
+          R2_S3_ENDPOINT: ""
+          R2_S3_ACCESS_KEY_ID: ""
+          R2_S3_SECRET_ACCESS_KEY: ""
+          HUGR_WALLET_TOKEN: ""
+          NEON_TEST_DSN: ""
         run: |
           set -euo pipefail
-          # This verifier is static and mutation based.  It must never receive
-          # the protected real-integration environment or invoke a provider.
+          # This pack is static and mutation based. It must never receive the
+          # protected real-integration environment or invoke a provider.
           python3 -S scripts/verify_real_ignored_harnesses.py 2>&1 | tee artifacts/campaign-ci/i1650-contract.log
+          python3 -S scripts/verify_i1650_real_integration_readiness.py 2>&1 | tee -a artifacts/campaign-ci/i1650-contract.log
 
       - name: i1649 read-only Stripe contract tests
         if: ${{ inputs.suite == 'i1649-contract' }}
