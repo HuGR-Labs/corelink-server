@@ -296,6 +296,54 @@ V0006_RECONCILIATION = {
     },
 }
 
+# v0007 advances the ledger at the exact delivered main parent after #2412
+# landed B-083 and #2429 recorded B-250. The v0006-to-main gap is authorized
+# only by replaying both immutable source commits and their complete byte deltas.
+V0007_RECONCILIATION = {
+    "sequence": 7,
+    "previous_sequence": 6,
+    "base_commit": "aad9435a7f4092d1d1bae5de4f32aa38f4379a49",
+    "history_start_commit": "c19b4bdc1dc7ecd8acca4228e03060f4b9830cce",
+    "changed_ids": (),
+    "prior_source_sha256": "e9755578a4d669f29495a5df04866c99b0de7d1e395b3698960144f5582f149f",
+    "source_sha256": "af7a3201a45bca97322dcfb23f970949a732594128912855512f07060395f894",
+    "prior_ledger_sha256": "e2b6ce0de612a163da516224c5767f2b41a9ba17f181cbea0f43daa5317dac90",
+    "history": (
+        {
+            "commit": "ac6f3ceedf4678a290d3dccb1d35abd57063a4c7",
+            "parent": "695cae4baea608cebaa6ef5f443586bb8b320712",
+            "prior_source_sha256": "e9755578a4d669f29495a5df04866c99b0de7d1e395b3698960144f5582f149f",
+            "source_sha256": "8527ad8939bc979ca1b0751c590391d174deb6238a50cd0d134046b1e653fd16",
+            "changed_ids": ("B-083",),
+            "sections": {
+                "B-083": {
+                    "prior": "1980611e0e00c299769e6514051de12f4543b21eb7bcd39e80e4d224e9ed870d",
+                    "current": "4d772015fcea2a70a72fa74378b11d3b2105984bf8f6168a921d6eeb851fcd76",
+                },
+            },
+        },
+        {
+            "commit": "8de1ee29b90b12e94064357e8416af021945b4eb",
+            "parent": "232124516033056599dac67c21d4330f3e801ad1",
+            "prior_source_sha256": "8527ad8939bc979ca1b0751c590391d174deb6238a50cd0d134046b1e653fd16",
+            "source_sha256": "af7a3201a45bca97322dcfb23f970949a732594128912855512f07060395f894",
+            "changed_ids": ("B-250",),
+            "sections": {
+                "B-250": {
+                    "prior": "9417564e5d27005f56bc368fe00383d164f7c6848c51268db1d134a3b64ea5d8",
+                    "current": "59fb4407ba16b1fc14801f116ecbfe6f1818edab0728d34146af324893d826c0",
+                },
+            },
+        },
+    ),
+    "prior_catalog_sha256": {
+        "docs/campaigns/remediation/work-packages/B001-B045.md": "081c9885db8d79c18f2f31edb7864bb1ca1a18d53f408720f3f9e4f00524f9c6",
+        "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+        "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+        "docs/campaigns/remediation/work-packages/B131-B167.md": "13805dab851c5023d7d49bc707ce0c30713a11aeca8b1e179c8710ad8d91671f",
+    },
+}
+
 
 def install(api):
     REPO_ROOT = api.REPO_ROOT
@@ -462,6 +510,16 @@ def install(api):
         for old, new in (
             ("base-ref: 2af5c9b64cccba9cf618145224186ec2717cca50", f"base-ref: {base_sha}"),
             ("base-sha: 2af5c9b64cccba9cf618145224186ec2717cca50", f"base-sha: {base_sha}"),
+        ):
+            text = _replace_once(text, old, new)
+        return text.encode("utf-8")
+
+    def _v0007_ledger(prior_raw: bytes, base_sha: str) -> bytes:
+        """Derive only the immutable ledger-base advance for #2412."""
+        text = prior_raw.decode("utf-8")
+        for old, new in (
+            ("base-ref: 24e8d41c70e581b0759f3a7347ea417fd4bc7185", f"base-ref: {base_sha}"),
+            ("base-sha: 24e8d41c70e581b0759f3a7347ea417fd4bc7185", f"base-sha: {base_sha}"),
         ):
             text = _replace_once(text, old, new)
         return text.encode("utf-8")
@@ -672,6 +730,97 @@ def install(api):
                 or _sha256(new_sections.get(item_id, b"")) != hashes["current"]
             ):
                 return False
+        return True
+
+    def _v0007_reconciliation_authorized(
+        previous: dict[str, object], prior: dict[str, bytes], current: dict[str, bytes],
+        receipt: dict[str, object], sequence: int,
+    ) -> bool:
+        """Replay #2412 B-083 and #2429 B-250 source deltas, then advance the ledger."""
+        pinned = V0007_RECONCILIATION
+        if (
+            sequence != pinned["sequence"]
+            or receipt.get("base_commit") != pinned["base_commit"]
+            or previous.get("sequence") != pinned["previous_sequence"]
+            or previous.get("source_sha256") != pinned["prior_source_sha256"]
+            or receipt.get("changed_ids") != list(pinned["changed_ids"])
+            or _sha256(prior["BACKLOG.md"]) != pinned["source_sha256"]
+            or _sha256(current["BACKLOG.md"]) != pinned["source_sha256"]
+            or _sha256(prior[LEDGER_RELATIVE.as_posix()]) != pinned["prior_ledger_sha256"]
+            or receipt.get("prior_source_sha256") != pinned["source_sha256"]
+            or receipt.get("source_sha256") != pinned["source_sha256"]
+            or receipt.get("prior_ledger_sha256") != pinned["prior_ledger_sha256"]
+            or current[LEDGER_RELATIVE.as_posix()] != _v0007_ledger(
+                prior[LEDGER_RELATIVE.as_posix()], pinned["base_commit"],
+            )
+        ):
+            return False
+        start_source = _git_bytes(
+            REPO_ROOT, pinned["history_start_commit"], Path("BACKLOG.md"),
+        )
+        source_history = subprocess.run(
+            [
+                "git", "log", "--first-parent", "--full-history", "--reverse", "--format=%H",
+                f"{pinned['history_start_commit']}..{pinned['base_commit']}",
+                "--", "BACKLOG.md",
+            ],
+            cwd=REPO_ROOT, check=False, capture_output=True, text=True,
+        )
+        expected_commits = [row["commit"] for row in pinned["history"]]
+        if (
+            _sha256(start_source) != previous.get("source_sha256")
+            or source_history.returncode
+            or source_history.stdout.splitlines() != expected_commits
+        ):
+            return False
+        for row in pinned["history"]:
+            commit_parent = subprocess.run(
+                ["git", "show", "-s", "--format=%P", row["commit"]],
+                cwd=REPO_ROOT, check=False, capture_output=True, text=True,
+            )
+            ancestor = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", row["commit"], pinned["base_commit"]],
+                cwd=REPO_ROOT, check=False,
+            )
+            prior_raw = _git_bytes(REPO_ROOT, row["parent"], Path("BACKLOG.md"))
+            current_raw = _git_bytes(REPO_ROOT, row["commit"], Path("BACKLOG.md"))
+            _, old_order, old_sections = _backlog_sections(prior_raw)
+            _, new_order, new_sections = _backlog_sections(current_raw)
+            changed_ids = tuple(sorted(
+                item_id for item_id in set(old_sections) | set(new_sections)
+                if old_sections.get(item_id) != new_sections.get(item_id)
+            ))
+            if (
+                commit_parent.returncode
+                or commit_parent.stdout.strip() != row["parent"]
+                or ancestor.returncode
+                or _sha256(prior_raw) != row["prior_source_sha256"]
+                or _sha256(current_raw) != row["source_sha256"]
+                or old_order != new_order
+                or changed_ids != row["changed_ids"]
+                or tuple(sorted(row["sections"])) != row["changed_ids"]
+                or any(
+                    _sha256(old_sections.get(item_id, b"")) != hashes["prior"]
+                    or _sha256(new_sections.get(item_id, b"")) != hashes["current"]
+                    for item_id, hashes in row["sections"].items()
+                )
+            ):
+                return False
+        catalogs = {
+            path.as_posix(): _sha256(prior[path.as_posix()])
+            for path in _catalog_relatives()
+        }
+        if (
+            catalogs != pinned["prior_catalog_sha256"]
+            or any(current[path.as_posix()] != prior[path.as_posix()] for path in _catalog_relatives())
+            or receipt.get("prior_catalog_sha256") != catalogs
+            or receipt.get("catalog_sha256") != catalogs
+        ):
+            return False
+        _, old_order, old_sections = _backlog_sections(prior["BACKLOG.md"])
+        _, new_order, new_sections = _backlog_sections(current["BACKLOG.md"])
+        if old_order != new_order or old_sections != new_sections:
+            return False
         return True
 
     def _catalog_relatives() -> tuple[Path, ...]:
@@ -982,6 +1131,9 @@ def install(api):
         v0006_reconciliation = previous is not None and _v0006_reconciliation_authorized(
             previous, prior, current, receipt, sequence,
         )
+        v0007_reconciliation = previous is not None and _v0007_reconciliation_authorized(
+            previous, prior, current, receipt, sequence,
+        )
         for item_id in changed:
             if item_id not in old_sections:
                 continue
@@ -992,6 +1144,7 @@ def install(api):
                     and item_id in V0004_RECONCILIATION["changed_ids"]
                 )
                 or (v0006_reconciliation and item_id in V0006_RECONCILIATION["changed_ids"])
+                or (v0007_reconciliation and item_id in V0007_RECONCILIATION["changed_ids"])
             ) and (
                 _normative_section(old_sections[item_id], item_id)
                 != _normative_section(new_sections[item_id], item_id)
@@ -1028,6 +1181,7 @@ def install(api):
             allow_sprint3_rewrite=sprint3_rewrite,
             allow_b154_reconciliation=v0004_reconciliation,
             allow_v0006_reconciliation=v0006_reconciliation,
+            allow_v0007_reconciliation=v0007_reconciliation,
             successor_mode=True,
         )
         if transition_errors:
@@ -1103,11 +1257,15 @@ def install(api):
             v0006_reconciliation = _v0006_reconciliation_authorized(
                 previous, prior, current, receipt, index + 3,
             )
+            v0007_reconciliation = _v0007_reconciliation_authorized(
+                previous, prior, current, receipt, index + 3,
+            )
             if (
                 _sha256(prior["BACKLOG.md"]) != previous["source_sha256"]
                 and not v0004_reconciliation
                 and not v0005_reconciliation
                 and not v0006_reconciliation
+                and not v0007_reconciliation
             ):
                 raise LedgerError(f"{path}: prior BACKLOG differs from prior snapshot")
             if index + 1 < len(paths):
@@ -1128,6 +1286,9 @@ def install(api):
                     receipt, next_prior, next_current, next_receipt, index + 4,
                 )
                 bridge = bridge or _v0006_reconciliation_authorized(
+                    receipt, next_prior, next_current, next_receipt, index + 4,
+                )
+                bridge = bridge or _v0007_reconciliation_authorized(
                     receipt, next_prior, next_current, next_receipt, index + 4,
                 )
                 if current != next_prior and not bridge:
@@ -1151,6 +1312,12 @@ def install(api):
                     or pending_receipt is not None
                     and pending_current is not None
                     and _v0006_reconciliation_authorized(
+                        receipt, _state_bytes(root), pending_current,
+                        pending_receipt, index + 4,
+                    )
+                    or pending_receipt is not None
+                    and pending_current is not None
+                    and _v0007_reconciliation_authorized(
                         receipt, _state_bytes(root), pending_current,
                         pending_receipt, index + 4,
                     )
@@ -1286,4 +1453,5 @@ def install(api):
         validate_candidate_successor=validate_candidate_successor,
         successor_required=successor_required,
         _v0006_reconciliation_authorized=_v0006_reconciliation_authorized,
+        _v0007_reconciliation_authorized=_v0007_reconciliation_authorized,
     )
