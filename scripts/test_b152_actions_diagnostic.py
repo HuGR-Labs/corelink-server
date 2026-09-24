@@ -486,7 +486,7 @@ class B152DiagnosticTests(unittest.TestCase):
         workflow = (pathlib.Path(__file__).resolve().parent.parent / ".github/workflows/issue-1679-classification.yml").read_text(encoding="utf-8")
         self.assertIn("ref: ${{ github.event.pull_request.head.sha }}", workflow)
         self.assertIn("persist-credentials: false", workflow)
-        self.assertIn("actions/checkout@9c091bb21b7c1c1d1991bb908d89e4dddfe3e0", workflow)
+        self.assertIn("actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", workflow)
         self.assertIn("python3 scripts/test_b152_actions_diagnostic.py", workflow)
 
     def test_b152_monitor_is_bounded_read_only_and_persists_indeterminate_evidence(self):
