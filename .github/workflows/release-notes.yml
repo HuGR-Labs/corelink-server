@@ -60,10 +60,7 @@ concurrency:
 jobs:
   generate:
     name: Generate release notes draft
-    # Runner: `corelink` (zero-hosted). Pure stdlib python3
-    # (generate-release-notes.py) + `gh` (pr create) + the softprops release
-    # action (node) — all provided by the box image (gh 2.97.0 at increment 3).
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Mint repository-scoped bot token
@@ -83,6 +80,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+          persist-credentials: false
           # GITHUB_TOKEN branch pushes suppress push workflows, while the PR
           # opened/synchronize/reopened event can yield approval-required
           # runs. Once provisioned, this token supports unattended CI; only
@@ -198,6 +196,10 @@ jobs:
 
           Signed-off-by: corelink-release-bot <release-bot@humangr.com>
           "
+          # Checkout intentionally leaves no credentials in local git config.
+          # Use the existing short-lived, repository-scoped App token only for
+          # the authorized branch push.
+          gh auth setup-git
           git push -u origin "$BRANCH"
 
       - name: Open editorial PR

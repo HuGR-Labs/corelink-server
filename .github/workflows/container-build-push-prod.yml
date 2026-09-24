@@ -42,7 +42,7 @@ permissions:
 jobs:
   build-push:
     name: build + push prod container (fat-LTO SOTA, daemonless on corelink)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
@@ -60,6 +60,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0 # full history so `git rev-parse --short HEAD` resolves the image tag
+          persist-credentials: false
 
       - name: Preflight — BuildKit + runc must be baked in the runner image
         run: |

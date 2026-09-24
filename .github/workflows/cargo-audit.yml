@@ -86,27 +86,16 @@ jobs:
   # -----------------------------------------------------------------------
   cargo-audit-pr:
     name: cargo-audit PR gate
-    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 2,
-    # 2026-08-03). This lane never compiles the workspace: cargo-audit arrives as
-    # a SHA-pinned prebuilt binary and reads Cargo.lock against a SHA-pinned
-    # advisory DB, so it holds a box for about a minute. Everything it needs is on
-    # the image (curl, tar, git 2.43, jq) — measured in `runner-probe.yml`.
-    #
-    # Only the PR lane moves. `cargo-audit-daily` below stays on ubuntu-latest
-    # because it classifies findings with an inline `python3` heredoc, and the
-    # corelink image has NO python3 (probe run 30823040465). Moving it would turn
-    # its alerting step into a FileNotFoundError, which is a coverage loss.
-    #
-    # ⚠️ Ephemeral-runner reality: a refused/dropped spawn leaves the job QUEUED,
-    # and `timeout-minutes` does not bound queued time — it starts once the job is
-    # RUNNING. That is a stall, not a false pass: `scripts/pre-merge-gate-check.sh`
-    # scores a pending check as ⛔ DO NOT MERGE, so a stranded box blocks the PR.
-    runs-on: corelink
+    # This lane reads Cargo.lock against the SHA-pinned advisory DB and uses a
+    # SHA-pinned prebuilt cargo-audit binary; it does not build the workspace.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deny_warnings == 'true')
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       # `dtolnay/rust-toolchain` removed — see rustfmt.yml for the full argument.
       # In short: it asked for `stable`, `rust-toolchain.toml` pins 1.91.1, and
@@ -152,18 +141,20 @@ jobs:
   # -----------------------------------------------------------------------
   cargo-audit-daily:
     name: cargo-audit daily cron
-    # `corelink` (zero-hosted). The old reason to stay hosted — the "Classify
-    # findings + emit SEV alerts" python3 heredoc, absent from the image — no
-    # longer holds: python3 is baked into the corelink runner image.
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deny_warnings == 'false')
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      - name: Use host toolchain (baked, workspace-pinned)
-        # NOT dtolnay — self-hosted provisioning is guard-forbidden.
+      - name: Set up the workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.91.1
+      - name: Use the workspace-pinned toolchain
         env:
           HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh
