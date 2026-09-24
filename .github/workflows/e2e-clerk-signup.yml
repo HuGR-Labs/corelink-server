@@ -50,8 +50,8 @@ jobs:
   # owner sets it. (Mirrors the needs-output gate in pentest-findings-sync.yml.)
   gate:
     name: Gate — CLERK_SECRET_KEY present?
-    # zero-hosted (WP-CI): node/pnpm/python3/curl/jq — todos baked
-    runs-on: corelink
+    # GitHub-hosted Ubuntu 24.04 provides the required base utilities.
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
       run: ${{ steps.check.outputs.run }}
@@ -75,8 +75,8 @@ jobs:
     name: Clerk signup E2E (prod)
     needs: gate
     if: needs.gate.outputs.run == 'true'
-    # zero-hosted (WP-CI): node/pnpm/python3/curl/jq — todos baked
-    runs-on: corelink
+    # GitHub-hosted Ubuntu 24.04 provides the required base utilities.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       # Mask secrets at the env layer so they never appear in logs
@@ -106,7 +106,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Verify required tools present
-        # jq is pre-installed on ubuntu-latest; assert so we fail fast if the
+        # jq is pre-installed on ubuntu-24.04; assert so we fail fast if the
         # image ever drops it rather than failing mid-script with a confusing error.
         run: |
           set -euo pipefail
