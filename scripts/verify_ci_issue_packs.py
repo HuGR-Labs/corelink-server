@@ -44,6 +44,11 @@ REQUIRED_PACK_CHECKS = {
     "issue-1948-mutants-receipt": {"ci-pack-contract", "python-mutants-receipt"},
 }
 REQUIRED_PACK_JOBS = {pack_id: {"issue-pack"} for pack_id in REQUIRED_PACK_CHECKS}
+TARGET_BASE_RULE = (
+    "required workflow_dispatch input target_base_sha; must equal merge-base(candidate_sha, "
+    "trusted_main_sha) and differ from candidate_sha; bootstrap when candidate_sha equals "
+    "trusted_main_sha uses candidate first parent"
+)
 
 
 def validate_workflow_contract(workflow_text: str) -> list[str]:
@@ -65,6 +70,11 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py",
         "python3 scripts/verify_i1863_mutants_hosted.py",
         "--candidate-root candidate",
+        "TRUSTED_MAIN_SHA: ${{ github.sha }}",
+        '--trusted-main-sha "$TRUSTED_MAIN_SHA"',
+        'if [[ "$PACK_ID" == issue-2440-ci-scoping && "$ACTUAL_SHA" == "$TRUSTED_MAIN_SHA" ]]; then',
+        'EXPECTED_BASE="$(git -C candidate rev-parse HEAD^)"',
+        '[[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]',
     )
     errors = [f"central workflow is missing required contract: {item}" for item in required if item not in workflow_text]
     if workflow_text.count("\n  workflow_dispatch:\n") != 1:
@@ -76,6 +86,23 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
 
 def valid_sha_pair(expected: str, actual: str) -> bool:
     return bool(SHA_RE.fullmatch(expected) and SHA_RE.fullmatch(actual) and expected == actual)
+
+
+def target_base_matches(
+    target_base: str,
+    candidate: str,
+    trusted_main: str,
+    merge_base: str,
+    pack_id: str,
+    first_parent: str | None = None,
+) -> bool:
+    if not all(SHA_RE.fullmatch(value) for value in (target_base, candidate, trusted_main, merge_base)):
+        return False
+    if target_base == candidate:
+        return False
+    if pack_id == "issue-2440-ci-scoping" and candidate == trusted_main:
+        return bool(first_parent and SHA_RE.fullmatch(first_parent) and target_base == first_parent)
+    return target_base == merge_base
 
 
 def select_pack(catalog: dict, pack_id: str) -> list[dict]:
@@ -128,7 +155,7 @@ def validate(catalog: object) -> list[str]:
         if pack_id in REQUIRED_PACK_CHECKS and set(pack["focused_checks"]) != REQUIRED_PACK_CHECKS[pack_id]:
             errors.append(f"{prefix}.focused_checks weakens the immutable focused-check baseline")
         exact = pack["exact_sha"]
-        if not isinstance(exact, dict) or exact.get("source") != "required workflow_dispatch input candidate_sha" or exact.get("binding") != "must equal HEAD of the isolated candidate checkout, controlled by the protected-main workflow" or exact.get("target_base_source") != "required workflow_dispatch input target_base_sha" or not exact.get("target_base_sha"):
+        if not isinstance(exact, dict) or exact.get("source") != "required workflow_dispatch input candidate_sha" or exact.get("binding") != "must equal HEAD of the isolated candidate checkout, controlled by the protected-main workflow" or exact.get("target_base_source") != "required workflow_dispatch input target_base_sha" or exact.get("target_base_sha") != TARGET_BASE_RULE:
             errors.append(f"{prefix}.exact_sha must bind required dispatch inputs to the checked-out SHA")
         budget = pack["budget"]
         if not isinstance(budget, dict):
@@ -185,8 +212,22 @@ def self_test(catalog: dict) -> list[str]:
     wrong_sha["packs"][0]["exact_sha"]["binding"] = "best effort branch name"
     if not validate(wrong_sha):
         failures.append("weak SHA binding was accepted")
+    wrong_base_rule = json.loads(json.dumps(catalog))
+    wrong_base_rule["packs"][0]["exact_sha"]["target_base_sha"] = "any ancestor is acceptable"
+    if not validate(wrong_base_rule):
+        failures.append("weakened target-base rule was accepted")
     if valid_sha_pair("a" * 40, "b" * 40) or valid_sha_pair("not-a-sha", "not-a-sha"):
         failures.append("malformed or mismatched candidate SHA was accepted")
+    if not target_base_matches("a" * 40, "b" * 40, "c" * 40, "a" * 40, "issue-2437-worker-three-arm"):
+        failures.append("the actual merge-base was rejected")
+    if target_base_matches("b" * 40, "b" * 40, "c" * 40, "b" * 40, "issue-2437-worker-three-arm"):
+        failures.append("candidate-as-base was accepted")
+    if target_base_matches("c" * 40, "d" * 40, "e" * 40, "a" * 40, "issue-2437-worker-three-arm"):
+        failures.append("later-ancestor instead of merge-base was accepted")
+    if not target_base_matches("a" * 40, "b" * 40, "b" * 40, "b" * 40, "issue-2440-ci-scoping", "a" * 40):
+        failures.append("bootstrap first-parent base was rejected")
+    if target_base_matches("b" * 40, "b" * 40, "b" * 40, "b" * 40, "issue-2440-ci-scoping", "a" * 40):
+        failures.append("bootstrap candidate-as-base was accepted")
     canonical_workflow = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8")
     if validate_workflow_contract(canonical_workflow):
         failures.append("canonical workflow failed its static contract")
@@ -208,15 +249,23 @@ def main() -> int:
     parser.add_argument("--candidate-sha", required=True)
     parser.add_argument("--actual-sha", required=True)
     parser.add_argument("--target-base-sha", required=True)
+    parser.add_argument("--trusted-main-sha", required=True)
     parser.add_argument("--pack-id", required=True)
     parser.add_argument("--candidate-root", default=".")
     parser.add_argument("--run-self-test", action="store_true")
     args = parser.parse_args()
-    if not valid_sha_pair(args.candidate_sha, args.actual_sha) or not SHA_RE.fullmatch(args.target_base_sha):
-        print("expected candidate and base SHA must be full 40-character hex IDs", file=sys.stderr)
+    if (
+        not valid_sha_pair(args.candidate_sha, args.actual_sha)
+        or not SHA_RE.fullmatch(args.target_base_sha)
+        or not SHA_RE.fullmatch(args.trusted_main_sha)
+    ):
+        print("expected candidate, base, and trusted-main SHA must be full 40-character hex IDs", file=sys.stderr)
         return 1
     if args.candidate_sha != args.actual_sha:
         print("candidate SHA does not match the exact dispatched revision", file=sys.stderr)
+        return 1
+    if args.target_base_sha == args.candidate_sha:
+        print("target base SHA must differ from the candidate SHA", file=sys.stderr)
         return 1
     try:
         catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
@@ -255,12 +304,37 @@ def main() -> int:
         print("changed workflow files are not covered by actionlint:", *(sorted(workflow_changes - linted_workflows)), sep="\n- ", file=sys.stderr)
         return 1
     merge_base = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", args.target_base_sha, args.candidate_sha],
+        ["git", "merge-base", args.trusted_main_sha, args.candidate_sha],
         cwd=Path(args.candidate_root).resolve(),
         check=False,
+        capture_output=True,
+        text=True,
     )
     if merge_base.returncode != 0:
-        print("target base SHA is not an ancestor of the candidate SHA", file=sys.stderr)
+        print("candidate and trusted main have no merge-base", file=sys.stderr)
+        return 1
+    first_parent = None
+    if args.pack_id == "issue-2440-ci-scoping" and args.candidate_sha == args.trusted_main_sha:
+        first_parent_result = subprocess.run(
+            ["git", "rev-parse", f"{args.candidate_sha}^"],
+            cwd=Path(args.candidate_root).resolve(),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if first_parent_result.returncode != 0:
+            print("bootstrap candidate has no first parent", file=sys.stderr)
+            return 1
+        first_parent = first_parent_result.stdout.strip()
+    if not target_base_matches(
+        args.target_base_sha,
+        args.candidate_sha,
+        args.trusted_main_sha,
+        merge_base.stdout.strip(),
+        args.pack_id,
+        first_parent,
+    ):
+        print("target base SHA does not bind to the actual candidate/main boundary", file=sys.stderr)
         return 1
     if args.run_self_test:
         failures = self_test(catalog)
