@@ -41,7 +41,7 @@ was performed.
 - Initial pull request: [#2403](https://github.com/HuGR-dev/corelink-server/pull/2403).
 - Initial reviewed head: `2f12de257765678b0712b45c768e8f1893af1bad` (superseded by same-PR rework for a concrete cold-review finding).
 - Initial hosted runs: B-098 `35953475267`, Python `35953475360`, Docs Reality `35953475279`, rustfmt `35953475317`, DCO `35953475288`, CodeQL `35953475292`; results are tracked on the PR for the current head.
-- Cold review: Luna returned `FIX-FIRST` with one consolidated finding. The B-083 verifier now parses the active TOML feature declaration and has a comment-only negative control. This is same-PR rework; final review is pending.
+- Review sequence: Luna returned `FIX-FIRST` with one consolidated finding. The same PR now parses the active TOML feature declaration and has a comment-only negative control. The bounded final review approved head `0f1bd0762549235790de761710c0463ec0dae8d2`. A later documentation-only commit corrected the B-098 matrix after GitHub's PR file list confirmed there is no B-098 file delta; no implementation changed after the reviewed head.
 - No local verifiers or tests were run.
 - Hosted B-098 runs `35953475267` and `35953726628` produced receipts reporting 488/499; run `35954256961` passed at the initial final head with the correct baseline records unchanged. The source patch's 489/500 values were wrong and are not part of the PR diff. Hosted Python runs `35953475360`, `35953726605`, and `35954153028` stopped before pytest on the existing WP-150 population drift (223 expected vs 224 found); no claim is made that the new regression test passed until a hosted run reaches it.
 - The four linked issues remain open with `EXTERNAL_ACTION_REQUIRED`; these repository
