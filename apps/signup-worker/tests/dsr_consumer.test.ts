@@ -13,6 +13,9 @@ import {
   type DsrDlqBody,
   type DsrDlqReceipt,
   type DsrDlqReceiptStore,
+  D1RedriveStore,
+  type RedriveStore,
+  handleDsrDlqRedrive,
 } from "../src/webhooks/dsr_consumer.js";
 import type { DsrQueuedV1 } from "../src/webhooks/clerk.js";
 
@@ -155,7 +158,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     return { body, attempts, ack: vi.fn<() => void>(), retry: vi.fn<() => void>() };
   }
 
-  class MemoryReceipts implements DsrDlqReceiptStore {
+  class MemoryReceipts implements DsrDlqReceiptStore, RedriveStore {
     readonly rows = new Map<string, DsrDlqReceipt>();
     readonly writes: Array<{ eventId: string; status: string }> = [];
     failWrites = false;
@@ -188,6 +191,14 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       this.rows.set(eventId, { ...prior, status: "requeue_claimed", requeue_claimed: 1 });
       return true;
     }
+
+    async capture(): Promise<boolean> { return true; }
+    async claim(): Promise<"claimed" | "expired" | "denied"> { return "denied"; }
+    async envelope(): Promise<null> { return null; }
+    async fence(): Promise<boolean> { return false; }
+    async submitted(): Promise<void> {}
+    async ambiguous(): Promise<void> {}
+    async cleanup(): Promise<void> {}
   }
 
   function pagedEnv(send: (message: unknown) => Promise<void>, receipts = new MemoryReceipts()) {
@@ -491,21 +502,21 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(m.ack).not.toHaveBeenCalled();
   });
 
-  for (const [name, makeReceipts, receiptBoundary] of [
-    ["is absent", () => undefined, "not_configured"],
+  for (const [name, makeReceipts, emitsAlert] of [
+    ["is absent", () => undefined, false],
     ["cannot write", () => {
       const receipts = new MemoryReceipts();
       receipts.failWrites = true;
       return receipts;
-    }, "storage_error"],
+    }, true],
     ["is malformed", () => ({
       find: async () => ({ status: "invalid" as DsrDlqReceipt["status"], paging_claimed: 0, requeue_claimed: 0 }),
       record: async () => undefined,
       claimPaging: async () => true,
       claimRequeue: async () => true,
-    } satisfies DsrDlqReceiptStore), "malformed"],
+    } satisfies DsrDlqReceiptStore), false],
   ] as const) {
-    it(`emits a privacy-safe terminal alert when the receipt boundary ${name}`, async () => {
+    it(`retries when the receipt boundary ${name}`, async () => {
       const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
       const m = fakeDlq(msg("receipt-terminal"), 3);
       const pagerFetch = vi.fn<typeof fetch>(async () => new Response("accepted", { status: 202 }));
@@ -518,20 +529,19 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
             PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch,
           },
         );
-        const alert = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
-        expect(alert).toMatchObject({
-          action: "receipt_boundary_exhausted", receipt_boundary: receiptBoundary,
-          exhausted: true, requeue_count: 0,
-        });
-        expect(String(alert.event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
-        expect(JSON.stringify(alert)).not.toContain("receipt-terminal");
+        if (emitsAlert) {
+          expect(error).toHaveBeenCalledOnce();
+          expect(String(error.mock.calls[0]?.[0])).not.toContain("receipt-terminal");
+        } else {
+          expect(error).not.toHaveBeenCalled();
+        }
       } finally {
         error.mockRestore();
       }
       expect(pagerFetch).not.toHaveBeenCalled();
       expect(send).not.toHaveBeenCalled();
-      expect(m.ack).toHaveBeenCalledOnce();
-      expect(m.retry).not.toHaveBeenCalled();
+      expect(m.ack).not.toHaveBeenCalled();
+      expect(m.retry).toHaveBeenCalledOnce();
     });
   }
 
@@ -620,5 +630,139 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     const alreadyCapped = fakeDlq({ ...msg("oversized-marker"), _dlq_requeue: 99 });
     await handleErasureDlqBatch({ messages: [alreadyCapped] }, pagedEnv(send));
     expect(alreadyCapped.ack).toHaveBeenCalledOnce();
+  });
+});
+
+describe("handleDsrDlqRedrive (receipt-bound authority)", () => {
+  const eventId = `dsr-erasure-dlq:${"a".repeat(64)}`;
+  const secret = "r".repeat(32);
+  const envelope = {
+    dsr_id: "00000000-0000-7000-8000-000000000001",
+    tenant_id: "00000000-0000-7000-8000-000000000002",
+    queued_at_ms: 1,
+    legal_hold: 1,
+    requeue_count: 0,
+  };
+
+  class Recovery implements RedriveStore {
+    state: "ready" | "claimed" | "ambiguous" | "submitted" | "expired" = "ready";
+    readonly audit: string[] = [];
+    cleanupCalls = 0;
+    allowFence = true;
+    async capture(): Promise<boolean> { return true; }
+    async claim(): Promise<"claimed" | "expired" | "denied"> {
+      if (this.state === "expired") return "expired";
+      if (this.state !== "ready") return "denied";
+      this.state = "claimed";
+      this.audit.push("claimed");
+      return "claimed";
+    }
+    async envelope() { return this.state === "claimed" ? envelope : null; }
+    async fence(): Promise<boolean> {
+      if (!this.allowFence || this.state !== "claimed") return false;
+      this.state = "ambiguous";
+      this.audit.push("ambiguous");
+      return true;
+    }
+    async submitted(): Promise<void> {
+      if (this.state !== "ambiguous") throw new Error("submit_without_fence");
+      this.state = "submitted";
+      this.audit.push("submitted");
+    }
+    async ambiguous(): Promise<void> { this.state = "ambiguous"; }
+    async cleanup(): Promise<void> { this.cleanupCalls += 1; }
+  }
+
+  function request(body: unknown = { event_id: eventId }, auth = secret): Request {
+    return new Request("https://signup/internal/dsr/dlq/redrive", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${auth}`,
+        "x-corelink-operator-ref": "op_2166",
+        "x-corelink-approval-ref": "apr_2166",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  function env(store: Recovery, send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined)) {
+    return {
+      DSR_DLQ_REDRIVE_AUTH_KEY: secret,
+      ERASURE_SALT_KEY: secret,
+      ENVIRONMENT: "prod",
+      DSR_DLQ_REDRIVE: store,
+      DSR_QUEUE: { send },
+    };
+  }
+
+  it("returns 503 for missing or malformed authority and 401 only for a wrong bearer", async () => {
+    const store = new Recovery();
+    expect((await handleDsrDlqRedrive(request(), { ...env(store), DSR_DLQ_REDRIVE_AUTH_KEY: undefined })).status).toBe(503);
+    expect((await handleDsrDlqRedrive(request(), { ...env(store), DSR_DLQ_REDRIVE_AUTH_KEY: "short" })).status).toBe(503);
+    expect((await handleDsrDlqRedrive(request(undefined, "shared-key"), env(store))).status).toBe(401);
+  });
+
+  it("accepts only opaque id, preserves stored tenant, fences before one send, and audits transitions", async () => {
+    const store = new Recovery();
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const workerEnv = env(store, send);
+    expect((await handleDsrDlqRedrive(request({ event_id: eventId, tenant_id: envelope.tenant_id }), workerEnv)).status).toBe(400);
+    expect((await handleDsrDlqRedrive(request(), workerEnv)).status).toBe(202);
+    expect((await handleDsrDlqRedrive(request(), workerEnv)).status).toBe(409);
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ tenant_id: envelope.tenant_id, subject_id: envelope.tenant_id, legal_hold: true, _dlq_requeue: 1 });
+    expect(store.audit).toEqual(["claimed", "ambiguous", "submitted"]);
+    expect(store.cleanupCalls).toBeGreaterThan(0);
+  });
+
+  it("keeps missing envelopes and unknown sends ambiguous without another send", async () => {
+    const missing = new Recovery();
+    vi.spyOn(missing, "envelope").mockResolvedValueOnce(null);
+    expect((await handleDsrDlqRedrive(request(), env(missing))).status).toBe(503);
+    expect(missing.state).toBe("ambiguous");
+    const failed = new Recovery();
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => { throw new Error("provider response"); });
+    expect((await handleDsrDlqRedrive(request(), env(failed, send))).status).toBe(502);
+    expect((await handleDsrDlqRedrive(request(), env(failed, send))).status).toBe(409);
+    expect(send).toHaveBeenCalledOnce();
+    expect(failed.state).toBe("ambiguous");
+  });
+
+  it("persists each D1 state transition to the frozen redacted audit table", async () => {
+    type Statement = {
+      sql: string;
+      values: unknown[];
+      bind(...values: unknown[]): Statement;
+      first(): Promise<null>;
+      run(): Promise<{ success: true; meta: { changes: 1 } }>;
+    };
+    class AuditDb {
+      readonly audit: string[] = [];
+      prepare(sql: string): Statement {
+        const statement: Statement = {
+          sql,
+          values: [],
+          bind(...values: unknown[]) { this.values = values; return this; },
+          async first() { return null; },
+          async run() { return { success: true, meta: { changes: 1 } }; },
+        };
+        return statement;
+      }
+      async batch(statements: Statement[]) {
+        for (const statement of statements) {
+          if (statement.sql.startsWith("INSERT OR IGNORE INTO dsr_dlq_redrive_audit")) {
+            const transition = statement.values[1];
+            if (typeof transition === "string") this.audit.push(transition);
+          }
+        }
+        return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      }
+    }
+    const db = new AuditDb();
+    const store = new D1RedriveStore(db as never);
+    await store.claim(eventId, "op_2166", "apr_2166", 1);
+    await store.fence(eventId, 2);
+    await store.submitted(eventId, 3);
+    expect(db.audit).toEqual(["claimed", "ambiguous", "submitted"]);
   });
 });
