@@ -828,7 +828,7 @@ jobs:
             .github/workflows/audit-finding-coverage.yml \
             .github/workflows/b156-published-claims.yml \
             .github/workflows/b249-dt-webhook-sunset.yml \
-            .github/workflows/canonical-consistency.yml
+            .github/workflows/canonical-consistency.yml \
             .github/workflows/campaign-ci.yml
 
       - name: Install checksum-pinned promtool for i2194
