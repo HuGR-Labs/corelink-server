@@ -9,6 +9,10 @@ on:
       - "BACKLOG.md"
       - "docs/internal/b113-six-lanes-owner-actions.md"
       - "scripts/verify_i1863_mutants_hosted.py"
+      - "scripts/verify_i1666_mutants_evidence.py"
+      - "scripts/verify_i2457_mutants_shards.py"
+      - "tests/test_i1863_mutants_hosted_receipt.py"
+      - "tests/test_i2457_mutants_shards.py"
   workflow_dispatch:
 
 permissions:
@@ -25,4 +29,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
       - name: Verify hosted mutants contract
-        run: python3 scripts/verify_i1863_mutants_hosted.py
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_i1863_mutants_hosted.py
+          python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py tests/test_i2457_mutants_shards.py

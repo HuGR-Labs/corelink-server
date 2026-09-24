@@ -11,6 +11,7 @@ on:
           - issue-2440-ci-scoping
           - issue-2437-worker-three-arm
           - issue-1948-mutants-receipt
+          - issue-2457-mutants-shards
           - issue-1677-b170-owner-actions
       candidate_sha:
         description: Exact candidate head SHA for this dispatch ref
@@ -77,12 +78,12 @@ jobs:
           fi
           [[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]
           case "$PACK_ID" in
-            issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt|issue-1677-b170-owner-actions) ;;
+            issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt|issue-2457-mutants-shards|issue-1677-b170-owner-actions) ;;
             *) echo "::error::unknown issue CI pack ID" >&2; exit 1 ;;
           esac
 
       - name: Install pinned actionlint
-        if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm'
+        if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards'
         shell: bash
         run: |
           set -euo pipefail
@@ -98,7 +99,7 @@ jobs:
 
       - name: Validate declared workflow surface
         id: actionlint
-        if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm'
+        if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards'
         env:
           PACK_ID: ${{ inputs.pack_id }}
         shell: bash
@@ -107,6 +108,7 @@ jobs:
           case "$PACK_ID" in
             issue-2440-ci-scoping) workflows=(.github/workflows/issue-ci-pack.yml) ;;
             issue-2437-worker-three-arm) workflows=(.github/workflows/corelink-worker.yml) ;;
+            issue-2457-mutants-shards) workflows=(.github/workflows/issue-1863-mutants-hosted.yml .github/workflows/issue-1863-mutants-contract.yml .github/workflows/issue-1666-mutants-evidence-contract.yml .github/workflows/issue-ci-pack.yml) ;;
             *) echo "::error::no workflow surface for this pack" >&2; exit 1 ;;
           esac
           "${RUNNER_TEMP}/actionlint/actionlint" -color "${workflows[@]}"
@@ -134,6 +136,21 @@ jobs:
           set -euo pipefail
           python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py
           python3 scripts/verify_i1863_mutants_hosted.py
+        working-directory: candidate
+
+      - name: Run issue 2457 deterministic shard contract tests
+        id: python-mutants-shards
+        if: inputs.pack_id == 'issue-2457-mutants-shards'
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_i1666_mutants_evidence.py
+          python3 scripts/verify_i1863_mutants_hosted.py
+          python3 -m unittest -q \
+            tests/test_verify_i1666_mutants_evidence.py \
+            tests/test_i1863_mutants_hosted_receipt.py \
+            tests/test_i2457_mutants_shards.py
         working-directory: candidate
 
       - name: Run issue 1677 B-170 owner-actions verifier
