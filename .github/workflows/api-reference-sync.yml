@@ -45,9 +45,9 @@ jobs:
   drift-check:
     name: drift check (PR-side)
     if: github.event_name == 'pull_request'
-    # Runner: GitHub-hosted ubuntu-latest (Bundle 5 migration from self-hosted).
+    # Runner: GitHub-hosted ubuntu-24.04 for a stable actionlint contract.
     # Pure python3 + PyYAML; read-only drift check.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
