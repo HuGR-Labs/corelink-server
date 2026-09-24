@@ -10,7 +10,6 @@ on:
   pull_request:
     paths:
       - '.github/workflows/b103-cargo-write-reproducer.yml'
-      - '.github/workflows/campaign-ci.yml'
       - 'scripts/reproduce_b103_cargo_write.py'
       - 'scripts/redact_b103_worker_tail.py'
       - 'scripts/test_b103_cargo_write_contract.py'

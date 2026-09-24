@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import re
 import sys
@@ -59,13 +60,21 @@ def safe_tail_record(event: Mapping[str, object]) -> dict[str, object] | None:
     method = request.get("method")
     outcome = event.get("outcome")
     timestamp = event.get("eventTimestamp")
-    if isinstance(timestamp, str) and not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", timestamp):
-        timestamp = None
+    if isinstance(timestamp, int) and not isinstance(timestamp, bool):
+        if not 0 < timestamp < 100_000_000_000_000:
+            raise ValueError("tail event has an invalid timestamp")
+    elif isinstance(timestamp, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", timestamp):
+        try:
+            dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("tail event has an invalid timestamp") from exc
+    else:
+        raise ValueError("tail event has no valid timestamp")
     return {
         "operation_id": operation,
         "method": method if isinstance(method, str) and method in METHODS else "other",
         "outcome": outcome if isinstance(outcome, str) and re.fullmatch(r"[A-Za-z_-]{1,32}", outcome) else "other",
-        "event_timestamp": timestamp if isinstance(timestamp, (int, str)) and not isinstance(timestamp, bool) else None,
+        "event_timestamp": timestamp,
     }
 
 

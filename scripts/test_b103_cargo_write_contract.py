@@ -24,7 +24,7 @@ DEPLOYMENT_SHA = "a" * 40
 TOKEN = "corelink_pat_fixture_DO_NOT_LEAK"
 CF_TOKEN = "cfat_fixture_DO_NOT_LEAK"
 ACCOUNT_ID = "0123456789abcdef0123456789abcdef"
-OPERATION_ID = "b103-0123456789abcdef0123456789abcdef"
+OPERATION_ID = "b103-12345678123456781234567812345678"
 
 
 def sha256_tenant(tenant: str) -> str:
@@ -224,6 +224,7 @@ class B103ArtifactPrivacyTests(unittest.TestCase):
         for input_text in (
             "",
             "not-json\n",
+            json.dumps({"eventTimestamp": "not-a-time", "event": {"request": {"method": "PUT", "headers": {"X-Corelink-Operation": OPERATION_ID}}}}),
             json.dumps({"event": {"request": {"method": "PUT", "headers": {"X-Corelink-Operation": OPERATION_ID}}}}),
         ):
             with self.subTest(input_text=input_text), tempfile.TemporaryDirectory() as temp:
