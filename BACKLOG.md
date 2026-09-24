@@ -5576,12 +5576,11 @@ acceptance: "Evidence for DD-068: a code or documented owner decision at the cit
 verify: |
   python3 scripts/verify_b101_proposals.py --id B-216
 verify-means: |
-  parked — focused source tests and mutation gates prove the DLQ consumer accepts
+  parked — owner packet `docs/internal/b215-b230-runtime-owner-actions.md` remains: focused source tests and mutation gates prove the DLQ consumer accepts
   only PagerDuty HTTP 202 as delivery, retains the DLQ delivery when paging is
   missing/rejected, records privacy-minimized durable lifecycle receipts before
   queue disposition, redacts transport errors, and permits only one main-queue
-  re-enqueue. Runtime/owner packet
-  `docs/internal/b215-b230-runtime-owner-actions.md` remains: verify the deployed
+  re-enqueue. Verify the deployed
   consumer, an accepted on-call delivery, and one controlled exhausted-message
   observation. Local source evidence is not production delivery evidence.
 last-verified: 2026-09-09
@@ -12311,8 +12310,8 @@ ancestralidade de commit; alterar registry, manifest ou qualquer arquivo auditad
 reancorar o checkpoint.
 
 **Estágio concluído:** a ingestão estrutural e a revisão semântica das fontes admitidas
-estão registradas no manifesto. Cada uma das 42 equivalências aponta para o título canônico,
-fonte e localizador; quatro duplicatas exatas apontam para o achado-fonte repetido; cada uma das 73 descobertas distintas tem um item canônico B-171…B-243,
+estão registradas no manifesto. As 61 equivalências apontam para o título canônico,
+fonte e localizador; as 4 duplicatas exatas apontam para o achado-fonte repetido; cada uma das 73 descobertas distintas tem um item canônico B-171…B-243,
 título, fonte, contrato aberto e prova de distinção. B-244…B-249 são itens técnicos
 independentes registrados depois do censo, não propostas adicionais de B-101. A admissão
 de fontes futuras continua falhando fechada.
@@ -12329,7 +12328,7 @@ verify-means: |
   `reports/audits/**`; cada um é fonte admitida ou exclusão explícita. Um quarto audit,
   symlink, tipo não regular, digest, contagem, ID, decisão ou B-ID canônico inválido fica
   vermelho. Cada achado admitido também carrega no manifesto uma disposição semântica
-  individual: equivalência a um B canônico existente (42), duplicata exata (4), ou proposta de novo B (73), com
+  individual: equivalência a um B canônico existente (61), duplicata exata (4), ou proposta de novo B (73), totalizando 61 + 4 + 73 = 138, com
   título, fonte, localizador e prova específica, além de um contrato de ação aberto no
   backlog para cada B-171…B-243. B-244…B-249 não pertencem ao censo B-101 e são
   mantidos como itens técnicos independentes. Não existe bucket de recusa genérico.
@@ -12338,8 +12337,8 @@ verify-means: |
   `reports/audit-finding-decisions/**` disparam este gate em PR e push. Não é o antigo grep
   que contava a própria prosa.
 
-  B-101 está `done` porque as 119 associações já têm uma disposição semanticamente
-  auditável: 42 equivalências, 4 duplicatas exatas e 73 propostas novas. O verificador rederiva a população,
+  B-101 está `done` porque os 138 achados já têm uma disposição semanticamente
+  auditável: 61 equivalências, 4 duplicatas exatas e 73 propostas novas (61 + 4 + 73 = 138). O verificador rederiva a população,
   valida cada prova e impede que uma alteração de título, fonte, decisão ou proposta passe
   verde. Uma proposta nova é uma decisão canônica registrada, não uma aceitação silenciosa
   do risco.

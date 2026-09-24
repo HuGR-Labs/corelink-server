@@ -7,7 +7,7 @@
     "b028_dependabot_2026_09_06": "docs/security/b028-dependabot-census-2026-09-06.json",
     "b373_dependabot_2026_09_09": "docs/security/b373-dependabot-census-2026-09-09.json"
   },
-  "source_registry_sha256": "8982ce9a060164065f279fab70b2694c5d03748e7582bcd940c4eb35bb6073dd",
+  "source_registry_sha256": "9a4d66278695bc226ce53d13cd99f2bf43a22f621991e7e2419a5f357f4a8ae7",
   "source_sha256": {
     "due_diligence_2026_06_15": "0ac20e7bf0b0674d06a195cf7ba676816deac91c038ed85c9385235cc93dae56",
     "go_live_2026_08_26": "a6661037b0ada6a244c80bd727c193c371d86c8371d15f7486fa1043e6d8f08a",
@@ -375,13 +375,13 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-065",
-        "canonical_title": "dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias",
+        "canonical_title": "dois esquemas de ID em webhooks Stripe; estado atual dos destinos não verificado",
         "evidence": {
           "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
           "source_locator": "MEDIUM / LOW item 2",
           "finding_title": "Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)"
         },
-        "proof": "Exact equivalence for DD-023: source title \"Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)\" maps to canonical B-065 title \"dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias\"; that item owns the same control gap and remediation surface."
+        "proof": "Exact equivalence for DD-023: source title \"Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)\" maps to canonical B-065 title \"dois esquemas de ID em webhooks Stripe; estado atual dos destinos não verificado\"; that item owns the same control gap and remediation surface."
       }
     },
     {
@@ -945,17 +945,17 @@
     {
       "source_id": "DD-059",
       "kind": "tracked",
-      "backlog_id": "B-028",
+      "backlog_id": "B-211",
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
-        "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_id": "B-211",
+        "canonical_title": "Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)",
         "evidence": {
           "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
           "source_locator": "MEDIUM / LOW item 38",
           "finding_title": "Customer audit-chain visualization fetches /v1/customer/* with NO Clerk bearer token (broken-auth / dead feature at launch)"
         },
-        "proof": "Exact equivalence for DD-059: source title \"Customer audit-chain visualization fetches /v1/customer/* with NO Clerk bearer token (broken-auth / dead feature at launch)\" maps to canonical B-028 title \"Dependabot dependency paths are remediated; post-merge census refresh remains open\"; that item owns the same control gap and remediation surface."
+        "proof": "Exact equivalence for DD-059: source title \"Customer audit-chain visualization fetches /v1/customer/* with NO Clerk bearer token (broken-auth / dead feature at launch)\" maps to canonical B-211 title \"Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)\"; both identify the same customer audit-visualization authentication boundary, where the page/API path lacks a fail-closed server-side guard and the client supplies no Clerk bearer token."
       }
     },
     {
@@ -1619,13 +1619,13 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-142",
-        "canonical_title": "todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25",
+        "canonical_title": "bloqueio histórico de faturamento impediu jobs `ubuntu-*`; CodeQL nightly ficou sem análise desde 2026-08-25",
         "evidence": {
           "source_document": "reports/audits/2026-08-26-go-live-readiness.md",
           "source_locator": "F-014",
           "finding_title": "Feed CVE sem commit park"
         },
-        "proof": "Exact equivalence for F-014: source title \"Feed CVE sem commit park\" maps to canonical B-142 title \"todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25\"; that item owns the same control gap and remediation surface."
+        "proof": "Exact equivalence for F-014: source title \"Feed CVE sem commit park\" maps to canonical B-142 title \"bloqueio histórico de faturamento impediu jobs `ubuntu-*`; CodeQL nightly ficou sem análise desde 2026-08-25\"; that item owns the same control gap and remediation surface."
       }
     },
     {
@@ -1779,7 +1779,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/b028-dependabot-census-2026-09-06.json",
           "source_locator": "alert 26",
@@ -1795,7 +1795,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/b028-dependabot-census-2026-09-06.json",
           "source_locator": "alert 27",
@@ -1811,7 +1811,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/b028-dependabot-census-2026-09-06.json",
           "source_locator": "alert 28",
@@ -1827,7 +1827,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/b028-dependabot-census-2026-09-06.json",
           "source_locator": "alert 33",
@@ -1843,7 +1843,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/b028-dependabot-census-2026-09-06.json",
           "source_locator": "alert 34",
@@ -1859,7 +1859,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/b028-dependabot-census-2026-09-06.json",
           "source_locator": "alert 35",
@@ -1875,7 +1875,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/b028-dependabot-census-2026-09-06.json",
           "source_locator": "alert 36",
@@ -1891,7 +1891,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/b028-dependabot-census-2026-09-06.json",
           "source_locator": "alert 37",
@@ -1907,7 +1907,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/b028-dependabot-census-2026-09-06.json",
           "source_locator": "alert 38",
