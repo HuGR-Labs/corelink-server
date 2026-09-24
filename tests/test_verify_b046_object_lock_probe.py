@@ -164,6 +164,18 @@ class B046ObjectLockProbeTests(unittest.TestCase):
         with self.assertRaises(verifier.ProbeError):
             verifier.validate_evidence_record(malformed)
 
+        malformed = raw.replace('"schema_version": 1', '"schema_version": true', 1)
+        with self.assertRaises(verifier.ProbeError):
+            verifier.validate_evidence_record(malformed)
+
+        malformed = raw.replace(
+            '"captured_at": "2026-09-09T04:13:53Z"',
+            '"captured_at": "2026-9-9T4:13:53Z"',
+            1,
+        )
+        with self.assertRaises(verifier.ProbeError):
+            verifier.validate_evidence_record(malformed)
+
 
 if __name__ == "__main__":
     unittest.main()

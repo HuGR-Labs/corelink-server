@@ -152,9 +152,15 @@ def validate_evidence_record(raw: str) -> None:
     }
     if set(record) != expected:
         raise ProbeError("B-046 evidence has unexpected or missing top-level fields")
-    if record["schema_version"] != 1:
+    if (
+        not isinstance(record["schema_version"], int)
+        or isinstance(record["schema_version"], bool)
+        or record["schema_version"] != 1
+    ):
         raise ProbeError("B-046 evidence schema_version must be 1")
     captured_at = _require_string(record["captured_at"], "captured_at")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", captured_at):
+        raise ProbeError("B-046 evidence captured_at must be a UTC RFC3339 timestamp")
     try:
         dt.datetime.strptime(captured_at, "%Y-%m-%dT%H:%M:%SZ")
     except ValueError as error:
