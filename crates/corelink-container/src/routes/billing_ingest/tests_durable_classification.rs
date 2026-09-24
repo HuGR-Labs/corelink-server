@@ -133,10 +133,9 @@ fn record(qty: u64, key: &str) -> StagedUsageRecord {
 }
 
 fn record_for(tenant: &str, qty: u64, key: &str) -> StagedUsageRecord {
-    let mut record = validate_record(
-        serde_json::from_value(record_json(tenant, key)).expect("wire record"),
-    )
-    .expect("valid record");
+    let mut record =
+        validate_record(serde_json::from_value(record_json(tenant, key)).expect("wire record"))
+            .expect("valid record");
     record.qty = qty;
     record
 }
