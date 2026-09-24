@@ -678,7 +678,6 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         "types: [opened, synchronize, reopened]",
         "persist-credentials: false",
         'paths: ["**"]',
-        "runs-on: corelink",
         "permissions:\n  contents: read",
         "--candidate-file",
         "--trusted-file",
@@ -753,7 +752,7 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         "test -f migrations/d1/0102_cas_retention.sql\n"
     )
     expected_data = {
-        "runs-on": "corelink", "timeout-minutes": 10,
+        "runs-on": "ubuntu-24.04", "timeout-minutes": 10,
         "steps": [
             checkout("Checkout candidate data (immutable event SHA)",
                      "${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
@@ -770,7 +769,7 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
     }
     expected_trusted = {
         "if": "github.event_name == 'push' || github.event_name == 'schedule'",
-        "runs-on": "corelink", "timeout-minutes": 10,
+        "runs-on": "ubuntu-24.04", "timeout-minutes": 10,
         "permissions": {"contents": "read", "vulnerability-alerts": "read"},
         "steps": [
             {"name": "Checkout trusted main (immutable event SHA)",
@@ -787,17 +786,12 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         ],
     }
     verify_job = jobs["verify"]
-    if (
-        not isinstance(verify_job, dict)
-        or verify_job.get("runs-on") not in ("corelink", "ubuntu-24.04")
-    ):
+    trusted_job = jobs["trusted_semantic"]
+    if not isinstance(verify_job, dict) or verify_job.get("runs-on") != "ubuntu-24.04":
         raise RuntimeError("candidate workflow policy has unexpected verify runner")
-    # Accept the current BASE runner during rollout and the one explicitly
-    # approved hosted target. Normalize only this field before applying the
-    # existing closed-world shape check; trusted_semantic remains exact.
-    normalized_verify = dict(verify_job)
-    normalized_verify["runs-on"] = "corelink"
-    if normalized_verify != expected_data or jobs["trusted_semantic"] != expected_trusted:
+    if not isinstance(trusted_job, dict) or trusted_job.get("runs-on") != "ubuntu-24.04":
+        raise RuntimeError("candidate workflow policy has unexpected trusted semantic runner")
+    if verify_job != expected_data or trusted_job != expected_trusted:
         raise RuntimeError("candidate workflow policy has unexpected data/trusted job shape")
 
 

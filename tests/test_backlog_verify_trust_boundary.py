@@ -258,32 +258,35 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
             backlog_verify.validate_candidate_workflow(self.candidate)
 
-    def test_only_verify_accepts_the_approved_hosted_runner(self) -> None:
+    def test_both_jobs_require_the_approved_hosted_runner(self) -> None:
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
         baseline = workflow.read_text(encoding="utf-8")
-        hosted = baseline.replace(
-            "  verify:\n    runs-on: corelink",
-            "  verify:\n    runs-on: ubuntu-24.04",
-            1,
-        )
-        self.assertNotEqual(hosted, baseline)
-        workflow.write_text(hosted, encoding="utf-8")
         backlog_verify.validate_candidate_workflow(self.candidate)
 
-        for runner in ("ubuntu-latest", "self-hosted", "[self-hosted, linux]"):
+        verify_start = baseline.index("  verify:")
+        trusted_start = baseline.index("  trusted_semantic:")
+        verify_job = baseline[verify_start:trusted_start]
+        trusted_job = baseline[trusted_start:]
+        for runner in ("corelink", "ubuntu-latest", "self-hosted", "[self-hosted, linux]"):
             with self.subTest(verify_runner=runner):
-                mutated = hosted.replace("runs-on: ubuntu-24.04", f"runs-on: {runner}", 1)
+                mutated = baseline.replace(
+                    "  verify:\n    runs-on: ubuntu-24.04",
+                    f"  verify:\n    runs-on: {runner}",
+                    1,
+                )
                 workflow.write_text(mutated, encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, "unexpected verify runner"):
                     backlog_verify.validate_candidate_workflow(self.candidate)
 
-        trusted_start = baseline.index("  trusted_semantic:")
-        trusted = baseline[trusted_start:].replace(
-            "runs-on: corelink", "runs-on: ubuntu-24.04", 1
-        )
-        workflow.write_text(baseline[:trusted_start] + trusted, encoding="utf-8")
-        with self.assertRaisesRegex(RuntimeError, "unexpected data/trusted job shape"):
-            backlog_verify.validate_candidate_workflow(self.candidate)
+            with self.subTest(trusted_semantic_runner=runner):
+                mutated_trusted = trusted_job.replace(
+                    "    runs-on: ubuntu-24.04", f"    runs-on: {runner}", 1
+                )
+                self.assertNotEqual(mutated_trusted, trusted_job)
+                workflow.write_text(verify_job + mutated_trusted, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "unexpected trusted semantic runner"):
+                    backlog_verify.validate_candidate_workflow(self.candidate)
+
         workflow.write_text(baseline, encoding="utf-8")
 
     def test_b314_trusted_step_shape_and_placement_are_fail_closed(self) -> None:
