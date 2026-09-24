@@ -23,6 +23,7 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
             ("timeout-minutes: 45", "timeout-minutes: 240"),
             ("--baseline=skip", "--baseline=run"),
             ("--sharding=round-robin", "--sharding=slice"),
+            ("--shard 0/1", "--shard 0/27"),
             ("actions: read", "actions: write"),
             ("runs-on: ubuntu-24.04", "runs-on: self-hosted"),
             ("retention-days: 30", "retention-days: 0"),

@@ -53,7 +53,10 @@ jobs:
         run: |
           set -euo pipefail
           cargo mutants --version | grep -Fx 'cargo-mutants 27.0.0'
-          cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --list --json > "${RUNNER_TEMP}/full-inventory.json"
+          # cargo-mutants 27 requires --shard even for --list.  0/1 is the
+          # sole shard of a denominator-one partition, so this enumerates the
+          # complete workspace inventory rather than a sample of the 27 lanes.
+          cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > "${RUNNER_TEMP}/full-inventory.json"
           python3 scripts/verify_i2457_mutants_shards.py build-inventory \
             --raw "${RUNNER_TEMP}/full-inventory.json" \
             --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \

@@ -20,6 +20,7 @@ from typing import Any, Iterable, Mapping
 
 SHARD_COUNT = 27
 SHARDING = "round-robin"
+INVENTORY_SHARD = "0/1"
 TOOL_VERSION = "27.0.0"
 INVENTORY_SCHEMA = "corelink.hosted-mutants-inventory.v2"
 BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v2"
@@ -130,6 +131,7 @@ def make_inventory(raw: Any, sha: str, run_id: str, attempt: int) -> dict[str, A
         "config_digest": config_digest(),
         "shard_count": SHARD_COUNT,
         "sharding": SHARDING,
+        "inventory_shard": INVENTORY_SHARD,
         "mutant_ids": ids,
         "inventory_digest": digest(ids),
     }
@@ -147,6 +149,8 @@ def validate_inventory(document: Mapping[str, Any]) -> list[str]:
         raise VerificationError("inventory configuration digest is not canonical")
     if document.get("shard_count") != SHARD_COUNT or document.get("sharding") != SHARDING:
         raise VerificationError("inventory shard definition drifted")
+    if document.get("inventory_shard") != INVENTORY_SHARD:
+        raise VerificationError("inventory must use the complete denominator-one shard 0/1")
     ids = inventory_mutant_ids(document.get("mutant_ids"))
     if document.get("inventory_digest") != digest(ids):
         raise VerificationError("inventory digest does not bind its identities")
@@ -460,7 +464,7 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "SHARD_COUNT: 27",
         "max-parallel: 9",
         "timeout-minutes: 45",
-        "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --list --json",
+        "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
         "--shard ${{ matrix.shard }}/27",
         "--baseline=skip",
         "cargo test --workspace --locked",
