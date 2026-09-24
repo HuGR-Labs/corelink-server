@@ -501,19 +501,19 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(m.ack).not.toHaveBeenCalled();
   });
 
-  for (const [name, makeReceipts] of [
-    ["is absent", () => undefined],
+  for (const [name, makeReceipts, emitsAlert] of [
+    ["is absent", () => undefined, false],
     ["cannot write", () => {
       const receipts = new MemoryReceipts();
       receipts.failWrites = true;
       return receipts;
-    }],
+    }, true],
     ["is malformed", () => ({
       find: async () => ({ status: "invalid" as DsrDlqReceipt["status"], paging_claimed: 0, requeue_claimed: 0 }),
       record: async () => undefined,
       claimPaging: async () => true,
       claimRequeue: async () => true,
-    } satisfies DsrDlqReceiptStore)],
+    } satisfies DsrDlqReceiptStore), false],
   ] as const) {
     it(`retries when the receipt boundary ${name}`, async () => {
       const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
@@ -528,7 +528,12 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
             PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch,
           },
         );
-        expect(error).not.toHaveBeenCalled();
+        if (emitsAlert) {
+          expect(error).toHaveBeenCalledOnce();
+          expect(String(error.mock.calls[0]?.[0])).not.toContain("receipt-terminal");
+        } else {
+          expect(error).not.toHaveBeenCalled();
+        }
       } finally {
         error.mockRestore();
       }
