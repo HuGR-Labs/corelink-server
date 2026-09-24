@@ -823,9 +823,14 @@ fn is_transient_rebuild_table(sql: &str, name: &str) -> bool {
     let normalized_sql = sql.split_whitespace().collect::<Vec<_>>().join(" ");
     let rename = format!("ALTER TABLE {name} RENAME TO {canonical_name}");
     let dropped_canonical = format!("DROP TABLE {canonical_name}");
-    let statements = normalized_sql.split(';').map(str::trim);
-    let has_rename = statements.clone().any(|statement| statement == rename);
-    let has_drop = statements.any(|statement| statement == dropped_canonical);
+    let has_rename = normalized_sql
+        .split(';')
+        .map(str::trim)
+        .any(|statement| statement == rename);
+    let has_drop = normalized_sql
+        .split(';')
+        .map(str::trim)
+        .any(|statement| statement == dropped_canonical);
     has_rename && has_drop
 }
 
