@@ -37,10 +37,11 @@ was performed.
 
 ## Work tracking
 
-- Pull request: pending creation.
-- Head: pending commit.
-- GitHub Actions: pending hosted runs; no local verifiers or tests were run.
-- Cold review: pending one independent Luna review.
+- Initial pull request: [#2403](https://github.com/HuGR-dev/corelink-server/pull/2403).
+- Initial reviewed head: `2f12de257765678b0712b45c768e8f1893af1bad` (superseded by same-PR rework for a concrete cold-review finding).
+- Initial hosted runs: B-098 `35953475267`, Python `35953475360`, Docs Reality `35953475279`, rustfmt `35953475317`, DCO `35953475288`, CodeQL `35953475292`; results are tracked on the PR for the current head.
+- Cold review: Luna returned `FIX-FIRST` with one consolidated finding. The B-083 verifier now parses the active TOML feature declaration and has a comment-only negative control. This is same-PR rework; final review is pending.
+- No local verifiers or tests were run.
 - The four linked issues remain open with `EXTERNAL_ACTION_REQUIRED`; these repository
   fixes do not provide legal approval, release authority, staging provisioning, or
   real AWS KMS lifecycle evidence.

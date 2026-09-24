@@ -44,7 +44,7 @@ def _valid_sources() -> tuple[str, str, str, str, str, str, str]:
             "CORELINK_BYOK_KMS_SESSION_TOKEN",
         )
     )
-    cargo = 'byok-aws-real = ["corelink-byok/aws"]'
+    cargo = '[features]\nbyok-aws-real = ["corelink-byok/aws"]\n'
     return builder, builder, cache, policy, do_start, worker_env, cargo
 
 
@@ -54,6 +54,13 @@ def test_real_provider_feature_is_checked_in_container_manifest() -> None:
 
 def test_missing_real_provider_feature_fails_closed() -> None:
     sources = list(_valid_sources())
-    sources[-1] = 'byok-mock = ["corelink-byok/mock"]'
+    sources[-1] = '[features]\nbyok-mock = ["corelink-byok/mock"]\n'
+    with pytest.raises(AssertionError, match="real-provider cfg"):
+        MODULE.verify(*sources)
+
+
+def test_commented_out_real_provider_feature_fails_closed() -> None:
+    sources = list(_valid_sources())
+    sources[-1] = '[features]\n# byok-aws-real = ["corelink-byok/aws"]\n'
     with pytest.raises(AssertionError, match="real-provider cfg"):
         MODULE.verify(*sources)

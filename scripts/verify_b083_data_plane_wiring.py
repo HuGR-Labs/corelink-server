@@ -8,6 +8,7 @@ KMS lifecycle drill is meaningful.
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 
@@ -26,9 +27,18 @@ def require(source: str, needle: str, label: str) -> None:
         raise AssertionError(f"{label}: missing {needle!r}")
 
 
+def require_provider_feature(manifest: str) -> None:
+    try:
+        feature = tomllib.loads(manifest).get("features", {}).get("byok-aws-real")
+    except tomllib.TOMLDecodeError:
+        raise AssertionError("real-provider cfg: invalid container Cargo.toml") from None
+    if feature != ["corelink-byok/aws"]:
+        raise AssertionError("real-provider cfg: missing active byok-aws-real dependency")
+
+
 def verify(cas: str, ac: str, cache: str, policy: str, do_start: str, worker_env: str, container_cargo: str) -> None:
+    require_provider_feature(container_cargo)
     for label, builder in (("CAS", cas), ("AC", ac)):
-        require(container_cargo, 'byok-aws-real = ["corelink-byok/aws"]', f"{label} real-provider cfg")
         require(builder, "crate::byok_orchestrator::make_provider()", f"{label} real KMS")
         require(builder, "D1ByokConfigReader::new", f"{label} config source")
         require(builder, "D1ByokSecretReader::new", f"{label} wrapped-Tcs source")
