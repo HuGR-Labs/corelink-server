@@ -18,8 +18,8 @@ use corelink_handler_cas::{
     CasWriteRequest, CasWriteResponse,
 };
 use corelink_reapi::proto::reapi::{
-    digest_function, Digest, ExecutedActionMetadata, NodeProperties, NodeProperty,
-    OutputDirectory, OutputFile, OutputSymlink,
+    digest_function, Digest, ExecutedActionMetadata, NodeProperties, NodeProperty, OutputDirectory,
+    OutputFile, OutputSymlink,
 };
 use prost::Message;
 use tonic::Code;
