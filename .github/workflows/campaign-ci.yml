@@ -54,6 +54,7 @@ on:
           - i1792-miniflare-epoch
           - i2013-migration-replay
           - i2194
+          - i2417
 
 permissions:
   contents: read
@@ -928,6 +929,11 @@ jobs:
         if: ${{ inputs.suite == 'i2194' }}
         shell: bash
         run: .venv-i2194/bin/python scripts/verify_ci_bundle_2.py
+
+      - name: Run the focused BASE backlog ID mutation suite
+        if: ${{ inputs.suite == 'i2417' }}
+        shell: bash
+        run: python3 -m pytest -q tests/test_backlog_verify_trust_boundary.py
 
       - name: Upload compact campaign logs
         if: ${{ always() }}
