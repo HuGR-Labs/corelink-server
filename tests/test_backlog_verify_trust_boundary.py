@@ -206,6 +206,45 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(any("deleted BASE item(s): B-002" in error for error in errors))
 
+    def test_dense_primary_ids_preserve_only_v0004_external_issue_identity(self) -> None:
+        current = backlog_verify.parse((ROOT / "BACKLOG.md").read_text(encoding="utf-8"))
+        self.assertEqual(backlog_verify.validate_dense_id_population(current), [])
+        historic = next(item for item in current if item.id == "B-1630")
+        self.assertEqual(backlog_verify.HISTORICAL_EXTERNAL_ISSUE_IDS["B-1630"], 1630)
+        self.assertIn("PR #1923", historic.raw["verify-means"])
+        self.assertIn("35700316381", historic.raw["verify-means"])
+
+        synthetic = [self.item(f"B-{number:03d}") for number in range(1, 374)]
+        synthetic.append(self.item("B-1630"))
+        self.assertEqual(backlog_verify.validate_dense_id_population(synthetic), [])
+
+        # The exception names one immutable external issue identity, not a sparse range.
+        unapproved_outlier = [*synthetic, self.item("B-1631")]
+        errors = backlog_verify.validate_dense_id_population(unapproved_outlier)
+        self.assertTrue(
+            any("B-374..B-1630" in error and "ids must be dense" in error for error in errors)
+        )
+
+        missing_middle = [item for item in current if item.id != "B-200"]
+        errors = backlog_verify.validate_dense_id_population(missing_middle)
+        self.assertTrue(any("B-200" in error and "ids must be dense" in error for error in errors))
+
+        missing_external = [item for item in current if item.id != "B-1630"]
+        errors = backlog_verify.validate_dense_id_population(missing_external)
+        self.assertTrue(any("external issue identity B-1630" in error for error in errors))
+
+    def test_candidate_cannot_delete_real_middle_id_or_v0004_external_identity(self) -> None:
+        base = backlog_verify.parse((ROOT / "BACKLOG.md").read_text(encoding="utf-8"))
+        for missing_id in ("B-200", "B-1630"):
+            candidate = [item for item in base if item.id != missing_id]
+            errors = backlog_verify.validate_candidate_transitions(
+                candidate, base, dt.date(2026, 9, 24)
+            )
+            self.assertTrue(
+                any(f"deleted BASE item(s): {missing_id}" in error for error in errors),
+                f"deletion of {missing_id} must fail closed",
+            )
+
     def test_mutable_workflow_ref_is_rejected_as_data(self) -> None:
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
         text = workflow.read_text(encoding="utf-8").replace(
