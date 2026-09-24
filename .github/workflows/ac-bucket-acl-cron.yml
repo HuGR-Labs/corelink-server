@@ -30,10 +30,8 @@ concurrency:
 
 jobs:
   audit:
-    # Self-hosted `corelink` (ephemeral CF-Container Ubuntu 24.04): this job needs
-    # only curl + python3 (stdlib json) + bash, all baked into the runner image —
-    # so it runs at zero hosted-Actions cost. Per the zero-hosted-CI mandate.
-    runs-on: corelink
+    # GitHub-hosted Ubuntu supplies curl, Python 3, and bash used by this audit.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout repo
