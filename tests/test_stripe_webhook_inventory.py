@@ -5,11 +5,14 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "ops"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from stripe_webhook_inventory import InventoryError, collect_v1, collect_v2  # noqa: E402
+import verify_stripe_webhook_destinations as destination_verifier  # noqa: E402
 
 
 class StripeWebhookInventoryTests(unittest.TestCase):
@@ -110,6 +113,62 @@ class StripeWebhookInventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(InventoryError, "pagination URL repeated"):
             collect_v2(fetch)
         self.assertEqual(calls, 2)
+
+    def test_destination_verifier_requires_boolean_v1_has_more(self) -> None:
+        for malformed in ({"data": []}, {"data": [], "has_more": "false"}):
+            with self.subTest(malformed=malformed):
+                with self.assertRaisesRegex(
+                    destination_verifier.VerificationError,
+                    "v1 page has no boolean has_more",
+                ):
+                    with patch.object(destination_verifier, "stripe_get", return_value=malformed):
+                        destination_verifier.list_v1("stripe", [])
+
+    def test_destination_verifier_rejects_off_resource_v2_continuation(self) -> None:
+        malformed_urls = (
+            (
+                "https://attacker.invalid/v2/core/event_destinations?page=next&include%5B0%5D=webhook_endpoint.url",
+                "outside the expected API resource",
+            ),
+            (
+                "https://api.stripe.com/v2/other?page=next&include%5B0%5D=webhook_endpoint.url",
+                "outside the expected API resource",
+            ),
+            (
+                "https://api.stripe.com/v2/core/event_destinations?page=next",
+                "did not preserve the webhook URL include",
+            ),
+        )
+        for next_url, error in malformed_urls:
+            with self.subTest(next_url=next_url):
+                page = {
+                    "data": [],
+                    "next_page_url": next_url,
+                }
+                with patch.object(destination_verifier, "stripe_get", return_value=page):
+                    with self.assertRaisesRegex(destination_verifier.VerificationError, error):
+                        destination_verifier.list_v2("stripe", [])
+
+    def test_destination_verifier_accepts_valid_v2_continuation(self) -> None:
+        pages = iter((
+            {
+                "data": [],
+                "next_page_url": (
+                    "https://api.stripe.com/v2/core/event_destinations?"
+                    "page=cursor&include%5B0%5D=webhook_endpoint.url"
+                ),
+            },
+            {"data": [], "next_page_url": None},
+        ))
+        calls: list[list[str]] = []
+
+        def fake_get(binary: str, path: str, flags: list[str]) -> dict:
+            calls.append(flags)
+            return next(pages)
+
+        with patch.object(destination_verifier, "stripe_get", side_effect=fake_get):
+            self.assertEqual(destination_verifier.list_v2("stripe", []), [])
+        self.assertTrue(any("page=cursor" in call for call in calls[1]))
 
 
 if __name__ == "__main__":
