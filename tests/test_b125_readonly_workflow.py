@@ -7,6 +7,7 @@ import re
 import sqlite3
 import sys
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -145,6 +146,26 @@ def test_all_production_control_queries_are_single_read_only_selects() -> None:
         rows = connection.execute(sql).fetchall()
         expected_rows = 6 if query_id == "hourly" else 1
         assert len(rows) == expected_rows, f"{query_id} returned {len(rows)} rows"
+        if query_id == "hourly":
+            starts = [
+                datetime.strptime(row[0], "%Y-%m-%dT%H:00:00Z").replace(tzinfo=timezone.utc)
+                for row in rows
+            ]
+            ends = [
+                datetime.strptime(row[1], "%Y-%m-%dT%H:00:00Z").replace(tzinfo=timezone.utc)
+                for row in rows
+            ]
+            assert all(end - start == timedelta(hours=1) for start, end in zip(starts, ends))
+            assert all(ends[index - 1] == starts[index] for index in range(1, 6))
+            assert ends[-1] <= datetime.now(timezone.utc)
+
+    hourly_sql = queries["hourly"]
+    assert 'CAST(strftime("%s", "now") AS INTEGER) / 3600 * 3600 AS anchor_s' in hourly_sql
+    for offset in range(6):
+        upper = "c.anchor_s" if offset == 0 else f"(c.anchor_s - {offset * 3600})"
+        lower = f"(c.anchor_s - {(offset + 1) * 3600})"
+        assert f"enqueued_at >= {lower} * 1000 AND enqueued_at < {upper} * 1000" in hourly_sql
+        assert f"emitted_at >= {lower} * 1000 AND emitted_at < {upper} * 1000" in hourly_sql
 
 
 def test_failure_receipt_is_bounded_data_free_and_keeps_provider_shape(tmp_path: Path) -> None:
