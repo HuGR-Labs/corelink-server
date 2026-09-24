@@ -16013,10 +16013,19 @@ verify-means: |
   `duplicate_count=0`, testemunho SHA-256, proveniência sem valores brutos,
   `last_refreshed` dentro do max-age e hash/conteúdo do audit referenciado; não
   consulta API nem percorre histórico/paginação. O owner executa separadamente o
-  refresh externo autorizado para gerar ou atualizar o snapshot, preserva
-  IDs/timestamps e identifica/corrige o emitter stale pelo caminho administrativo;
-  não fechar por janela silenciosa, rerun ou workflow verde não relacionado.
-last-verified: 2026-09-05
+  refresh externo autorizado para gerar ou atualizar o snapshot. Reconciliação
+  atual (2026-09-24T17:01:32Z): PR #2217 foi mergeado em `main` no commit
+  `ac53279a5f88e7cdfb1f97a5f97085db1e0c4bf0`, concluindo a classificação
+  repo-owned por ID `303501160` mais path `BuildFailed`. A leitura atual da
+  Actions API ainda identifica esse workflow como `deleted`; a consulta
+  limitada após o último run observado (`35676257895`, 2026-09-22T01:34:26Z),
+  até 2026-09-24T17:01:32Z, retornou `total_count=0`. Esse intervalo quieto não prova
+  reparo. A ação mínima restante é GitHub Support ou um owner autorizado de
+  Actions fornecer o case/reference ID e recibo do purge/reindex do registro
+  stale, seguido de um evento novo e não mutante que resolva para o grafo live
+  e crie os jobs/checks esperados. Reter IDs/timestamps autorizados; não fechar
+  por janela silenciosa, rerun ou workflow verde não relacionado.
+last-verified: 2026-09-24
 ```
 
 ### B-251 — quota-CAS property test tinha orçamento e p99 de latência acoplados ao acaso
