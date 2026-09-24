@@ -137,6 +137,7 @@ class B029LoadGateTests(unittest.TestCase):
         shutil.copy(ROOT / "scripts/sanitize_k6_summary.py", contract / "scripts")
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
         self._copy_hostname_sources(contract)
+        shutil.copy(ROOT / verifier.FOCUSED_PACK, contract / verifier.FOCUSED_PACK)
         (contract / ".github/workflows/load-test-nightly.yml").write_text(workflow)
         return verifier.assess(contract, expect="open")
 
@@ -378,6 +379,44 @@ class B029LoadGateTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_focused_pack_covers_comparator_inputs(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(self._assess_workflow(workflow), [])
+        contract = self.root / "workflow-contract"
+        for relative in verifier.FOCUSED_PACK_REQUIRED_PATHS:
+            with self.subTest(path=relative):
+                shutil.rmtree(contract, ignore_errors=True)
+                gaps = self._assess_workflow(workflow)
+                self.assertEqual(gaps, [])
+                pack = contract / verifier.FOCUSED_PACK
+                pack.write_text(
+                    pack.read_text().replace(f'      - "{relative}"\n', "", 1)
+                )
+                gaps = verifier.assess(contract, expect="open")
+                self.assertTrue(
+                    any(
+                        gap.startswith("focused B-029 CI pack does not trigger")
+                        and relative in gap
+                        for gap in gaps
+                    ),
+                    gaps,
+                )
+
+    def test_focused_pack_paths_must_be_pull_request_filters(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(self._assess_workflow(workflow), [])
+        contract = self.root / "workflow-contract"
+        pack = contract / verifier.FOCUSED_PACK
+        pack.write_text(pack.read_text().replace("    paths:\n", "    paths-ignore:\n", 1))
+        gaps = verifier.assess(contract, expect="open")
+        self.assertTrue(
+            any(
+                gap.startswith("focused B-029 CI pack does not trigger")
+                for gap in gaps
+            ),
+            gaps,
+        )
 
     def test_baseline_job_guard_mutation_is_rejected(self) -> None:
         workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
