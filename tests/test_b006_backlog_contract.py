@@ -13,7 +13,7 @@ from scripts.collect_b006_metrics import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, Rej
 from scripts import collect_b006_provider_binding as provider_collector
 from scripts.verify_b006_evidence import EvidenceError, validate_closure, validate_receipt
 from scripts.verify_b006_provider_binding import EXPECTED_ACCOUNT_ID, EXPECTED_AUTH_EMAIL, EXPECTED_AUTH_TYPE, EXPECTED_DEPLOYMENT_ID, EXPECTED_SCRIPT_ETAG, EXPECTED_VERSION_ID, EXPECTED_VERSION_NUMBER, ProviderBindingError, validate_provider_binding
-from scripts.verify_d03_graduation import GraduationError, _check_packets, _load_packets
+from scripts.verify_d03_graduation import GraduationError, _check_packets, _load_packets, _validate_b006_committed_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,8 +101,10 @@ def test_b006_committed_closure_is_static_but_live_validation_stays_fresh() -> N
     with pytest.raises(EvidenceError, match="receipt timestamp is stale or from the future"):
         validate_closure(metrics, provider)
 
-    # The D03 repository verifier consumes these committed receipts statically.
-    _check_packets(_load_packets(PACKET.read_text(encoding="utf-8")), ROOT)
+    # D03 validates its committed DONE and reopened receipts through these
+    # historical paths, without evaluating unrelated packet contracts.
+    _validate_b006_committed_evidence(ROOT, require_closure=True)
+    _validate_b006_committed_evidence(ROOT, require_closure=False)
 
 
 def test_b006_rejects_unauthenticated_zero_and_receipt_boundary_mutations() -> None:

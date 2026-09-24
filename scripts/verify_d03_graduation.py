@@ -1004,6 +1004,25 @@ def _check_b165_done_evidence(packet: dict[str, Any], root: Path) -> None:
         raise GraduationError(f"B-165: canonical verifier did not establish complete evidence: {result.stdout}{result.stderr}")
 
 
+def _validate_b006_committed_evidence(root: Path, *, require_closure: bool) -> None:
+    """Validate B-006 receipts in the static D03 packet, independent of age."""
+
+    try:
+        metrics = json.loads(_read(root / B006_ARTIFACT))
+        provider = json.loads(_read(root / B006_PROVIDER_ARTIFACT))
+        if require_closure:
+            validate_b006_closure(metrics, provider, mode="historical")
+        else:
+            validate_b006_receipt(metrics, mode="historical")
+            validate_provider_binding(provider, mode="historical")
+    except (json.JSONDecodeError, B006EvidenceError, ProviderBindingError) as exc:
+        if require_closure:
+            message = "DONE disposition lacks valid zero metrics plus valid provider binding"
+        else:
+            message = "reopened evidence is not fail-closed"
+        raise GraduationError(f"B-006: {message}: {exc}") from exc
+
+
 def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict[str, Any]]:
     if packets.get("schema_version") != 2:
         raise GraduationError("packet schema_version must be 2")
@@ -1100,12 +1119,7 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
         if disposition == "DONE":
             _require_string(packet, "evidence", item)
             if item == "B-006":
-                try:
-                    metrics = json.loads(_read(root / B006_ARTIFACT))
-                    provider = json.loads(_read(root / B006_PROVIDER_ARTIFACT))
-                    validate_b006_closure(metrics, provider, mode="historical")
-                except (json.JSONDecodeError, B006EvidenceError) as exc:
-                    raise GraduationError(f"B-006: DONE disposition lacks valid zero metrics plus valid provider binding: {exc}") from exc
+                _validate_b006_committed_evidence(root, require_closure=True)
         elif disposition == "PARKED":
             if packet.get("verify_means") != "parked":
                 raise GraduationError(f"{item}: parked packet must declare verify_means=parked")
@@ -1134,11 +1148,7 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
             for forbidden in ("Authorization: Bearer", "CORELINK_PROD_TOKEN", "curl --fail", "--source-sha", "source_sha"):
                 if forbidden in command:
                     raise GraduationError(f"B-006: reopened command contains forbidden credential form {forbidden!r}")
-            try:
-                validate_b006_receipt(json.loads(_read(root / B006_ARTIFACT)), mode="historical")
-                validate_provider_binding(json.loads(_read(root / B006_PROVIDER_ARTIFACT)), mode="historical")
-            except (json.JSONDecodeError, B006EvidenceError, ProviderBindingError) as exc:
-                raise GraduationError(f"B-006: redacted evidence is not fail-closed: {exc}") from exc
+            _validate_b006_committed_evidence(root, require_closure=False)
     return entries
 
 
