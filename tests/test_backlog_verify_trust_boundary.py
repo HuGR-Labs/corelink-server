@@ -287,30 +287,44 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
 
         workflow.write_text(baseline, encoding="utf-8")
 
-    def test_b314_trusted_step_shape_and_placement_are_fail_closed(self) -> None:
+    def test_b314_dependency_and_trusted_step_shape_are_fail_closed(self) -> None:
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
         baseline = workflow.read_text(encoding="utf-8")
         backlog_verify.validate_candidate_workflow(self.candidate)
+        dependency_marker = "      - name: Install CI Python dependencies for B-314 tests"
         b314_marker = "      - name: Prove BASE B-314 owner-gate mutation teeth"
         semantic_marker = "      - name: Execute trusted main semantic checks"
-        start = baseline.index(b314_marker)
+        start = baseline.index(dependency_marker)
         end = baseline.index(semantic_marker, start)
-        prefix, b314_step, suffix = baseline[:start], baseline[start:end], baseline[end:]
+        prefix, b314_steps, suffix = baseline[:start], baseline[start:end], baseline[end:]
         mutations = {
-            "removed": prefix + suffix,
-            "wrong-working-directory": prefix + b314_step.replace(
-                "working-directory: _base", "working-directory: _candidate", 1
+            "removed-dependency-and-tests": prefix + suffix,
+            "wrong-dependency-working-directory": prefix + b314_steps.replace(
+                "name: Install CI Python dependencies for B-314 tests\n        working-directory: _base",
+                "name: Install CI Python dependencies for B-314 tests\n        working-directory: _candidate",
+                1,
             ) + suffix,
-            "weakened-self-test": prefix + b314_step.replace(
+            "dependency-from-candidate": prefix + b314_steps.replace(
+                "-r requirements-ci.txt", "-r $GITHUB_WORKSPACE/_candidate/requirements-ci.txt", 1
+            ) + suffix,
+            "unverified-pytest-install": prefix + b314_steps.replace(
+                ".venv/bin/python3 -m pytest --version", "true", 1
+            ) + suffix,
+            "wrong-test-working-directory": prefix + b314_steps.replace(
+                b314_marker + "\n        working-directory: _base",
+                b314_marker + "\n        working-directory: _candidate",
+                1,
+            ) + suffix,
+            "weakened-self-test": prefix + b314_steps.replace(
                 "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test",
                 "python3 -S scripts/verify_b314_gdpr_sigstore.py",
                 1,
             ) + suffix,
-            "weakened-mutation-test": prefix + b314_step.replace(
+            "weakened-mutation-test": prefix + b314_steps.replace(
                 "python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py", "true", 1
             ) + suffix,
-            "extra-shell-key": prefix + b314_step + "        shell: bash\n" + suffix,
-            "reordered": prefix + suffix + b314_step,
+            "extra-shell-key": prefix + b314_steps + "        shell: bash\n" + suffix,
+            "reordered": prefix + suffix + b314_steps,
         }
         for label, mutated in mutations.items():
             with self.subTest(label=label):
