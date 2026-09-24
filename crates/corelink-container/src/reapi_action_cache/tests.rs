@@ -18,8 +18,8 @@ use corelink_handler_cas::{
     CasWriteRequest, CasWriteResponse,
 };
 use corelink_reapi::proto::reapi::{
-    Digest, ExecutedActionMetadata, NodeProperties, NodeProperty, OutputDirectory, OutputFile,
-    OutputSymlink,
+    digest_function, Digest, ExecutedActionMetadata, NodeProperties, NodeProperty,
+    OutputDirectory, OutputFile, OutputSymlink,
 };
 use prost::Message;
 use tonic::Code;
@@ -540,7 +540,10 @@ async fn capabilities_are_authenticated_sha256_action_cache_only() {
         .await
         .expect("capabilities");
     let cache = capabilities.cache_capabilities.expect("cache capabilities");
-    assert_eq!(cache.digest_functions, vec![DigestFunction::Sha256 as i32]);
+    assert_eq!(
+        cache.digest_functions,
+        vec![digest_function::Value::Sha256 as i32]
+    );
     assert!(
         cache
             .action_cache_update_capabilities

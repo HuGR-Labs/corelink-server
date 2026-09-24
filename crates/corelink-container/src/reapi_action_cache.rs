@@ -8,7 +8,7 @@
 use corelink_reapi::proto::reapi::action_cache_server::{ActionCache, ActionCacheServer};
 use corelink_reapi::proto::reapi::capabilities_server::{Capabilities, CapabilitiesServer};
 use corelink_reapi::proto::reapi::{
-    ActionCacheUpdateCapabilities, ActionResult, CacheCapabilities, Digest, DigestFunction,
+    digest_function, ActionCacheUpdateCapabilities, ActionResult, CacheCapabilities, Digest,
     GetActionResultRequest, GetCapabilitiesRequest, ServerCapabilities, UpdateActionResultRequest,
 };
 use prost::Message;
@@ -266,7 +266,7 @@ fn map_action_update_status(status: Status) -> Status {
 fn cache_only_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         cache_capabilities: Some(CacheCapabilities {
-            digest_functions: vec![DigestFunction::Sha256 as i32],
+            digest_functions: vec![digest_function::Value::Sha256 as i32],
             action_cache_update_capabilities: Some(ActionCacheUpdateCapabilities {
                 update_enabled: true,
             }),
