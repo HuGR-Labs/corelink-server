@@ -2,6 +2,11 @@ name: issue-2138 immutable ledger successor policy
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact candidate SHA approved for this read-only proof
+        required: true
+        type: string
   pull_request:
     paths:
       - '.github/workflows/issue-2148-derived-v0004-policy.yml'
@@ -14,21 +19,30 @@ on:
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0005.json'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0006.json'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0007.json'
+      - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0008.json'
 
 permissions:
   contents: read
 
 jobs:
   policy:
-    name: verify immutable v0004-v0007 successor policy
+    name: verify immutable v0004-v0008 successor policy
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout without write credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Bind manual proof to the exact dispatched SHA
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          test "$EXPECTED_SHA" = "$GITHUB_SHA"
       - name: Set up Python
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.6.0
         with:
@@ -43,8 +57,11 @@ jobs:
           tests/test_backlog_ledger_successor.py::test_v0005_policy_pins_complete_first_parent_history_from_git_objects
           tests/test_backlog_ledger_successor.py::test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition
           tests/test_backlog_ledger_successor.py::test_v0005_receipt_is_required_to_bridge_post_v0004_history
-          tests/test_backlog_ledger_successor.py::test_v0006_replays_the_exact_delivered_successor_chain
+          tests/test_backlog_ledger_successor.py::test_successor_chain_replays_through_v0008
           tests/test_backlog_ledger_successor.py::test_v0006_pins_source_hash_and_exact_changed_ids
           tests/test_backlog_ledger_successor.py::test_v0006_receipt_is_required_for_the_main_baseline_transition
           tests/test_backlog_ledger_successor.py::test_v0006_authorizer_rejects_wrong_immutable_main_parent
           tests/test_backlog_ledger_successor.py::test_v0007_replays_exact_b083_lifecycle_clarification
+          tests/test_backlog_ledger_successor.py::test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose
+      - name: Verify complete delivered ledger chain
+        run: python3 scripts/verify_backlog_wp_ledger.py

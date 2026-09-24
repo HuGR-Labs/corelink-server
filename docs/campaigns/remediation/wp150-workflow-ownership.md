@@ -4,8 +4,8 @@ Canonical closed ownership map for tracked GitHub Actions workflows.
 Update this manifest with every workflow add, rename or removal. Unknown ownership remains `LEAD-BLOCKED | blocked`.
 Historical owned assignments are preserved from B131-B167.md at immutable base 648ecdccd229bdb5154b86843053c28b9cce9d36; the added workflow rows have no evidence-backed owner and remain blocked.
 
-workflow-count: 229
-workflow-paths-sha256: cb08f52b04a589896c0d30b1ab6c09a3fa3cf5ec66e7b7cd595899cf7f2ffa47
+workflow-count: 230
+workflow-paths-sha256: 2c7dac4e62e02cc708dcabda340965dd7668af9f73ff6b7627e3670125f028c4
 
 ```wp-workflow-ownership
 # workflow path | owner WP or LEAD-BLOCKED | status
@@ -110,7 +110,6 @@ workflow-paths-sha256: cb08f52b04a589896c0d30b1ab6c09a3fa3cf5ec66e7b7cd595899cf7
 .github/workflows/issue-1648-b063-read-only-evidence.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1649-stripe-test-mode.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1650-real-integration-contract.yml | LEAD-BLOCKED | blocked
-.github/workflows/issue-1650-real-readiness.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1651-gc-control.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1651-gc-live-readiness.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1652-b072-evidence.yml | LEAD-BLOCKED | blocked
@@ -162,6 +161,7 @@ workflow-paths-sha256: cb08f52b04a589896c0d30b1ab6c09a3fa3cf5ec66e7b7cd595899cf7
 .github/workflows/issue-2148-derived-v0004-policy.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2152-cyclonedx-diagnostic.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2156-ci-bundle-1-contract.yml | LEAD-BLOCKED | blocked
+.github/workflows/issue-2167-b071-owner-packet.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2169-b105-hosted-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2176-grpc-deny-gate.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2177-reapi-ingress-contract.yml | LEAD-BLOCKED | blocked
@@ -170,6 +170,7 @@ workflow-paths-sha256: cb08f52b04a589896c0d30b1ab6c09a3fa3cf5ec66e7b7cd595899cf7
 .github/workflows/issue-2182-reapi-action-cache-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2198-okf-adr-authority.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2386-hosted-runner-contract.yml | LEAD-BLOCKED | blocked
+.github/workflows/issue-ci-pack.yml | LEAD-BLOCKED | blocked
 .github/workflows/legal-changes-review.yml | LEAD-BLOCKED | blocked
 .github/workflows/license-policy.yml | LEAD-BLOCKED | blocked
 .github/workflows/load-test-nightly.yml | WP-B113 | owned
