@@ -1,0 +1,540 @@
+{
+  "schema": "corelink-ownership-dedup-decision-registry/1.0",
+  "state": "RECORDED_NOT_PUBLICATION_AUTHORIZATION",
+  "observed_issue_snapshot": "267 open-and-closed issues; zero ownership markers",
+  "scope": "105 eligible packages",
+  "decisions": [
+    {
+      "package": "chaos-campaign",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH2-20260922.md"
+    },
+    {
+      "package": "corelink-ac",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-ac-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-adapter-host",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-adapters-cloud",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-adapters-vault",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH2-20260922.md"
+    },
+    {
+      "package": "corelink-analytics",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-audit",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-audit-chain",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-audit-chain-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH2-20260922.md"
+    },
+    {
+      "package": "corelink-auth",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-bazel-bridge",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH2-20260922.md"
+    },
+    {
+      "package": "corelink-billing",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-billing-aggregator",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH2-20260922.md"
+    },
+    {
+      "package": "corelink-billing-emit",
+      "decision": "EXPAND",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-billing-reconcile",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH2-20260922.md"
+    },
+    {
+      "package": "corelink-billing-stripe",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-billing-stripe-materializer",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-billing-stripe-traits",
+      "decision": "EXPAND",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-byok",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-byok-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH2-20260922.md"
+    },
+    {
+      "package": "corelink-cas",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-cf-bindings",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-chaos-scheduler",
+      "decision": "EXPAND",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-clerk",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-clerk-cf",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-cli",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-cli-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-client-verify",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-client-verify-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-config-do",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-core",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-crypto",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-dpa-acceptance",
+      "decision": "REUSE",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-dsr",
+      "decision": "EXPAND",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-dsr-statuspage-scheduler",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-dt-cli",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-dt-reconcile",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-dt-webhook",
+      "decision": "REUSE",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH3-20260922.md"
+    },
+    {
+      "package": "corelink-dual-approval",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-enterprise-inquiry",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-erasure-attestation",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH4-20260922.md"
+    },
+    {
+      "package": "corelink-eviction",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH4-20260922.md"
+    },
+    {
+      "package": "corelink-failover-router",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-gc",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-go",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-handler-ac",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH4-20260922.md"
+    },
+    {
+      "package": "corelink-handler-admin",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH4-20260922.md"
+    },
+    {
+      "package": "corelink-handler-cas",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-handler-cas-erase",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-handler-customer",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-hash",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-hash-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-meta",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH4-20260922.md"
+    },
+    {
+      "package": "corelink-meta-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-openapi",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-ops",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-pat",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-privacy",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-privacy-erasure-worker",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-privacy-pseudonymize",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-py",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "corelink-r2-multipart",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH4-20260922.md"
+    },
+    {
+      "package": "corelink-rate-headers",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH4-20260922.md"
+    },
+    {
+      "package": "corelink-ratelimit",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-reapi",
+      "decision": "EXPAND",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-reapi-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-region",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-replica-worker",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-replication",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-replication-coordinator",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-rotation-adapters",
+      "decision": "EXPAND",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-runbook-tracker",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-runner-aggregate",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-runner-overage",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-server",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-signup",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-slack-real",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-slo",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-statuspage-real",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-stripe-real",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-telemetry",
+      "decision": "EXPAND",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-tenant-path",
+      "decision": "REUSE",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-tenant-path-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-terraform-drift-consumer",
+      "decision": "EXPAND",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-tier-selection",
+      "decision": "REUSE",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH5-20260922.md"
+    },
+    {
+      "package": "corelink-tracing",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-CLOSEOUT-20260922.md"
+    },
+    {
+      "package": "corelink-transparency-log",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH6-20260922.md"
+    },
+    {
+      "package": "corelink-turbo-bridge",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-wasm",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-CLOSEOUT-20260922.md"
+    },
+    {
+      "package": "corelink-worker",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "corelink-worker-fuzz",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-CLOSEOUT-20260922.md"
+    },
+    {
+      "package": "e2e-billing-flow",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH6-20260922.md"
+    },
+    {
+      "package": "e2e-byok-revoke",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH6-20260922.md"
+    },
+    {
+      "package": "e2e-chaos",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH6-20260922.md"
+    },
+    {
+      "package": "e2e-dsr",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH6-20260922.md"
+    },
+    {
+      "package": "e2e-failover-router",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH6-20260922.md"
+    },
+    {
+      "package": "e2e-pilot-onboarding",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "e2e-replication-failover",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-CLOSEOUT-20260922.md"
+    },
+    {
+      "package": "e2e-resilience",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH6-20260922.md"
+    },
+    {
+      "package": "e2e-signup-flow",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH6-20260922.md"
+    },
+    {
+      "package": "e2e-tenant-isolation",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "e2e-user-journeys",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/GITHUB-DEDUPE-DECISIONS-20260922.md"
+    },
+    {
+      "package": "migrate-single-to-multi-region",
+      "decision": "EXPAND",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    },
+    {
+      "package": "sbom-publish",
+      "decision": "DISTINCT",
+      "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-BATCH7-20260922.md"
+    }
+  ],
+  "counts": {
+    "DISTINCT": 92,
+    "REUSE": 4,
+    "EXPAND": 9,
+    "UNRESOLVED": 0
+  },
+  "boundary": "REUSE and EXPAND remain subject to ledger confirmation and all global publication gates remain pending."
+}

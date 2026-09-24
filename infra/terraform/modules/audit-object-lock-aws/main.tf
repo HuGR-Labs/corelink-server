@@ -107,6 +107,45 @@ data "aws_iam_policy_document" "writer" {
     ]
     resources = [local.object_arn_prefix]
   }
+
+  # The adapter may set only the module's Compliance retention term.
+  statement {
+    effect    = "Allow"
+    actions   = ["s3:PutObjectRetention"]
+    resources = [local.object_arn_prefix]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:object-lock-mode"
+      values   = ["COMPLIANCE"]
+    }
+
+    condition {
+      test     = "NumericGreaterThanEquals"
+      variable = "s3:object-lock-remaining-retention-days"
+      values   = [tostring(var.default_retention_days)]
+    }
+
+    condition {
+      test     = "NumericLessThanEquals"
+      variable = "s3:object-lock-remaining-retention-days"
+      values   = [tostring(var.default_retention_days)]
+    }
+  }
+
+  # The writer may set a legal hold while archiving, but cannot release one.
+  # The S3 authorization key is evaluated against the requested ON/OFF state.
+  statement {
+    effect    = "Allow"
+    actions   = ["s3:PutObjectLegalHold"]
+    resources = [local.object_arn_prefix]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:object-lock-legal-hold"
+      values   = ["ON"]
+    }
+  }
 }
 
 resource "aws_iam_role" "writer" {

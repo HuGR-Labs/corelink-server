@@ -1,0 +1,1682 @@
+[
+  {
+    "manifest": "apps/migrate-single-to-multi-region/Cargo.toml",
+    "package_name": "migrate-single-to-multi-region",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "4063bebc8ff6c3782512e15315638248d77c927d",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/apps/migrate-single-to-multi-region/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn116file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"migrate-single-to-multi-region\""
+  },
+  {
+    "manifest": "crates/corelink-ac/Cargo.toml",
+    "package_name": "corelink-ac",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "c82ed481e461a5e74b12cccc6304cbbe8ac9c349",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ac/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn74file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-ac\""
+  },
+  {
+    "manifest": "crates/corelink-ac/fuzz/Cargo.toml",
+    "package_name": "corelink-ac-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "d84afdbf77e3ffdc31d5c58b72ed40f2b45951c7",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ac/fuzz/Cargo.toml#L3-L4",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn156file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      3,
+      4
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-ac-fuzz\""
+  },
+  {
+    "manifest": "crates/corelink-adapter-host/Cargo.toml",
+    "package_name": "corelink-adapter-host",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "805e65fb79a1c00019e8051d7b8694769ae35351",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-adapter-host/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn134file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-adapter-host\""
+  },
+  {
+    "manifest": "crates/corelink-adapters-cloud/Cargo.toml",
+    "package_name": "corelink-adapters-cloud",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "4acb0e994d99ecc1432a9cdd65b81a3dc85d75ef",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-adapters-cloud/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn63file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-adapters-cloud\""
+  },
+  {
+    "manifest": "crates/corelink-adapters-vault/Cargo.toml",
+    "package_name": "corelink-adapters-vault",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "a57a5843e6af614b8b5af8aab49c593351ea2864",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-adapters-vault/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn64file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-adapters-vault\""
+  },
+  {
+    "manifest": "crates/corelink-analytics/Cargo.toml",
+    "package_name": "corelink-analytics",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "721c4c5e800a61eebfb22c3f77ed1cfac2b54b60",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-analytics/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn80file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-analytics\""
+  },
+  {
+    "manifest": "crates/corelink-audit-chain/Cargo.toml",
+    "package_name": "corelink-audit-chain",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "358c932baab32c7ecc36ca238a8c42625e82a9af",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-audit-chain/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn82file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-audit-chain\""
+  },
+  {
+    "manifest": "crates/corelink-audit-chain/fuzz/Cargo.toml",
+    "package_name": "corelink-audit-chain-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "f89476fb6d1ed518398f041435f06e7cab05124f",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-audit-chain/fuzz/Cargo.toml#L3-L4",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn155file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      3,
+      4
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-audit-chain-fuzz\""
+  },
+  {
+    "manifest": "crates/corelink-audit/Cargo.toml",
+    "package_name": "corelink-audit",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "c789259deb2d1987b0a0fb83f3c21e9787ead30f",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-audit/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn72file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-audit\""
+  },
+  {
+    "manifest": "crates/corelink-auth/Cargo.toml",
+    "package_name": "corelink-auth",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "fa745a73c62675cd7d1fb50eb6a2f6d4fc449c50",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-auth/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn59file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-auth\""
+  },
+  {
+    "manifest": "crates/corelink-bazel-bridge/Cargo.toml",
+    "package_name": "corelink-bazel-bridge",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "8b8d4859722d1cfc111d2d290d5250f354d4b7aa",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-bazel-bridge/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn130file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-bazel-bridge\""
+  },
+  {
+    "manifest": "crates/corelink-billing-aggregator/Cargo.toml",
+    "package_name": "corelink-billing-aggregator",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "2530bce59d9f0966fdead36b7fb82013b6957c56",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-aggregator/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn85file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-billing-aggregator\""
+  },
+  {
+    "manifest": "crates/corelink-billing-emit/Cargo.toml",
+    "package_name": "corelink-billing-emit",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "42cb84a54e4a4cb3d9f1642a63cad0249b9dd106",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-emit/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn84file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-billing-emit\""
+  },
+  {
+    "manifest": "crates/corelink-billing-reconcile/Cargo.toml",
+    "package_name": "corelink-billing-reconcile",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "ee72831ffb989af3283d115bb6b8a3f9694cf443",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-reconcile/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn87file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-billing-reconcile\""
+  },
+  {
+    "manifest": "crates/corelink-billing-stripe-materializer/Cargo.toml",
+    "package_name": "corelink-billing-stripe-materializer",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "c1e2437ed3fec7e4c623b7b5fc360d3b1df534c1",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-stripe-materializer/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn132file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-billing-stripe-materializer\""
+  },
+  {
+    "manifest": "crates/corelink-billing-stripe-traits/Cargo.toml",
+    "package_name": "corelink-billing-stripe-traits",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "dfd9a5821ee5d95bab3110266222e683a95b3f11",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-stripe-traits/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn133file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-billing-stripe-traits\""
+  },
+  {
+    "manifest": "crates/corelink-billing-stripe/Cargo.toml",
+    "package_name": "corelink-billing-stripe",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "595bc01e3c22bf4d0e7ae4d9c75aa4cb346e127a",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-stripe/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn86file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-billing-stripe\""
+  },
+  {
+    "manifest": "crates/corelink-billing/Cargo.toml",
+    "package_name": "corelink-billing",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "225860c6b6d03b7ad7bd16e11428f2b48599ee12",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn14file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-billing\""
+  },
+  {
+    "manifest": "crates/corelink-byok/Cargo.toml",
+    "package_name": "corelink-byok",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "8028e49de649bf20150d59938b8fa09dec7b0dfa",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-byok/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn103file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-byok\""
+  },
+  {
+    "manifest": "crates/corelink-byok/fuzz/Cargo.toml",
+    "package_name": "corelink-byok-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "c2a1247a566e6b95baf3352dc8bef9f8cf41374e",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-byok/fuzz/Cargo.toml#L3-L4",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn154file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      3,
+      4
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-byok-fuzz\""
+  },
+  {
+    "manifest": "crates/corelink-cas/Cargo.toml",
+    "package_name": "corelink-cas",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "a54143de52036f2842319b7f2ec3111add8fa46a",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-cas/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn58file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-cas\""
+  },
+  {
+    "manifest": "crates/corelink-cf-bindings/Cargo.toml",
+    "package_name": "corelink-cf-bindings",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "0d870f8b6d658e34d71fd64916473cbc94b7c039",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-cf-bindings/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn125file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-cf-bindings\""
+  },
+  {
+    "manifest": "crates/corelink-chaos-scheduler/Cargo.toml",
+    "package_name": "corelink-chaos-scheduler",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "c153fefe9f40f10c87d42397422f8656348a30d5",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-chaos-scheduler/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn107file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-chaos-scheduler\""
+  },
+  {
+    "manifest": "crates/corelink-clerk-cf/Cargo.toml",
+    "package_name": "corelink-clerk-cf",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "134efb95aead608a7e2439a5f90108a143224186",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-clerk-cf/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn91file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-clerk-cf\""
+  },
+  {
+    "manifest": "crates/corelink-clerk/Cargo.toml",
+    "package_name": "corelink-clerk",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "39273401e870c591c591dd7258b9eb44167384c2",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-clerk/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn70file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-clerk\""
+  },
+  {
+    "manifest": "crates/corelink-client-verify/Cargo.toml",
+    "package_name": "corelink-client-verify",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "c5b3571c11b37fabd2ba02e8bbb9cf3962819f62",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-client-verify/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn69file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-client-verify\""
+  },
+  {
+    "manifest": "crates/corelink-client-verify/fuzz/Cargo.toml",
+    "package_name": "corelink-client-verify-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "7ee20e2fda1293652cc61956564417fba67b2047",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-client-verify/fuzz/Cargo.toml#L3-L4",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn153file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      3,
+      4
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-client-verify-fuzz\""
+  },
+  {
+    "manifest": "crates/corelink-config-do/Cargo.toml",
+    "package_name": "corelink-config-do",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "7fc03c93df78a67fb54f48d1d7a1228baf50c67e",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-config-do/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn94file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-config-do\""
+  },
+  {
+    "manifest": "crates/corelink-container/Cargo.toml",
+    "package_name": "corelink-server",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "e9feace6365776c6a4141ff59efa70fe1b36e158",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-container/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn15file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-server\""
+  },
+  {
+    "manifest": "crates/corelink-core/Cargo.toml",
+    "package_name": "corelink-core",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "a76458267dc5ed5e13ded2deb906a2126ba57377",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-core/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn55file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-core\""
+  },
+  {
+    "manifest": "crates/corelink-crypto/Cargo.toml",
+    "package_name": "corelink-crypto",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "99e9c09f6b40ec56d0e231164590e87dbca140c7",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-crypto/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn56file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-crypto\""
+  },
+  {
+    "manifest": "crates/corelink-dpa-acceptance/Cargo.toml",
+    "package_name": "corelink-dpa-acceptance",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "773e415aad9021caaee51173a5e8e3a05d32129c",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dpa-acceptance/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn109file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-dpa-acceptance\""
+  },
+  {
+    "manifest": "crates/corelink-dsr-statuspage-scheduler/Cargo.toml",
+    "package_name": "corelink-dsr-statuspage-scheduler",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "ed45992c62d0b03cd242abb09ee674697007ef03",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dsr-statuspage-scheduler/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn124file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-dsr-statuspage-scheduler\""
+  },
+  {
+    "manifest": "crates/corelink-dsr/Cargo.toml",
+    "package_name": "corelink-dsr",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "d7250a943771103c399bd8848c4aa98492190988",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dsr/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn90file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-dsr\""
+  },
+  {
+    "manifest": "crates/corelink-dt-webhook/Cargo.toml",
+    "package_name": "corelink-dt-webhook",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "5c428bdee832eba0c8edcfc9936bdf385ca4df48",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dt-webhook/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn95file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-dt-webhook\""
+  },
+  {
+    "manifest": "crates/corelink-dual-approval/Cargo.toml",
+    "package_name": "corelink-dual-approval",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "e5768c57539ac0003001fdc5e1188f183f7f6326",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dual-approval/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn96file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-dual-approval\""
+  },
+  {
+    "manifest": "crates/corelink-enterprise-inquiry/Cargo.toml",
+    "package_name": "corelink-enterprise-inquiry",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "4d4b70698ffa33ea188c8e0c618362ccfb4cddf8",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-enterprise-inquiry/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn120file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-enterprise-inquiry\""
+  },
+  {
+    "manifest": "crates/corelink-erasure-attestation/Cargo.toml",
+    "package_name": "corelink-erasure-attestation",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "3a29530e9be58ae2bf6d9f36f365c1938cc093f7",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-erasure-attestation/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn104file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-erasure-attestation\""
+  },
+  {
+    "manifest": "crates/corelink-eviction/Cargo.toml",
+    "package_name": "corelink-eviction",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "7625910ebf62c4b712b39904b410adb3cce738d5",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-eviction/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn77file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-eviction\""
+  },
+  {
+    "manifest": "crates/corelink-failover-router/Cargo.toml",
+    "package_name": "corelink-failover-router",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "48cfde0dc23261594577fef5e3b0dc3a2eb93b74",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-failover-router/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn101file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-failover-router\""
+  },
+  {
+    "manifest": "crates/corelink-gc/Cargo.toml",
+    "package_name": "corelink-gc",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "26c58af62284c2fba62559ae1270d88969856303",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-gc/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn76file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-gc\""
+  },
+  {
+    "manifest": "crates/corelink-handler-ac/Cargo.toml",
+    "package_name": "corelink-handler-ac",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "1ba9f419d2bbaf4024e6b5dfbd0ea12da84bccb7",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-ac/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn128file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-handler-ac\""
+  },
+  {
+    "manifest": "crates/corelink-handler-admin/Cargo.toml",
+    "package_name": "corelink-handler-admin",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "8e19466d7eb1a94872b313cbfd89269507e902f2",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-admin/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn129file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-handler-admin\""
+  },
+  {
+    "manifest": "crates/corelink-handler-cas-erase/Cargo.toml",
+    "package_name": "corelink-handler-cas-erase",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "b10187370fcf1b3eda906b7e8012d085e79752ea",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-cas-erase/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn127file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-handler-cas-erase\""
+  },
+  {
+    "manifest": "crates/corelink-handler-cas/Cargo.toml",
+    "package_name": "corelink-handler-cas",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "ea5d3bf8274c29123ce0ecd7e0a5b9c5e40d72ed",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-cas/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn126file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-handler-cas\""
+  },
+  {
+    "manifest": "crates/corelink-handler-customer/Cargo.toml",
+    "package_name": "corelink-handler-customer",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "4aafb7ca54f8bc586a7a846c28a1ba35d4cf3097",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-customer/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn131file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-handler-customer\""
+  },
+  {
+    "manifest": "crates/corelink-hash/Cargo.toml",
+    "package_name": "corelink-hash",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "0b836118960c8f21c50473dc0e37461fd5b47bd7",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn19file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-hash\""
+  },
+  {
+    "manifest": "crates/corelink-hash/fuzz/Cargo.toml",
+    "package_name": "corelink-hash-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "b9f559c2b44629cb7c1d9a18ddc95b2aa38ecbb2",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/fuzz/Cargo.toml#L3-L4",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn149file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      3,
+      4
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-hash-fuzz\""
+  },
+  {
+    "manifest": "crates/corelink-meta/Cargo.toml",
+    "package_name": "corelink-meta",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "b46812f88a190cd56f16d509e9a31d380884f876",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-meta/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn67file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-meta\""
+  },
+  {
+    "manifest": "crates/corelink-meta/fuzz/Cargo.toml",
+    "package_name": "corelink-meta-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "67d11bdb8fb8751e143301e2da9b8eb79f0165ab",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-meta/fuzz/Cargo.toml#L3-L4",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn151file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      3,
+      4
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-meta-fuzz\""
+  },
+  {
+    "manifest": "crates/corelink-ops/Cargo.toml",
+    "package_name": "corelink-ops",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "e5c51bb18378cb47c2df1b66df163b0e1b22eaff",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ops/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn62file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-ops\""
+  },
+  {
+    "manifest": "crates/corelink-pat/Cargo.toml",
+    "package_name": "corelink-pat",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "ecea00dee03d3d9e3306c2dc695c620c8b81a210",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-pat/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn71file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-pat\""
+  },
+  {
+    "manifest": "crates/corelink-privacy-erasure-worker/Cargo.toml",
+    "package_name": "corelink-privacy-erasure-worker",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "a04b0f08337276d91c3e055fb5a3f3528e3ad460",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-privacy-erasure-worker/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn92file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-privacy-erasure-worker\""
+  },
+  {
+    "manifest": "crates/corelink-privacy-pseudonymize/Cargo.toml",
+    "package_name": "corelink-privacy-pseudonymize",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "c5b8034c7b23b2be4553eeab0e1371f5efa7f895",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-privacy-pseudonymize/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn93file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-privacy-pseudonymize\""
+  },
+  {
+    "manifest": "crates/corelink-privacy/Cargo.toml",
+    "package_name": "corelink-privacy",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "db717dbc11d9b3f1ef932b270772ea97e4159c94",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-privacy/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn60file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-privacy\""
+  },
+  {
+    "manifest": "crates/corelink-r2-multipart/Cargo.toml",
+    "package_name": "corelink-r2-multipart",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "3962a394e1dba8ddab89e98cd46e465d55ebf146",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-r2-multipart/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn75file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-r2-multipart\""
+  },
+  {
+    "manifest": "crates/corelink-rate-headers/Cargo.toml",
+    "package_name": "corelink-rate-headers",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "4e5afd673f5ac32a262b22b74382ef0fc3944b46",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-rate-headers/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn79file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-rate-headers\""
+  },
+  {
+    "manifest": "crates/corelink-ratelimit/Cargo.toml",
+    "package_name": "corelink-ratelimit",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "f9f358c65aa557937cd755d0789c08831b1737f8",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ratelimit/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn78file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-ratelimit\""
+  },
+  {
+    "manifest": "crates/corelink-reapi/Cargo.toml",
+    "package_name": "corelink-reapi",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "eb9ab5b3d0f168ed83021815d7094600c76264bd",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-reapi/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn68file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-reapi\""
+  },
+  {
+    "manifest": "crates/corelink-reapi/fuzz/Cargo.toml",
+    "package_name": "corelink-reapi-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "0be0b179e2442e2e44522b3f483cb636d44ece7f",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-reapi/fuzz/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn152file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-reapi-fuzz\""
+  },
+  {
+    "manifest": "crates/corelink-region/Cargo.toml",
+    "package_name": "corelink-region",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "ed4a187f1e8c83b6a9bd54273e42260f3e56577e",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-region/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn99file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-region\""
+  },
+  {
+    "manifest": "crates/corelink-replica-worker/Cargo.toml",
+    "package_name": "corelink-replica-worker",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "05dd8e80a0daec400a8f8f402019ef368f30c5b3",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-replica-worker/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn100file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-replica-worker\""
+  },
+  {
+    "manifest": "crates/corelink-replication-coordinator/Cargo.toml",
+    "package_name": "corelink-replication-coordinator",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "7c651aa4798abed83bcae61a2821e268109e80ed",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-replication-coordinator/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn102file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-replication-coordinator\""
+  },
+  {
+    "manifest": "crates/corelink-replication/Cargo.toml",
+    "package_name": "corelink-replication",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "3ed96ed1ee4b862e20c7ca53e15f16883ee02234",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-replication/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn61file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-replication\""
+  },
+  {
+    "manifest": "crates/corelink-rotation-adapters/Cargo.toml",
+    "package_name": "corelink-rotation-adapters",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "af7ef105a3038dadc141885fa1ea01b5ea7e42a1",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-rotation-adapters/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn97file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-rotation-adapters\""
+  },
+  {
+    "manifest": "crates/corelink-runbook-tracker/Cargo.toml",
+    "package_name": "corelink-runbook-tracker",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "40d42d3a98fa07df2acae4ef49472d81da5b9877",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-runbook-tracker/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn108file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-runbook-tracker\""
+  },
+  {
+    "manifest": "crates/corelink-runner-aggregate/Cargo.toml",
+    "package_name": "corelink-runner-aggregate",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "e05439cc7906b7ca76a64f6d62bfd39306ec6e1a",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-runner-aggregate/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn89file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-runner-aggregate\""
+  },
+  {
+    "manifest": "crates/corelink-runner-overage/Cargo.toml",
+    "package_name": "corelink-runner-overage",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "5d8dcd5fd8e54a013f50346971af91abfcc2c7f5",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-runner-overage/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn88file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-runner-overage\""
+  },
+  {
+    "manifest": "crates/corelink-signup/Cargo.toml",
+    "package_name": "corelink-signup",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "cc2da2df3e08ccb109fb95ef06c9d256e1762312",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-signup/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn118file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-signup\""
+  },
+  {
+    "manifest": "crates/corelink-slack-real/Cargo.toml",
+    "package_name": "corelink-slack-real",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "96d792fe0e2b9636cd5a8cda4c92074825979509",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-slack-real/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn122file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-slack-real\""
+  },
+  {
+    "manifest": "crates/corelink-slo/Cargo.toml",
+    "package_name": "corelink-slo",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "cd12aa05323b31644e3b2efe6231bc49825e761d",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-slo/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn83file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-slo\""
+  },
+  {
+    "manifest": "crates/corelink-statuspage-real/Cargo.toml",
+    "package_name": "corelink-statuspage-real",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "4fe081a3c13c920292a43ff0772e5fa7cd0e4420",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-statuspage-real/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn123file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-statuspage-real\""
+  },
+  {
+    "manifest": "crates/corelink-stripe-real/Cargo.toml",
+    "package_name": "corelink-stripe-real",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "db2c9d4c48a5b3ec4d7c02db9acef19a37273970",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-stripe-real/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn121file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-stripe-real\""
+  },
+  {
+    "manifest": "crates/corelink-telemetry/Cargo.toml",
+    "package_name": "corelink-telemetry",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "13e606040fd38568e02c899584cfcc198f22fef8",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-telemetry/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn57file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-telemetry\""
+  },
+  {
+    "manifest": "crates/corelink-terraform-drift-consumer/Cargo.toml",
+    "package_name": "corelink-terraform-drift-consumer",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "dceb8cfb3e533f07600d15a09e4dabc1e9229f5b",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-terraform-drift-consumer/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn98file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-terraform-drift-consumer\""
+  },
+  {
+    "manifest": "crates/corelink-tier-selection/Cargo.toml",
+    "package_name": "corelink-tier-selection",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "ac742611a84dfdbc64a368762b5e92cb4bf6a836",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-tier-selection/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn119file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-tier-selection\""
+  },
+  {
+    "manifest": "crates/corelink-tracing/Cargo.toml",
+    "package_name": "corelink-tracing",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "c80a90b8f45aec0bfc9dabd3cdade8d5a099de85",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-tracing/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn81file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-tracing\""
+  },
+  {
+    "manifest": "crates/corelink-transparency-log/Cargo.toml",
+    "package_name": "corelink-transparency-log",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "08e00d5c52c21c2bb2563508399d31a1ed1f2ee8",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-transparency-log/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn105file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-transparency-log\""
+  },
+  {
+    "manifest": "crates/corelink-turbo-bridge/Cargo.toml",
+    "package_name": "corelink-turbo-bridge",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "c531f2af379908107bf8b994077fae19e8103983",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-turbo-bridge/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn135file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-turbo-bridge\""
+  },
+  {
+    "manifest": "crates/corelink-wasm/Cargo.toml",
+    "package_name": "corelink-wasm",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "4e75f8086e056d2d7733b12c0a04a95ba4c82943",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-wasm/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn106file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-wasm\""
+  },
+  {
+    "manifest": "crates/corelink-worker/Cargo.toml",
+    "package_name": "corelink-worker",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "18e9450da475cd29e2a168ee670398542189b95c",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-worker/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn66file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-worker\""
+  },
+  {
+    "manifest": "crates/corelink-worker/fuzz/Cargo.toml",
+    "package_name": "corelink-worker-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "2d3c6cac3b69e9ecb6d29588bfc25028e2a6fcb2",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-worker/fuzz/Cargo.toml#L3-L4",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn150file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      3,
+      4
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-worker-fuzz\""
+  },
+  {
+    "manifest": "crates/tenant-path/Cargo.toml",
+    "package_name": "corelink-tenant-path",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "22260549d8bbb62dcbc415ae976cf610ec095c72",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/tenant-path/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn65file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-tenant-path\""
+  },
+  {
+    "manifest": "crates/tenant-path/fuzz/Cargo.toml",
+    "package_name": "corelink-tenant-path-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "aaeeb71ed797939dfa745450b5a4640ef344e579",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/tenant-path/fuzz/Cargo.toml#L3-L4",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn148file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      3,
+      4
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-tenant-path-fuzz\""
+  },
+  {
+    "manifest": "tests/chaos/Cargo.toml",
+    "package_name": "chaos-campaign",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "1f970e9ba5628054dc98aa0c6a43227087e27bce",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/chaos/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn145file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"chaos-campaign\""
+  },
+  {
+    "manifest": "tests/e2e-billing-flow/Cargo.toml",
+    "package_name": "e2e-billing-flow",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "1ae56c9eb087110cfe2ead4cf657d0f87cf8fcc4",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-billing-flow/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn141file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-billing-flow\""
+  },
+  {
+    "manifest": "tests/e2e-byok-revoke/Cargo.toml",
+    "package_name": "e2e-byok-revoke",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "eb9e290d9a6f71f06fefc6a23156d43db2a52df2",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-byok-revoke/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn137file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-byok-revoke\""
+  },
+  {
+    "manifest": "tests/e2e-chaos/Cargo.toml",
+    "package_name": "e2e-chaos",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "df80446c32ba222ae2ff66ada6b6ff5ae50bfe40",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-chaos/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn139file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-chaos\""
+  },
+  {
+    "manifest": "tests/e2e-dsr/Cargo.toml",
+    "package_name": "e2e-dsr",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "2a7e9d070bce08dcd8d2e8f8db6ca184e4cf15f1",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-dsr/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn138file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-dsr\""
+  },
+  {
+    "manifest": "tests/e2e-failover-router/Cargo.toml",
+    "package_name": "e2e-failover-router",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "685fd810daf578ae394768697fde0db85e332ebb",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-failover-router/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn143file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-failover-router\""
+  },
+  {
+    "manifest": "tests/e2e-pilot-onboarding/Cargo.toml",
+    "package_name": "e2e-pilot-onboarding",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "ed720d2eded7de1408185dcc415a0e39cf1efb79",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-pilot-onboarding/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn146file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-pilot-onboarding\""
+  },
+  {
+    "manifest": "tests/e2e-replication-failover/Cargo.toml",
+    "package_name": "e2e-replication-failover",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "13ed9f963c625e3f06885e1aad711547d4ecee67",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-replication-failover/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn144file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-replication-failover\""
+  },
+  {
+    "manifest": "tests/e2e-resilience/Cargo.toml",
+    "package_name": "e2e-resilience",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "7624e8c45e663ad6e26ef0b886a1d472fa90cc10",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-resilience/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn140file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-resilience\""
+  },
+  {
+    "manifest": "tests/e2e-signup-flow/Cargo.toml",
+    "package_name": "e2e-signup-flow",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "67c5e30446e8ac0274a33498d13a0c5d5d106c10",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-signup-flow/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn136file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-signup-flow\""
+  },
+  {
+    "manifest": "tests/e2e-tenant-isolation/Cargo.toml",
+    "package_name": "e2e-tenant-isolation",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "9e03007432df3be8f608c47f79551d40451bca24",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-tenant-isolation/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn142file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-tenant-isolation\""
+  },
+  {
+    "manifest": "tests/e2e-user-journeys/Cargo.toml",
+    "package_name": "e2e-user-journeys",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "3cae29b6a03d8baa2e0f56c3bbd9e4fec7cc0218",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-user-journeys/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn147file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"e2e-user-journeys\""
+  },
+  {
+    "manifest": "tools/cli/Cargo.toml",
+    "package_name": "corelink-cli",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "2f3f66a1b313588c0f4462084c59db254486134e",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/cli/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn110file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-cli\""
+  },
+  {
+    "manifest": "tools/cli/fuzz/Cargo.toml",
+    "package_name": "corelink-cli-fuzz",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "239da43bfd77a6b9a43b4c4074807dfc1d57ef45",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/cli/fuzz/Cargo.toml#L3-L4",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn53file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      3,
+      4
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-cli-fuzz\""
+  },
+  {
+    "manifest": "tools/dt-cli/Cargo.toml",
+    "package_name": "corelink-dt-cli",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "e1635058e4eb9c79790cf64f2a2d4bca5ad2ee36",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/dt-cli/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn114file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-dt-cli\""
+  },
+  {
+    "manifest": "tools/dt-reconcile/Cargo.toml",
+    "package_name": "corelink-dt-reconcile",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "1f0730263886e0639bd808ee3a5ccf2d0a0524ca",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/dt-reconcile/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn115file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-dt-reconcile\""
+  },
+  {
+    "manifest": "tools/openapi/Cargo.toml",
+    "package_name": "corelink-openapi",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "acac2c04012fd987435ecb8f2c11cd4025d67e41",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/openapi/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn117file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-openapi\""
+  },
+  {
+    "manifest": "tools/sbom-publish/Cargo.toml",
+    "package_name": "sbom-publish",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "d314f370f0d40e2aed897a340d72ae17ee2db611",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sbom-publish/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn113file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"sbom-publish\""
+  },
+  {
+    "manifest": "tools/sdks/go/Cargo.toml",
+    "package_name": "corelink-go",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "9413ad8e7d71ff12dd02964151ca0c5b0a637de0",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sdks/go/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn112file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-go\""
+  },
+  {
+    "manifest": "tools/sdks/python/Cargo.toml",
+    "package_name": "corelink-py",
+    "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+    "provider_reported_git_blob": "3b9bde7367978020f29d276f1f72c397c3c13bfe",
+    "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sdks/python/Cargo.toml#L1-L2",
+    "source_tool": "GitHub.fetch_file",
+    "response_citation_base": "turn111file0",
+    "evidence_class": "SOURCE",
+    "cargo_metadata_verified": false,
+    "identity_lines": [
+      1,
+      2
+    ],
+    "observed_identity_excerpt": "[package]\nname = \"corelink-py\""
+  }
+]

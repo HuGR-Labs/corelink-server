@@ -1,0 +1,1051 @@
+{
+  "scope": "Preflight local com snapshot explicitamente incompleto; nenhuma consulta/criação GitHub por este script.",
+  "workspace_drafts": 95,
+  "fuzz_candidate_drafts": 9,
+  "workspace_names_unresolved": 90,
+  "blocked_count": 104,
+  "eligible_count": 0,
+  "published_count": 0,
+  "results": [
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-ac/fuzz/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-audit-chain/fuzz/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-byok/fuzz/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-client-verify/fuzz/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-hash/fuzz/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-meta/fuzz/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-reapi/fuzz/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-worker/fuzz/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/tenant-path/fuzz/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "apps/migrate-single-to-multi-region/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-ac/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-adapter-host/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-adapters-cloud/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-adapters-vault/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-analytics/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-audit-chain/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-audit/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-auth/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-bazel-bridge/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-billing-aggregator/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-billing-emit/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-billing-reconcile/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-billing-stripe-materializer/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-billing-stripe-traits/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-billing-stripe/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-billing/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-byok/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-cas/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-cf-bindings/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-chaos-scheduler/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-clerk-cf/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-clerk/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-client-verify/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-config-do/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-container/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-core/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-crypto/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-dpa-acceptance/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-dsr-statuspage-scheduler/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-dsr/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-dt-webhook/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-dual-approval/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-enterprise-inquiry/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-erasure-attestation/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-eviction/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-failover-router/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-gc/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-handler-ac/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-handler-admin/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-handler-cas-erase/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-handler-cas/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-handler-customer/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-hash/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-meta/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-ops/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-pat/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-privacy-erasure-worker/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-privacy-pseudonymize/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-privacy/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-r2-multipart/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-rate-headers/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-ratelimit/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-reapi/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-region/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-replica-worker/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-replication-coordinator/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-replication/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-rotation-adapters/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-runbook-tracker/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-runner-aggregate/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-runner-overage/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-signup/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-slack-real/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-slo/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-statuspage-real/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-stripe-real/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-telemetry/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-terraform-drift-consumer/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-tier-selection/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-tracing/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-transparency-log/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-turbo-bridge/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-wasm/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/corelink-worker/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "crates/tenant-path/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/chaos/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-billing-flow/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-byok-revoke/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-chaos/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-dsr/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-failover-router/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-pilot-onboarding/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-replication-failover/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-resilience/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-signup-flow/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-tenant-isolation/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tests/e2e-user-journeys/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tools/cli/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tools/dt-cli/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tools/dt-reconcile/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tools/openapi/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tools/sbom-publish/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tools/sdks/go/Cargo.toml"
+    },
+    {
+      "action": "BLOCKED",
+      "errors": [
+        "complete open-and-closed snapshot required",
+        "frozen contract with immutable GitHub URL required",
+        "item explicitly blocked",
+        "publication prerequisites missing or not passed"
+      ],
+      "manifest": "tools/sdks/python/Cargo.toml"
+    }
+  ]
+}

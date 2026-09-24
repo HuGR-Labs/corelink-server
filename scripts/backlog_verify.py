@@ -89,6 +89,7 @@ IMMUTABLE_ITEM_FIELDS = frozenset({
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
 })
 B154_LEGACY_VERIFY_SHA256 = "39b0307a1a4451c90fb22fe9a37cfbd858485d38e6361e6c3d15bce1d1f4beac"
+B154_SPRINT3_VERIFY_SHA256 = "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e"
 ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified", "verify-means"})
 
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
@@ -549,7 +550,11 @@ def validate_candidate_transitions(
                 ) and item.id == "B-154" and (
                     isinstance(old_raw.get("verify"), str)
                     and hashlib.sha256(old_raw["verify"].encode()).hexdigest()
-                    == B154_LEGACY_VERIFY_SHA256
+                    == (
+                        B154_SPRINT3_VERIFY_SHA256
+                        if allow_sprint3_rewrite
+                        else B154_LEGACY_VERIFY_SHA256
+                    )
                     and new_raw.get("verify") == (
                         "python3 -S scripts/verify_owner_action_packets.py --id B-154 &&\n"
                         "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
@@ -707,7 +712,18 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
              "run": expected_b046_gate},
         ],
     }
-    if jobs["verify"] != expected_data or jobs["trusted_semantic"] != expected_trusted:
+    verify_job = jobs["verify"]
+    if (
+        not isinstance(verify_job, dict)
+        or verify_job.get("runs-on") not in ("corelink", "ubuntu-24.04")
+    ):
+        raise RuntimeError("candidate workflow policy has unexpected verify runner")
+    # Accept the current BASE runner during rollout and the one explicitly
+    # approved hosted target. Normalize only this field before applying the
+    # existing closed-world shape check; trusted_semantic remains exact.
+    normalized_verify = dict(verify_job)
+    normalized_verify["runs-on"] = "corelink"
+    if normalized_verify != expected_data or jobs["trusted_semantic"] != expected_trusted:
         raise RuntimeError("candidate workflow policy has unexpected data/trusted job shape")
 
 

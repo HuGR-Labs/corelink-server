@@ -1,0 +1,37 @@
+test_duplicate_member_rejected (test_tools.CensusChecks.test_duplicate_member_rejected) ... ok
+test_empty_members_rejected (test_tools.CensusChecks.test_empty_members_rejected) ... ok
+test_missing_package_rejected (test_tools.CensusChecks.test_missing_package_rejected) ... ok
+test_missing_targets_rejected (test_tools.CensusChecks.test_missing_targets_rejected) ... ok
+test_opaque_package_ids_not_parsed (test_tools.CensusChecks.test_opaque_package_ids_not_parsed) ... ok
+test_package_identity_not_folder (test_tools.CensusChecks.test_package_identity_not_folder) ... ok
+test_path_escape_rejected (test_tools.CensusChecks.test_path_escape_rejected) ... ok
+test_reverse_edges_preserve_kinds_conditions_and_alias (test_tools.CensusChecks.test_reverse_edges_preserve_kinds_conditions_and_alias) ... ok
+test_slug_bounded (test_tools.CensusChecks.test_slug_bounded) ... ok
+test_slug_collision_rejected (test_tools.CensusChecks.test_slug_collision_rejected) ... ok
+test_wrong_name_rejected (test_tools.CensusChecks.test_wrong_name_rejected) ... ok
+test_wrong_root_rejected (test_tools.CensusChecks.test_wrong_root_rejected) ... ok
+test_all_templates_fit_and_navigate (test_tools.DocumentChecks.test_all_templates_fit_and_navigate) ... ok
+test_broken_anchor_rejected (test_tools.DocumentChecks.test_broken_anchor_rejected) ... ok
+test_byte_budget_rejected (test_tools.DocumentChecks.test_byte_budget_rejected) ... ok
+test_deep_heading_rejected (test_tools.DocumentChecks.test_deep_heading_rejected) ... ok
+test_duplicate_anchor_rejected (test_tools.DocumentChecks.test_duplicate_anchor_rejected) ... ok
+test_external_links_not_claimed_verified (test_tools.DocumentChecks.test_external_links_not_claimed_verified) ... ok
+test_line_budget_rejected (test_tools.DocumentChecks.test_line_budget_rejected) ... ok
+test_long_code_block_rejected (test_tools.DocumentChecks.test_long_code_block_rejected) ... ok
+test_long_prose_rejected (test_tools.DocumentChecks.test_long_prose_rejected) ... ok
+test_missing_frontmatter (test_tools.DocumentChecks.test_missing_frontmatter) ... ok
+test_missing_required_section (test_tools.DocumentChecks.test_missing_required_section) ... ok
+test_no_cold_review_claim (test_tools.DocumentChecks.test_no_cold_review_claim) ... ok
+test_procedure_steps_limit (test_tools.DocumentChecks.test_procedure_steps_limit) ... ok
+test_relation_card_limit (test_tools.DocumentChecks.test_relation_card_limit) ... ok
+test_unclosed_code_fence_rejected (test_tools.DocumentChecks.test_unclosed_code_fence_rejected) ... ok
+test_unresolved_template_not_approved_as_document (test_tools.DocumentChecks.test_unresolved_template_not_approved_as_document) ... ok
+test_utf8_bytes_not_character_count (test_tools.DocumentChecks.test_utf8_bytes_not_character_count) ... ok
+test_wide_table_rejected (test_tools.DocumentChecks.test_wide_table_rejected) ... ok
+test_word_budget_rejected (test_tools.DocumentChecks.test_word_budget_rejected) ... ok
+test_words_include_metadata (test_tools.DocumentChecks.test_words_include_metadata) ... ok
+
+----------------------------------------------------------------------
+Ran 32 tests in 0.018s
+
+OK

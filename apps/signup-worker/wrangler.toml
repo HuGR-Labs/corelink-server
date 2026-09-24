@@ -57,6 +57,9 @@ head_sampling_rate = 1
 #                                  missing runtime configuration: it retains the
 #                                  DLQ delivery for retry and never substitutes
 #                                  a console log for an accepted on-call page.
+#   DSR_DLQ_REDRIVE_AUTH_KEY       — dedicated >=32-character bearer key for
+#                                  the DSR DLQ redrive authority. There is no
+#                                  shared-key fallback; bind it before deploy.
 #
 # D1 bindings:
 #   CONFIG_DB  — corelink-prod-d1 (tenant, pat, tenant_billing tables).

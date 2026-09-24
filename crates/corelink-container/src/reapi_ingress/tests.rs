@@ -314,7 +314,6 @@ fn ingress_for_test(
         admission_calls,
     }
 }
-
 #[derive(Debug, Clone)]
 enum CasReadSpyOutcome {
     Response(CasReadResponse),
@@ -439,6 +438,15 @@ impl CasWriteHandler for CasWriteSpy {
     ) -> Result<CasWriteResponse, corelink_handler_cas::CasHandlerError> {
         let hash = request.claimed_hash.clone();
         self.calls.lock().unwrap().push(request);
+        let request = self.calls.lock().unwrap();
+        let request = request.last().expect("write spy recorded its request");
+        let actual = sha256_digest(&request.bytes);
+        if actual != request.claimed_hash {
+            return Err(corelink_handler_cas::CasHandlerError::HashMismatch {
+                claimed: request.claimed_hash.clone(),
+                actual,
+            });
+        }
         Ok(CasWriteResponse::new(hash, true))
     }
 }
@@ -633,10 +641,17 @@ async fn cas_unary_denials_and_invalid_entries_never_reach_storage() {
         .unwrap()
         .into_inner()
         .responses;
-    assert!(statuses
+    assert_eq!(
+        statuses[0].status.as_ref().unwrap().code,
+        Code::DataLoss as i32
+    );
+    assert!(statuses[1..]
         .iter()
         .all(|entry| entry.status.as_ref().unwrap().code == Code::InvalidArgument as i32));
-    assert!(writes.lock().unwrap().is_empty());
+    // A body/hash mismatch reaches the decorated writer, which audits it and
+    // rejects before persistence. Duplicate/compressor failures are rejected
+    // by the REAPI boundary and never invoke that writer.
+    assert_eq!(writes.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

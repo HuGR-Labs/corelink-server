@@ -1,3 +1,19 @@
+---
+id: "RB-B104-AUTHENTICATED-404"
+type: "runbook"
+doc_status: "DRAFT"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-09-22"
+updated: "2026-09-23"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
+tags: ["runbook", "b-104", "authenticated-404", "cargo", "latency", "staging"]
+---
+
 # RB-B104 — authenticated 404 latency evidence
 
 This runbook measures the served miss path for an authenticated, nonexistent

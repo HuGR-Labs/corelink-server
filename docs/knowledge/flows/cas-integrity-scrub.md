@@ -4,12 +4,16 @@ title: "CAS at-rest integrity scrub"
 description: "The cron-driven sweep that re-hashes stored CAS objects, covering the cold set the traffic-driven read-path re-verify never reaches; per-tenant enumeration, whole-tenant BYOK skip, and three counters that keep an empty sweep distinguishable from a healthy one."
 source_files:
   - "crates/corelink-container/src/routes/cas_scrub.rs"
-  - "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_helpers.rs"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_byok_body.rs"
   - "crates/corelink-container/src/storage/byok_cas/part-01.rs"
 source_blobs:
   - "crates/corelink-container/src/routes/cas_scrub.rs@4788ef118b3e60bab81bb348169e388779507198"
-  - "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs@c731944a56c1db190287a93fb8888b09ca67902c"
-  - "crates/corelink-container/src/storage/byok_cas/part-01.rs@0ff91d96f9e7dffe47faed4808c468ce1b196663"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs@8762b858933aadb0c6577be5cef37d9826dec42a"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_helpers.rs@7d110e199d545a340957e563012c47290488982f"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_byok_body.rs@e01961af0cfdce348a6e681a4e5392e9a5bfcd8f"
+  - "crates/corelink-container/src/storage/byok_cas/part-01.rs@6e8f923cafdcc1389f94cda87d6b6c367dc47422"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["flows", "cas", "integrity", "scrubber", "storage", "byok", "request-flow"]
@@ -34,7 +38,7 @@ Enumeration is bounded per call: one call verifies up to an object budget and re
 
 **Classify BYOK once per tenant and skip an encrypting tenant WHOLE.** For a BYOK-`active` tenant the stored object is ciphertext, and re-hashing raw bytes would emit false violations against intact data. The question is asked through the public `ByokConfigCache::get` + `engagement_for` pair — the single source of truth the read and write paths already share — and NOT through `resolve_byok`, which is private to `impl R2CasHandler`, absent from `R2S3Client`, and maps a logical digest to a physical one, the opposite of the direction a sweep travels. `FailClosed` or a config-read error counts `failed`; nothing is ever assumed plaintext (`crates/corelink-container/src/routes/cas_scrub.rs:343`).
 
-**Reuse the enforcement point, and let the key choose the algorithm.** `verify_content_hash` (`crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:615`) is widened to `pub(crate)` and called rather than reimplemented, so it remains the single enforcement point for content-addressing on the durable path. The key's own sub-prefix decides the digest function, so a REAPI v2 SHA-256 blob is not re-hashed with BLAKE3 and reported as a violation against intact data (`crates/corelink-container/src/routes/cas_scrub.rs:415`).
+**Reuse the enforcement point, and let the key choose the algorithm.** `verify_content_hash` (`crates/corelink-container/src/storage/r2_s3_parts/cas_helpers.rs:188-215`) is the shared implementation called by both the durable read path and scrubber, so content addressing has one enforcement point. The key's own sub-prefix decides the digest function, so a REAPI v2 SHA-256 blob is not re-hashed with BLAKE3 and reported as a violation against intact data (`crates/corelink-container/src/routes/cas_scrub.rs:415`).
 
 # Consequences
 
@@ -51,5 +55,7 @@ Verification moves from "on every read" to "whenever the scrubber last reached t
 5. `crates/corelink-container/src/routes/cas_scrub.rs:343` — per-tenant BYOK classification through the public config API; unclassifiable counts `failed`, never plaintext.
 6. `crates/corelink-container/src/routes/cas_scrub.rs:415` — the key's sub-prefix selects BLAKE3 vs SHA-256, so a REAPI blob is not mis-hashed.
 7. `crates/corelink-container/src/routes/cas_scrub.rs:167` — the three independent counters.
-8. `crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:572` — `verify_content_hash`, widened to `pub(crate)` and reused as the single enforcement point.
-9. `crates/corelink-container/src/storage/byok_cas/part-01.rs:447` — `engagement_for`, the shared read/write engagement decision the scrubber classifies through.
+8. `crates/corelink-container/src/storage/r2_s3_parts/cas_helpers.rs:188-215` — shared `verify_content_hash` implementation called by both the durable read handler and the scrubber.
+9. `crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:198-220` — read path decrypts first, then verifies plaintext before serving; a mismatch is recorded and rejected.
+10. `crates/corelink-container/src/storage/r2_s3_parts/cas_byok_body.rs:40-68` — BYOK decrypt is fail-closed and returns plaintext to the hash check.
+11. `crates/corelink-container/src/storage/byok_cas/part-01.rs:556-556` — `engagement_for`, the shared read/write engagement decision the scrubber classifies through.

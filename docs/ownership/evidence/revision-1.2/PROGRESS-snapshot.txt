@@ -1,0 +1,93 @@
+# Ownership — avanço de preparação 1.2
+
+**Data:** 19 de setembro de 2026.  
+**Código consultado:** `HuGR-Labs/corelink-server@cca798ff5bc2df660ecf2570ed243eb9775ff3d0`.  
+**Veredito de emissão:** `BLOCKED_FOR_PUBLICATION`; não houve aprovação independente.
+
+[Pacote](README.md) · [Inventário](inventory/index.md) · [Rascunhos](issue-drafts/index.md) · [Testes](evidence/revision-1.2/tests-final.txt)
+
+## 1. Delta comprovado
+
+| Medida | Antes | Agora |
+|---|---:|---:|
+| Nomes ainda pendentes nos 95 rascunhos do workspace | 90 | **0** |
+| Nomes do workspace verificados diretamente no manifesto fixado | Preparação incompleta | **95** |
+| Manifestos fuzz incorporados ao inventário | 9 candidatos | **10 confirmados** |
+| Binários explicitamente declarados nesses dez manifestos fuzz | Não enumerados | **23** |
+| Rascunhos com nome e destinos preenchidos | Parcial | **105** |
+| Contextos adicionais de manifesto estruturados nesta rodada | 0 | **24** |
+| Issues publicadas por esta frente | 0 | **0** |
+
+Os 105 registros não certificam que o repositório inteiro contém somente esses
+packages. São os 95 membros declarados e dez packages fuzz inspecionados. Outros
+manifestos rastreados, históricos, fixtures e fornecedores ainda exigem classificação.
+O conjunto original de `workspace.exclude` tem nove entradas; o décimo fuzzer foi
+encontrado fora dessa lista. Não mudamos o manifesto do produto.
+
+## 2. Evidência de identidade, não inferência de pasta
+
+Cada registro fixa manifesto, `package.name`, commit, blob reportado pelo GitHub,
+linhas da declaração e permalink. Nenhum nome foi preenchido apenas pelo basename.
+O blob é metadado do fornecedor; não afirmamos ter calculado localmente o hash do
+manifesto completo quando somente seu cabeçalho foi lido.
+
+[Registro de 105 identidades](evidence/revision-1.2/manifest-identities.json).
+
+| Caminho | Nome Cargo confirmado | Distinção importante |
+|---|---|---|
+| `crates/corelink-container` | `corelink-server` | Dois bins no mesmo package |
+| `crates/tenant-path` | `corelink-tenant-path` | Pasta não é nome de package |
+| `tools/cli` | `corelink-cli` | O binário se chama `corelink` |
+| `tools/sdks/python` | `corelink-py` | Library `corelink_py`, `cdylib` |
+| `tools/sdks/go` | `corelink-go` | Library `corelink_go`, `cdylib` e `staticlib` |
+| `tests/chaos` | `chaos-campaign` | Não criar a issue como package `chaos` |
+
+## 3. Contexto concreto acrescentado
+
+O [registro de contexto](preparation/manifest-context.json) contém fatos, targets
+explicitamente lidos, chaves de dependência e riscos a investigar para 24 unidades.
+Os respectivos rascunhos incluem esses dados e suas fontes. São **contextos parciais**:
+não substituem leitura de implementação/OKF, consumidores, contratos e gates.
+
+O fuzzer da CLI possui workspace próprio e cinco bins, por isso ganhou seu
+[rascunho individual](issue-drafts/fuzz-candidates/tools__cli__fuzz.md). O manifesto
+usa `toml 0.8`, enquanto o manifesto da CLI declara `toml 1.1`; a documentação deve
+verificar qual parser cada target exercita, sem declarar um bug a partir da versão.
+
+O fuzzer de AC declara somente dependências externas (`libfuzzer-sys`, `hkdf`, `sha2`),
+não uma dependência direta em `corelink-ac`. Sua associação pelo diretório não é
+prova de cobertura da implementação da crate-mãe. O de client-verify habilita
+`stream` e `ffi` e permite `unsafe` no harness. O de REAPI usa versão `0.1.0` e não
+declara `bench=false` nos bins. Esses detalhes foram preservados individualmente,
+em vez de aplicar um template factual único a todos os fuzzers.
+
+## 4. Verificações realizadas
+
+A suíte local reúne **126 testes Python aprovados**: os 105 existentes e 21 checks
+de consistência desta preparação. Os novos checks cobrem identidades, aliases,
+slugs, marcadores, destinos, limites dos rascunhos, fingerprints, ausência de falsa
+aprovação, particularidades dos fuzzers e correspondência entre as fontes.
+
+[Log completo](evidence/revision-1.2/tests-final.txt) · [Resumo estruturado](evidence/revision-1.2/preparation-summary.json) · [Arquivos-base preservados](evidence/revision-1.2/preserved-files.json).
+
+Os testes verificam coerência do pacote e dos dados transcritos. Não repetem a
+consulta ao GitHub, não comprovam semântica dos programas e não são testes Rust.
+Os contratos, schemas, ferramentas, templates e o arquivo dos 32 testes originais
+foram preservados em relação à revisão 1.1.
+
+## 5. Gates ainda abertos
+
+| Gate | Estado após esta rodada |
+|---|---|
+| Identidade declarada das 105 unidades conhecidas | Confirmada em fonte |
+| Censo Cargo e todos os manifestos rastreados | Não executado / não certificado |
+| Pacote semântico completo por unidade | Pendente; 24 possuem preparação parcial adicional |
+| Cinco pilotos e calibração de capacidade | Pendentes |
+| Cold review independente e freeze do contrato | Pendentes |
+| Backlog completo e deduplicação por unidade | Pendentes |
+| Incorporação ao repo e publicação das issues | Não executadas |
+
+Acesso de leitura ao repositório não foi confundido com execução de Cargo ou com
+uma criação de issue. O registro de publicação conserva 105 estados `BLOCKED`,
+IDs/URLs nulos e contrato não congelado. Nenhuma aprovação anterior foi fabricada
+ou reaproveitada para os bytes modificados.

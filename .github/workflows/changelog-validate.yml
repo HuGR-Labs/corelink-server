@@ -50,14 +50,10 @@ concurrency:
 jobs:
   changelog-required:
     name: CHANGELOG.md updated when feat/fix present
-    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
-    # Pure git + stdlib-python3 diff parse; runs on EVERY PR
-    # (731 runs in June 2026) — the highest-volume hosted job after dco-check.
-    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
-    # check costs a full paid minute every run; on the fleet it costs $0.
-    # Verified running natively on the fleet host (macOS/BSD userland).
-    # zero-hosted (WP-CI): python3 + bash (baked na imagem da frota)
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 4 migration from corelink fabric).
+    # Pure git + stdlib-python3 diff parse; sub-minute check.
+    # Hosted minutes bill with 1-minute floor — acceptable for this high-volume gate.
+    runs-on: ubuntu-24.04
     # Bound the job (CI cost diet 2026-08-01): a self-hosted job with no
     # timeout inherits GitHub's 360-min default, so one wedged run can hold
     # 1 of the 4 `corelink-builder` runners for 6h and stall
@@ -70,6 +66,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - name: Detect feat/fix commits in PR range
         id: detect
@@ -121,27 +118,38 @@ jobs:
           ADDED=$(printf '%s\n' "$ADDED" | grep -v '^changelog.d/README.md$' || true)
           ADDED=$(printf '%s\n' "$ADDED" | grep -v '^[[:space:]]*$' || true)
 
-          if [[ -z "$ADDED" ]]; then
+          CHANGED=$(git diff --name-only --diff-filter=AM "${BASE}..${HEAD}" \
+                      -- 'changelog.d/*.md')
+          CHANGED=$(printf '%s\n' "$CHANGED" | grep -v '^changelog.d/README.md$' || true)
+          CHANGED=$(printf '%s\n' "$CHANGED" | grep -v '^[[:space:]]*$' || true)
+
+          if [[ -n "$ADDED" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
             echo "no new changelog.d/ fragment in this PR"
             echo "present=false" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
 
-          echo "changelog fragment(s) added:"
-          echo "$ADDED"
-          echo "present=true" >> "$GITHUB_OUTPUT"
+          if [[ -n "$CHANGED" ]]; then
+            echo "changelog fragment(s) added or modified:"
+            echo "$CHANGED"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no added or modified changelog.d/ fragments in this PR"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
           {
             echo "paths<<EOF"
-            echo "$ADDED"
+            echo "$CHANGED"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Validate changelog fragment format
-        # Runs whenever a fragment is added, feat:/fix: or not. A malformed
+        # Runs whenever a fragment is added or modified, feat:/fix: or not. A malformed
         # fragment that is never linted is a silently-dropped changelog entry —
         # the same drift this whole workflow exists to prevent, moved one file
         # sideways.
-        if: steps.fragment.outputs.present == 'true'
+        if: steps.fragment.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail

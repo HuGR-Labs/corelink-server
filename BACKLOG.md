@@ -1800,7 +1800,7 @@ status: open
 source-document: "PR containment audit #1490/#1506 addendum"
 source-locator: "apps/docs/docs/explanation/privacy/gdpr.mdx:191-200; four published locale copies"
 finding-title: "GDPR international-transfer table has an unowned Sigstore recipient row"
-problem: "The four published GDPR locale tables retain a combined PagerDuty / GitHub / Sigstore US row, while the Trust Center and generated subprocessor source say Sigstore is not live, never receives customer data, and is not a customer-data sub-processor. The Legal/DPO disposition for this exact table residue is not recorded."
+problem: "The four published GDPR locale tables retain a combined PagerDuty / GitHub / Sigstore US row, while the Trust Center and generated source describe current release-SLSA, CAS, and TSA paths as sending only CoreLink-owned artifact/signing metadata, say no customer-data path is wired, and identify Sigstore as not a customer-data sub-processor in the current register. The separate transparency-log seam is not a live transport, and any future pseudonymous-tenant use requires new Legal/DPO review. The disposition for this exact table residue is not recorded."
 evidence: "Four-locale census plus posture markers in apps/docs/docs/trust/subprocessors.mdx and scripts/gen-public-subprocessors.py; no transfer or legal approval is inferred."
 acceptance: "A signed Legal/DPO disposition covers all four locale copies and chooses remove_sigstore_row or retain_and_document_transfer; only then may the table and this item transition."
 action-packet: docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json
@@ -12277,7 +12277,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-101 — as auditorias admitidas somam 119 achados; a cobertura e a revisão semântica estão concluídas
+### B-101 — as auditorias admitidas somam 138 achados; a cobertura e a revisão semântica estão concluídas
 
 O `BACKLOG.md` é a fonte declarada de verdade, cada item carrega um `verify`, e o
 `backlog_verify.py` falha em DRIFTED ou STALE. O problema original era que esse mecanismo
@@ -12287,7 +12287,7 @@ construção.
 O recenseamento reexecutável de 2026-09-01 corrigiu a contagem histórica. Os 66 itens
 MEDIUM/LOW do documento de 2026-06-15 omitiam as suas 21 headings CRITICAL/HIGH confirmadas;
 a população viva daquele documento é, portanto, 87, não 66. A cobertura que este item exige
-é **87 + 20 + 3 + 9 = 119** achados, sem mudar ou apagar as fontes originais:
+é **87 + 20 + 3 + 9 + 19 = 138** achados, sem mudar ou apagar as fontes originais:
 
 | Documento | Achados parseados | Decisão registrada |
 |---|---:|---|
@@ -12295,6 +12295,7 @@ a população viva daquele documento é, portanto, 87, não 66. A cobertura que 
 | `reports/audits/2026-08-26-go-live-readiness.md` | 20 | manifesto versionado |
 | `docs/security/2026-07-02-pilot-identity-brutal-audit.md` | 3 | manifesto versionado |
 | `docs/security/b028-dependabot-census-2026-09-06.json` | 9 | manifesto versionado, DA-026…DA-038 |
+| `docs/security/b373-dependabot-census-2026-09-09.json` | 19 | manifesto versionado, DA-039…DA-057 |
 
 O casador agora deriva cada ID diretamente da sintaxe do seu documento, exige contagens e
 IDs sem lacunas, fixa o SHA-256 de cada fonte, e exige uma decisão um-para-um: item B
@@ -14996,7 +14997,11 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-142 — todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25
+### B-142 — bloqueio histórico de faturamento impediu jobs `ubuntu-*`; CodeQL nightly ficou sem análise desde 2026-08-25
+
+**Snapshot histórico de 2026-08-30.** Os fatos abaixo registram a indisponibilidade observada
+naquele período; a reconciliação de 2026-09-24 ao fim desta seção registra o estado hospedado
+posterior e atualiza o status do item.
 
 **Medido, no nível do job.** `codeql.yml` run **33306916966** (2026-08-30, `schedule`):
 **3 de 3** jobs com `conclusion=failure`, `runner_name` **vazio**, `labels=[ubuntu-latest]`,
@@ -15100,41 +15105,40 @@ SARIF em vez de alegar upload no Security tab. O packet de ação está em
 enquanto o braço `secrets-drift` — explicitamente separado e pertencente ao B-132 — não for
 fechado no mesmo cutover; não se conta o slice como fechamento do item inteiro.
 
-**Reconciliação de evidência 2026-09-22 — residual externo ainda aberto.** O PR #1774 foi
-integrado em `main` no commit `5cfcb86c64f4fc6e6b885ccd414ecf5d411dfe13`; o recibo hospedado
-focado de CodeQL é o run
-`https://github.com/HuGR-dev/corelink-server/actions/runs/35695599538` (Rust,
-JavaScript/TypeScript e Python, com os artefatos SARIF e as guardas de evidência verdes). A
-execução agendada de `secrets-drift` mais recente que a plataforma ainda lista como sucesso é
-`https://github.com/HuGR-dev/corelink-server/actions/runs/33489746051`, de 2026-09-01, e já
-está fora da janela de 26 horas exigida pelo watchdog. A dispatch manual não satisfaz o
-predicado: `scripts/check_secrets_drift_evidence.py` exige `event=schedule` e
-`head_branch=main`; não há um recibo agendado atual nem um resultado atual do watchdog. Os
-workflows permanecem desabilitados até que o owner autorize e disponibilize a lane; portanto
-este item permanece `parked`, a issue #1674 permanece aberta, e não se afirma fechamento por
-fiação estrutural ou por um run manual.
+**Reconciliação de evidência 2026-09-24 — CI hospedado restaurado, observado.** A auditoria
+atual da issue #1674 confirmou os quatro workflows B-142 como `active` e quatro recibos
+agendados bem-sucedidos em `main`, no SHA
+`e0702bcbdee56c09e775d07eaba314b473a7cba4`:
+
+- [CodeQL agendado, run 35847277993](https://github.com/HuGR-dev/corelink-server/actions/runs/35847277993): os jobs Rust, JavaScript/TypeScript e Python concluíram; guardas SARIF, upload para Security e retenção dos três artefatos passaram.
+- [secrets-drift agendado, run 35839886709](https://github.com/HuGR-dev/corelink-server/actions/runs/35839886709): relatório e manifesto do run foram publicados e os gates do contrato de drift passaram.
+- [watchdog de CodeQL, run 35875274453](https://github.com/HuGR-dev/corelink-server/actions/runs/35875274453): inspeção da evidência agendada passou.
+- [watchdog de secrets-drift, run 35844380852](https://github.com/HuGR-dev/corelink-server/actions/runs/35844380852): inspeção do relatório agendado passou.
+
+A API Code Scanning estava acessível, e o upload bem-sucedido classifica a aceitação GHAS
+desse run de CodeQL. O estado `done` cobre a execução hospedada observada por estes recibos e
+a configuração estrutural protegida pelo verificador; não declara mudança de billing/provider
+nem garante disponibilidade futura. O histórico permanece: [run 33306916966](https://github.com/HuGR-dev/corelink-server/actions/runs/33306916966) falhou antes da alocação do runner, com zero steps. Ele registra o bloqueio de billing daquela época e não descreve o estado atual. Nenhuma configuração de billing/provider foi alterada para este fechamento.
 
 ```backlog
 id: B-142
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
   python3 -S scripts/verify_b142_workflows.py
 verify-means: |
-  parked — **Predicado de engenharia:** sai 0 somente quando os jobs canônicos de CodeQL,
-  secrets-drift e seus watchdogs estão presentes e seus `runs-on` estruturais
-  preservam a política `corelink`; comentários/string bait, job renomeado e
-  mutação de label falham. O watchdog de secrets-drift só aceita o fallback
-  hospedado explicitamente condicionado a `vars.HOSTED_ACTIONS_AVAILABLE ==
-  'true'`, com `corelink` como ramo padrão.
-
-  **Fronteira externa:** este comando não consulta Actions/GHAS e não transforma
-  wiring local em evidência de execução. O item continua `open` até o owner
-  registrar runs e artefatos reais, e até o GHAS upload ser classificado; o
-  secrets-drift continua pertencendo ao B-132.
-last-verified: 2026-09-05
+  done — **Critérios de fechamento:** o verificador estrutural passa para os quatro jobs
+  canônicos em `ubuntu-latest`, rejeitando comentários/string bait, renomeação de job e
+  alteração de runner. Além disso, os quatro recibos agendados acima devem permanecer
+  vinculados à evidência publicada: CodeQL com os três jobs concluídos, SARIF aceito e
+  artefatos retidos; secrets-drift com relatório/manifesto; ambos os watchdogs aprovados.
+  Esta fotografia hospedada satisfaz o contrato sem inferir que billing/provider foi
+  alterado ou que a disponibilidade futura está garantida. A falha histórica de
+  `33306916966` permanece registrada; o secrets-drift conserva seu contrato próprio em
+  B-132.
+last-verified: 2026-09-24
 ```
 
 ### B-143 — `id:` de placeholder passava CONFIRMED e a densidade não o via: o portão do BACKLOG falhava ABERTO — FECHADO
@@ -16018,20 +16022,32 @@ property test antigo misturava prova determinística de orçamento com um relóg
 parede frágil. O contrato exige separar complexidade/correção da medição opt-in, sem
 fabricar um resultado de produção.
 
+O lane B-251 deriva os registros de identidade executando o checker
+`InMemoryAtomicQuotaChecker` no produtor D02 imutável e no código observado em `main`,
+com entradas determinísticas dentro dos intervalos do property test D02. O recibo
+mantém apenas hashes dos transcripts como artefato do GitHub Actions. A comparação
+inclui uma mutação negativa de identidade. A prova opt-in roda somente em `main`
+protegido, após merge e dispatch explícito. O fixture in-memory não representa um
+backend de produção de `AtomicCasState`/`AtomicQuotaChecker`.
+
 ```backlog
 id: B-251
 repo: corelink-server
 owner: tl
-status: parked
-verify: python3 scripts/verify_b251_quota_cas_budget.py
+status: done
+verify: |
+  python3 scripts/verify_b251_quota_cas_budget.py
+  python3 scripts/verify_b251_provenance_contract.py
 verify-means: |
-  parked — `verify_b251_quota_cas_budget.py` fecha a parte determinística e fail-closed:
-  o orçamento de tentativas/eventos, os casos allow/deny e a prova de mutações são
-  verificáveis sem Cargo. O p99 real permanece explicitamente em probe isolada
-  `#[ignore]`, com 1.000 amostras e limite de 5 ms; sua execução pertence ao bundle
-  D03 e não é alegada por este gate estático. A identidade do seed/failure e do blob
-  deve ser comparada ao D02/main antes de qualquer fechamento.
-last-verified: 2026-09-05
+  done — a prova hospedada [#35935262115](https://github.com/HuGR-dev/corelink-server/actions/runs/35935262115)
+  no commit main 61562e2cd49ae49139fbe6a109c1f251ae9c67dc derivou as identidades D02 e
+  D03-observed, confirmou seed/failure/blob iguais, rejeitou mutação de blob e reteve o
+  artefato `b251-provenance-probe-35935262115`. A medição opt-in registrou 1.000 amostras
+  e p99 de 5 µs perante o limite de 5.000 µs no fixture `InMemoryAtomicQuotaChecker`.
+  O recibo declara `production_latency_measured: false`; isto não afirma nem mede p99 de
+  produção. Os verificadores listados cobrem as invariantes determinísticas e o contrato
+  do probe, enquanto o run vinculado comprova as identidades e a medição fixture-only.
+last-verified: 2026-09-23
 ```
 
 ### B-252 — gitleaks reconhecia nomes legados, mas não o shape de segredo hexadecimal opaco

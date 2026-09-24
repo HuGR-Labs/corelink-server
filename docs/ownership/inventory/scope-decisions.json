@@ -1,0 +1,57 @@
+{
+  "_archive/wi-s11-002-partial/Cargo.toml": {
+    "classification": "archive",
+    "reason": "Tracked historical manifest outside workspace_members under _archive.",
+    "evidence": "git ls-files and manifest inspection at the campaign baseline."
+  },
+  "crates/corelink-ac/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  },
+  "crates/corelink-audit-chain/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  },
+  "crates/corelink-byok/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  },
+  "crates/corelink-client-verify/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  },
+  "crates/corelink-hash/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  },
+  "crates/corelink-meta/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  },
+  "crates/corelink-reapi/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  },
+  "crates/corelink-worker/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  },
+  "crates/tenant-path/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  },
+  "tools/cli/fuzz/Cargo.toml": {
+    "classification": "first_party_independent",
+    "reason": "Independent first-party fuzz workspace with its own package metadata.",
+    "evidence": "fuzz Cargo.toml and package targets inspected."
+  }
+}

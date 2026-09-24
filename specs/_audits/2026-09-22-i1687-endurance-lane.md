@@ -15,11 +15,25 @@ validated target identity, teardown runs after any load outcome and addresses
 only the current GitHub run plus the `endurance-2h` scenario. Cleanup failure
 fails the job and its HTTP outcome is recorded in the receipt. CAS writes and
 webhook event IDs carry that same run ID for server-side attribution. The
-`teardown_deletion_proven` receipt field remains false because this repository
-has no endpoint handler that attests the exact deleted set; issue #2161 owns
-that server contract. The workflow
-pins the endurance population to 50 VUs, the scenario rejects any population
-above that ceiling, and the receipt records the effective VU count.
+lane sets `teardown_deletion_proven` to true only after validating the exact
+server receipt; #2161 owns the missing handler and staging deployment. The
+workflow pins the endurance population to 50 VUs, the scenario rejects any
+population above that ceiling, and the receipt records the effective VU count.
+
+The response contract proposed for #2161 is
+`corelink.load-test-teardown-receipt.v1`: it binds the exact `run_id`,
+`endurance-2h` scenario, staging `target_deployment_sha`, a complete inventory,
+per-resource `inventory`/`attempted`/`deleted`/`remaining` counts, and
+`cross_run_deletions: 0`. The required resource classes are `cas_objects`,
+`webhook_idempotency_rows`, `dsr_jobs`, and `audit_entries`; expanding that set
+requires updating this versioned contract before a new writer enters the lane.
+The lane validates those fields against the GitHub
+run and the deployment SHA in the owner-issued target identity receipt, then
+retains only the normalized redacted response as
+`teardown-receipt-${GITHUB_RUN_ID}.json` and includes it in artifact digests.
+Redirects and status codes without a reconciled receipt
+fail the lane and cannot set the deletion proof flag. The server-side handler
+and its staging deployment remain owned by #2161, which is blocked on #1700.
 
 Contract and mutation checks:
 

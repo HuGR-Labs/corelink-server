@@ -75,11 +75,108 @@ SPRINT3_FIELDS = {
 V0004_RECONCILIATION = {
     "sequence": 4,
     "previous_sequence": 3,
+    "base_commit": "91630baebe3ae7abe686cd4e06a5621ecdc4ab73",
     "previous_source_sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
     "history_start": "87dc11e06f7e2a37ecc980253b710f920026bbb8",
     "history_changed_ids": (
         "B-012", "B-083", "B-098", "B-113", "B-134", "B-142",
         "B-154", "B-1630", "B-170", "B-216",
+    ),
+    # Every first-parent commit after v0003 that changed BACKLOG.md.  Each row
+    # binds the commit, its first parent, both complete BACKLOG preimages and
+    # the exact section-level delta reconstructed from immutable Git objects.
+    "history_transitions": (
+        (
+            "510aa7c344fe1d6f32cd58632fb9248d7f0e9186",
+            "de340b3da5e7b6a41438dea2e11d34d37016453e",
+            "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
+            "f55d71cf0954e3ff7216d524e5a79f5d18c5154b04ebdf357396c30f1d2bfa47",
+            ('B-154',),
+        ),
+        (
+            "14d2b3c740506fab4725e2a58db378f2d2d41b9c",
+            "c2c043253f4372e0490f515a97a037bdc7c2e777",
+            "f55d71cf0954e3ff7216d524e5a79f5d18c5154b04ebdf357396c30f1d2bfa47",
+            "fec8108664d0e5dd6d3f3e955ae9049eddd47e6548ee9b10d29e15470c988007",
+            ('B-098',),
+        ),
+        (
+            "7e1851756b2cf763adbdc2b2b758e6fcf808d573",
+            "6caf6b1831411912e0908fcdc7742cfef904b804",
+            "fec8108664d0e5dd6d3f3e955ae9049eddd47e6548ee9b10d29e15470c988007",
+            "6d71639040d009aa36ce55da38bdce9038a12312504dd618d5fa2298bffc78cd",
+            ('B-012',),
+        ),
+        (
+            "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5",
+            "487db55b9b39f0ce9c62c20f3ab06042846761ae",
+            "6d71639040d009aa36ce55da38bdce9038a12312504dd618d5fa2298bffc78cd",
+            "2fef1e7ceb63faee3ae64d1e273bf36cfcad3f8a63d9ac289af6fe2764c17ddf",
+            ('B-083',),
+        ),
+        (
+            "760e2641bce4864514f6a52d440995382bdc67f5",
+            "3d973eda12dc1657aefe525cb2908c71045e788e",
+            "2fef1e7ceb63faee3ae64d1e273bf36cfcad3f8a63d9ac289af6fe2764c17ddf",
+            "d8e1d02f5dc316d1aae0c49b06ffd80f20d701453e037f434bfa718e2a975cf9",
+            ('B-142',),
+        ),
+        (
+            "1acd9b58ea8acf09cdb817c3997209e82e493996",
+            "b13f8af774e40a9e4077e7abeab641e1ffc4733b",
+            "d8e1d02f5dc316d1aae0c49b06ffd80f20d701453e037f434bfa718e2a975cf9",
+            "ddd86148474d4486179f8184eaa1891482e87f9b3375b6efdc7728c03612f470",
+            ('B-216',),
+        ),
+        (
+            "08b1618d3d6ce922043e8cd064d5e58a50990f63",
+            "1acd9b58ea8acf09cdb817c3997209e82e493996",
+            "ddd86148474d4486179f8184eaa1891482e87f9b3375b6efdc7728c03612f470",
+            "604ac0551800f208c30f30972c3bb4174be3d310d1190eb3927d6de0139c5e17",
+            ('B-1630',),
+        ),
+        (
+            "54995ffaf874534b9b1f4cbf19959c5278a728a7",
+            "7b43d7d247227d85e6b34fb268bccea0ffc0e62c",
+            "604ac0551800f208c30f30972c3bb4174be3d310d1190eb3927d6de0139c5e17",
+            "26c9023e98cafca99c0e74bc6cf190c65c6e45a96a2615d434eb057b31e4ad3f",
+            ('B-113',),
+        ),
+        (
+            "a126819db8726b75380a2857c3d26cc3fc991300",
+            "dcb41e8c3c3faa39daba97c87e65e345bec50710",
+            "26c9023e98cafca99c0e74bc6cf190c65c6e45a96a2615d434eb057b31e4ad3f",
+            "a3ad8826e77117f099e8469cc14b6642e26ab792a870ab8c1bd9f0ea13c84842",
+            ('B-098',),
+        ),
+        (
+            "90782f550bebcea848bf48fd497983df8deb9715",
+            "8196a4438a59d531fda152842bad590096093ddb",
+            "a3ad8826e77117f099e8469cc14b6642e26ab792a870ab8c1bd9f0ea13c84842",
+            "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
+            ('B-134',),
+        ),
+        (
+            "122515e808158c55b7bff8ecda6b1f760a9439c9",
+            "32c00684b51b41f9a5c67b8e1462ac9422b68a7c",
+            "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
+            "fe331f67a1f8e0e6f6e56c08ae6e7cb8917edfa3f9b1dc626e102e8dc2dfb97e",
+            ('B-098',),
+        ),
+        (
+            "9af8d31b684082cce8f16b3ffa1b7e972615442c",
+            "ab10690bc69caefc6920786067d9c9cf84dccd1b",
+            "fe331f67a1f8e0e6f6e56c08ae6e7cb8917edfa3f9b1dc626e102e8dc2dfb97e",
+            "51c98d257c4b272434c3e67cd90323b6de7689c4471a1b540a6ee9c748da43dc",
+            ('B-012',),
+        ),
+        (
+            "e234b97e38154c0fd33406e1b987760367319e81",
+            "4f5d77da0cebfac459aed729af2366a79a5a7fa1",
+            "51c98d257c4b272434c3e67cd90323b6de7689c4471a1b540a6ee9c748da43dc",
+            "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
+            ('B-170',),
+        ),
     ),
     "prior_source_sha256": "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
     "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
@@ -125,7 +222,7 @@ def install(api):
         return text.replace(old, new, 1)
 
     def _v0004_catalogs(prior: dict[str, bytes]) -> dict[str, bytes]:
-        """Derive the sole permitted catalog data change: retire B-012."""
+        """Derive B-012 retirement and the B131 canonical-manifest pointer."""
         catalogs = {
             path.as_posix(): prior[path.as_posix()]
             for path in _catalog_relatives()
@@ -142,6 +239,82 @@ def install(api):
         ):
             text = _replace_once(text, old, new)
         catalogs[target] = text.encode("utf-8")
+
+        workflow_target = "docs/campaigns/remediation/work-packages/B131-B167.md"
+        workflow_text = catalogs[workflow_target].decode("utf-8")
+        pattern = re.compile(
+            r"(?ms)^This is the only editable ownership source for shared paths\..*?"
+            r"^```wp-workflow-ownership\n.*?^```\n"
+        )
+        pointer = (
+            "WP-150 workflow ownership has one canonical, tracked source at\n"
+            "[`../wp150-workflow-ownership.md`](../wp150-workflow-ownership.md). The manifest\n"
+            "records the complete tracked workflow population, count and path-list hash, and\n"
+            "the owner/status row for every workflow. Workflow additions, renames and removals\n"
+            "update that manifest in the same reviewed change; unsupported ownership remains\n"
+            "`LEAD-BLOCKED | blocked`.\n"
+        )
+        workflow_text, replacements = pattern.subn(pointer, workflow_text)
+        if replacements != 1:
+            raise LedgerError("v0004 workflow ownership source drifted")
+        for old, new in (
+            (
+                "The workflow map is closed and machine-validated against the locked 138-file\n"
+                "population. `LEAD-BLOCKED` is an explicit no-edit sentinel, not permission to\n"
+                "infer an owner. WP-150 is read-only inventory and is rejected as an owner.\n",
+                "The canonical manifest is machine-validated against Git-tracked workflow paths.\n"
+                "`LEAD-BLOCKED` is an explicit no-edit sentinel, not permission to infer an owner.\n"
+                "WP-150 is read-only inventory and is rejected as an owner.\n",
+            ),
+            (
+                "- **Read first:** the complete tracked workflow population, B-136/B-137, the YAML\n"
+                "  parser behavior, and the workflow ownership table in this catalog.\n",
+                "- **Read first:** the complete tracked workflow population, B-136/B-137, the YAML\n"
+                "  parser behavior, and `docs/campaigns/remediation/wp150-workflow-ownership.md`.\n",
+            ),
+            (
+                "- **Population lock:** the manifest is exactly **138** tracked workflow files\n"
+                "  (`.github/workflows/*.yml` and `*.yaml`), sorted bytewise and joined with a final\n"
+                "  newline; its SHA-256 is\n"
+                "  `1616038ec0bb163a7ed436d7487a6255c9da037efaa1f54cbe5f4c3f70a67dc1`.\n"
+                "  The verifier rejects any count/hash drift. A changed population requires a new\n"
+                "  owner row and contract revision before any workflow edit. An unowned or newly\n"
+                "  discovered workflow is an integration blocker; WP-150 and every other existing WP\n"
+                "  are forbidden to edit it until a separately reviewed owner contract is added.\n",
+                "- **Population lock:** `docs/campaigns/remediation/wp150-workflow-ownership.md` is the\n"
+                "  single tracked population and owner/status authority. Its declared count and\n"
+                "  SHA-256 cover the sorted, newline-terminated Git-tracked workflow path list, and\n"
+                "  the verifier rejects count, hash, duplicate, missing or nonexistent path drift.\n"
+                "  Every workflow addition, rename or removal updates this manifest in the same\n"
+                "  reviewed change. An unowned workflow stays `LEAD-BLOCKED | blocked`; WP-150 and\n"
+                "  every other existing WP are forbidden to edit it until an owner contract is reviewed.\n",
+            ),
+            (
+                "**Workflow-owner map (closed):** B-132/142 owns exactly\n"
+                "`.github/workflows/secrets-drift.yml`, `codeql.yml`, and `cas-canary.yml`;\n"
+                "B-139 owns `semgrep.yml`; B-141 owns `pr-labels.yml` and `welcome-first-pr.yml`;\n"
+                "B-148 owns `backlog-verify.yml` and `python-tests.yml`; B-091 owns `sbom.yml`; B-094 owns\n"
+                "`buck2-starter-ci.yml`; B-113 owns the execution cells\n"
+                "`nightly.yml`, `fuzz-nightly.yml`, `endurance-2h-nightly.yml`,\n"
+                "`load-test-nightly.yml`, and `billing-health-daily.yml`; B-118 owns\n"
+                "the retired `cosign-sign.yml` is absent; B-130 owns `api-surface-parity.yml`; the B-136/B-137\n"
+                "candidate lanes remain `LEAD-BLOCKED` until their owner contract is present;\n"
+                "B-071 owns `container-build-push-prod.yml` and `gc-sweep-dry-run.yml`; B-070\n"
+                "owns `cf-deploy-prod.yml` (a future staging path is absent until it exists);\n"
+                "B-067 owns the auth workflow; B-068 owns the ignored-integration workflow. The map is a\n"
+                "closed ownership record for workflow edits; WP-150 is read-only and may never\n"
+                "edit a workflow. Any workflow absent from this map is deliberately unowned and\n"
+                "blocks integration until a new, explicit owner WP is reviewed. This map is not\n"
+                "a glob or an implicit delegation mechanism.\n",
+                "**Workflow-owner map (closed):** The canonical tracked map is maintained only in\n"
+                "[`docs/campaigns/remediation/wp150-workflow-ownership.md`](../wp150-workflow-ownership.md).\n"
+                "It records every tracked workflow exactly once with an evidence-backed owner or\n"
+                "`LEAD-BLOCKED | blocked`. WP-150 is read-only inventory and cannot edit workflows;\n"
+                "no ownership is inferred from a glob, prose, or read-first reference.\n",
+            ),
+        ):
+            workflow_text = _replace_once(workflow_text, old, new)
+        catalogs[workflow_target] = workflow_text.encode("utf-8")
         return catalogs
 
     def _v0004_ledger(prior_raw: bytes, base_sha: str) -> bytes:
@@ -151,6 +324,11 @@ def install(api):
             ("base-ref: df1cd53f56a2eff4643aaf9368e25fb0303ce57d", f"base-ref: {base_sha}"),
             ("base-sha: df1cd53f56a2eff4643aaf9368e25fb0303ce57d", f"base-sha: {base_sha}"),
             ("observed-at: 2026-09-13", "observed-at: 2026-09-23"),
+            (
+                "A legitimate new observation must version a new manifest and transition\n"
+                "the ledger base in the same reviewed change.",
+                "Every new BACKLOG/status observation must version a snapshot manifest and transition the ledger base in the same reviewed change. WP-150 workflow population and ownership updates are maintained in the dedicated tracked manifest; they do not require ledger successors.",
+            ),
             ("The current population is 373 items: 13 open, 328 done and 32 parked. The 13\nopen items", "The current population is 374 items: 12 open, 330 done and 32 parked. The 12\nopen items"),
             ("item-count: 373", "item-count: 374"),
             ("open-count: 13", "open-count: 12"),
@@ -239,6 +417,7 @@ def install(api):
             )
         if (
             sequence != pinned["sequence"]
+            or receipt.get("base_commit") != pinned["base_commit"]
             or previous.get("sequence") != pinned["previous_sequence"]
             or previous.get("source_sha256") != pinned["previous_source_sha256"]
             or receipt.get("changed_ids") != []
@@ -248,6 +427,7 @@ def install(api):
             or receipt.get("prior_source_sha256") != pinned["prior_source_sha256"]
             or receipt.get("source_sha256") != pinned["prior_source_sha256"]
             or receipt.get("prior_ledger_sha256") != pinned["prior_ledger_sha256"]
+            or not _v0004_history_authorized()
         ):
             return False
         catalog_hashes = {
@@ -417,6 +597,58 @@ def install(api):
         return {
             path.as_posix(): _git_bytes(repo_root, commit, path) for path in relatives
         }
+
+    def _v0004_history_authorized() -> bool:
+        """Reconstruct the complete post-v0003 BACKLOG history from Git objects."""
+        pinned = V0004_RECONCILIATION
+        expected = pinned.get("history_transitions")
+        if not expected:
+            return False
+        result = subprocess.run(
+            [
+                "git", "rev-list", "--first-parent", "--reverse",
+                f"{pinned['history_start']}..{pinned['base_commit']}",
+                "--", "BACKLOG.md",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        commits = result.stdout.splitlines()
+        if result.returncode or commits != [row[0] for row in expected]:
+            return False
+        reconstructed_ids: set[str] = set()
+        for commit, parent, prior_hash, current_hash, changed_ids in expected:
+            actual_parent = subprocess.run(
+                ["git", "rev-parse", f"{commit}^1"],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            if actual_parent != parent:
+                return False
+            prior_raw = _git_bytes(REPO_ROOT, parent, Path("BACKLOG.md"))
+            current_raw = _git_bytes(REPO_ROOT, commit, Path("BACKLOG.md"))
+            if _sha256(prior_raw) != prior_hash or _sha256(current_raw) != current_hash:
+                return False
+            _, _, prior_sections = _backlog_sections(prior_raw)
+            _, _, current_sections = _backlog_sections(current_raw)
+            actual_changed = tuple(sorted(
+                item_id
+                for item_id in set(prior_sections) | set(current_sections)
+                if prior_sections.get(item_id) != current_sections.get(item_id)
+            ))
+            if actual_changed != changed_ids:
+                return False
+            reconstructed_ids.update(actual_changed)
+        return (
+            tuple(sorted(reconstructed_ids))
+            == tuple(sorted(pinned["history_changed_ids"]))
+            and expected[0][2] == pinned["previous_source_sha256"]
+            and expected[-1][3] == pinned["prior_source_sha256"]
+        )
 
     def _backlog_sections(raw: bytes) -> tuple[bytes, list[str], dict[str, bytes]]:
         """Preserve each complete item section and all bytes before the first item."""
@@ -791,6 +1023,8 @@ def install(api):
         _catalog_relatives=_catalog_relatives,
         _v0004_catalogs=_v0004_catalogs,
         _v0004_ledger=_v0004_ledger,
+        _git_state_bytes=_git_state_bytes,
+        _v0004_history_authorized=_v0004_history_authorized,
         _state_bytes=_state_bytes,
         _successor_paths=_successor_paths,
         load_successor_chain=load_successor_chain,

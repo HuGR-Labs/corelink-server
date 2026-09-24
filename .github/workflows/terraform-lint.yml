@@ -34,10 +34,15 @@ concurrency:
 jobs:
   fmt:
     name: terraform fmt
-    runs-on: corelink  # zero-hosted: terraform/tflint provision via their setup-actions into the (writable) tool-cache; tfsec via a verified binary download
+    # Runner: GitHub-hosted ubuntu-latest (Bundle 4 migration from self-hosted).
+    # Terraform/tflint/tfsec provision via setup-actions into tool-cache; all
+    # pins preserved; read-only validation job.
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -50,7 +55,9 @@ jobs:
 
   validate:
     name: terraform validate (${{ matrix.env }})
-    runs-on: corelink  # zero-hosted: terraform/tflint provision via their setup-actions into the (writable) tool-cache; tfsec via a verified binary download
+    # Runner: GitHub-hosted ubuntu-latest (Bundle 4 migration from self-hosted).
+    # Terraform provision via setup-terraform into tool-cache; read-only validation.
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -59,6 +66,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -76,10 +85,14 @@ jobs:
 
   tflint:
     name: tflint
-    runs-on: corelink  # zero-hosted: terraform/tflint provision via their setup-actions into the (writable) tool-cache; tfsec via a verified binary download
+    # Runner: GitHub-hosted ubuntu-latest (Bundle 4 migration from self-hosted).
+    # tflint provision via setup-tflint into tool-cache; read-only lint.
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup tflint
         uses: terraform-linters/setup-tflint@6e1e0642c0289bd619021bf6b34e3c08ed1e005a # v6.3.0
@@ -97,12 +110,15 @@ jobs:
 
   tfsec:
     name: tfsec
-    runs-on: corelink  # zero-hosted: terraform/tflint provision via their setup-actions into the (writable) tool-cache; tfsec via a verified binary download
+    # Runner: GitHub-hosted ubuntu-latest (Bundle 4 migration from self-hosted).
+    # Native tfsec binary downloaded and SHA-256 verified; SARIF upload.
+    # github/codeql-action/upload-sarif continues to work on hosted runners.
+    runs-on: ubuntu-latest
     # Native tfsec (no container action). `aquasecurity/tfsec-sarif-action` is a
     # Docker container action we avoid (no-unpinned-action posture). We download
     # the pinned tfsec linux binary from GitHub Releases (SHA-256 verified,
     # mirroring the supply-chain pin pattern in tla_check.yml) and run it
-    # directly (into $RUNNER_TEMP, writable on the corelink box — x86_64 Linux).
+    # directly (into $RUNNER_TEMP, writable on GitHub-hosted ubuntu-latest).
     env:
       TFSEC_VERSION: "1.28.14"
       # SHA-256 of the RAW `tfsec-linux-amd64` release asset for the version
@@ -113,6 +129,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Install tfsec (pinned, SHA-256 verified)
         run: |

@@ -1,0 +1,77 @@
+{
+  "reason": "Intentional candidate-standard hardening after independent cold review; prior preservation hashes remain historical and are not silently reused.",
+  "files": [
+    {
+      "path": "docs/ownership/schemas/package-record.schema.json",
+      "previous_sha256": "5289e9332d800fe51333ffcca5076a5d1a0f34a45a7a4790110d8afccdd75a15",
+      "current_sha256": "2a43de660cade236bd9072eaaecac8c8867cd4227943724978789cb280abc208",
+      "change": "Represent reviewed semantic bytes and separately attested metadata-only readback."
+    },
+    {
+      "path": "docs/ownership/STANDARD.md",
+      "previous_sha256": "440a97be85605c68dbe99c90f4f7d7c6c06f611c1f78f4d6c2bd3e196b94d354",
+      "current_sha256": "cdd52d6a6ade272f126be37da3be83df905df09e2c17a1ec5648592c315759a6",
+      "change": "Require 1.1 artifacts, evidence-derived registry states, and metadata-only readback."
+    },
+    {
+      "path": "docs/ownership/tests/test_preparation.py",
+      "previous_sha256": null,
+      "current_sha256": "d27ebec1210ef10acf180b0fb879903bb72395138983d2037bd3e665d96b844c",
+      "change": "Test renderer repository requirement."
+    },
+    {
+      "path": "docs/ownership/tests/test_publication.py",
+      "previous_sha256": null,
+      "current_sha256": "8383a38f7e2e26c030f8e290442761ee9686905e67182a6ac44b75072cf71ae8",
+      "change": "Test repository and pull-request readback gates."
+    },
+    {
+      "path": "docs/ownership/tests/test_registry.py",
+      "previous_sha256": null,
+      "current_sha256": "53338a5eee7a7a9df02e972184d6735ec5b400859229a1f8a1fa8edbc749fa1d",
+      "change": "Test evidence-derived review and publication states plus stale calibration detection."
+    },
+    {
+      "path": "docs/ownership/tests/test_revision.py",
+      "previous_sha256": null,
+      "current_sha256": "392fe3f83109f26f4bbdc38b0181f2d1e845e77e771a17f506bdff4ca3fd54f4",
+      "change": "Test legacy schema rejection and metadata-only review preservation."
+    },
+    {
+      "path": "docs/ownership/tools/README.md",
+      "previous_sha256": null,
+      "current_sha256": "631da6fc94b8c8cc37d155743921fcee5ee5ba79f08280158931a18cad9274c6",
+      "change": "Document strict repository and registry commands."
+    },
+    {
+      "path": "docs/ownership/tools/check_docs.py",
+      "previous_sha256": "4d629837ff83d66654a989189e813199f47f8f60ac45ebf0ce2563b508e10641",
+      "current_sha256": "2d57aab9867b8f0c52554533878ff597d615defea2be89404eb4c59902ad3bbb",
+      "change": "Reject legacy schema by default and require anchors/navigation for extra canonical H2 sections."
+    },
+    {
+      "path": "docs/ownership/tools/generate_registry.py",
+      "previous_sha256": null,
+      "current_sha256": "2b054f592830d88c4206aec08abfe176645e5988eac97678827f329291319a65",
+      "change": "Derive review/publication from verified records and ledger; check pilot calibration bytes."
+    },
+    {
+      "path": "docs/ownership/tools/ownership_gate.py",
+      "previous_sha256": "b63c1b044d9acabf7e97f6ccf022457c7470e0828727ee9a3b19061f1d3b6914",
+      "current_sha256": "7e850714603c49b90644fa63bdc22c6d760164da3104a77e1513bd33f6ca367f",
+      "change": "Require external contract evidence and verify metadata-only readback against reviewed bytes."
+    },
+    {
+      "path": "docs/ownership/tools/publication_gate.py",
+      "previous_sha256": "cc1758fbeedfae16d68fa46c166baddaa455f5d90e98ed6e9d6adf0135bf4758",
+      "current_sha256": "165fcc068a09f154c2cb1d86a33e3659d8e6e8f57e70fa038836dda6808ff10d",
+      "change": "Require canonical repository identity and reject non-issue readback URLs."
+    },
+    {
+      "path": "docs/ownership/tools/render_issue.py",
+      "previous_sha256": "f13f5e6b8b76ae743ea019e5b31040c121dbe33da8c258af34c232a4d89d03fb",
+      "current_sha256": "c89af9a4b21371242ca27dd50f593409dcfdcc7492c8bcfa77ee5af547840e61",
+      "change": "Require canonical repository identity for immutable issue contracts."
+    }
+  ]
+}
