@@ -83,7 +83,10 @@ def test_v1_and_v2_pagination_are_both_walked(monkeypatch: pytest.MonkeyPatch) -
             else:
                 payload = {
                     "data": [v2_row("ed_page_one", "https://one.humangr.com")],
-                    "next_page_url": "https://api.stripe.com/v2/core/event_destinations?page=v2_page_two",
+                    "next_page_url": (
+                        "https://api.stripe.com/v2/core/event_destinations?page=v2_page_two"
+                        "&include%5B0%5D=webhook_endpoint.url"
+                    ),
                 }
         return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
