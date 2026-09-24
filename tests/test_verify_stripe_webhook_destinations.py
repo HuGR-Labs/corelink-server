@@ -94,6 +94,70 @@ def test_v1_and_v2_pagination_are_both_walked(monkeypatch: pytest.MonkeyPatch) -
     assert any("page=v2_page_two" in command for command in calls)
 
 
+@pytest.mark.parametrize("page", [{"data": []}, {"data": [], "has_more": "false"}])
+def test_v1_missing_or_non_boolean_has_more_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, page: dict[str, object]
+) -> None:
+    monkeypatch.setattr(MODULE, "stripe_get", lambda *_: page)
+    with pytest.raises(MODULE.VerificationError, match="v1 page has no boolean has_more"):
+        MODULE.list_v1("stripe", [])
+
+
+@pytest.mark.parametrize(
+    ("next_url", "error"),
+    [
+        (
+            "https://attacker.invalid/v2/core/event_destinations?page=next&include%5B0%5D=webhook_endpoint.url",
+            "outside the expected API resource",
+        ),
+        (
+            "https://api.stripe.com/v2/other?page=next&include%5B0%5D=webhook_endpoint.url",
+            "outside the expected API resource",
+        ),
+        (
+            "https://api.stripe.com/v2/core/event_destinations?page=next",
+            "did not preserve the webhook URL include",
+        ),
+    ],
+)
+def test_v2_off_resource_or_incomplete_continuation_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, next_url: str, error: str
+) -> None:
+    monkeypatch.setattr(
+        MODULE,
+        "stripe_get",
+        lambda *_: {"data": [], "next_page_url": next_url},
+    )
+    with pytest.raises(MODULE.VerificationError, match=error):
+        MODULE.list_v2("stripe", [])
+
+
+def test_v2_valid_continuation_preserves_the_page_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pages = iter(
+        [
+            {
+                "data": [],
+                "next_page_url": (
+                    "https://api.stripe.com/v2/core/event_destinations?"
+                    "page=cursor&include%5B0%5D=webhook_endpoint.url"
+                ),
+            },
+            {"data": [], "next_page_url": None},
+        ]
+    )
+    calls: list[list[str]] = []
+
+    def fake_get(binary: str, path: str, flags: list[str]) -> dict[str, object]:
+        calls.append(flags)
+        return next(pages)
+
+    monkeypatch.setattr(MODULE, "stripe_get", fake_get)
+    assert MODULE.list_v2("stripe", []) == []
+    assert "page=cursor" in calls[1]
+
+
 def test_inventory_does_not_print_provider_destination_name(capsys: pytest.CaptureFixture[str]) -> None:
     row = MODULE.normalize_destination(
         {**v1_row("we_1234567890", "https://signup.humangr.com/stripe"), "name": "billing owner email"},

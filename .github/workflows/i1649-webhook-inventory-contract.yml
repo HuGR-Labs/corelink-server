@@ -5,7 +5,6 @@ on:
     paths:
       - scripts/ops/stripe-reconcile-webhook-events.sh
       - scripts/ops/stripe_webhook_inventory.py
-      - scripts/verify_stripe_webhook_destinations.py
       - tests/test_stripe_webhook_inventory.py
       - .github/workflows/i1649-webhook-inventory-contract.yml
 
