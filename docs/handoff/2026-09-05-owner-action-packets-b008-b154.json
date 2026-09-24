@@ -447,26 +447,65 @@
       "id": "B-071",
       "owner": "tl",
       "status": "open",
-      "action_type": "gc_production_dry_run_authorization",
+      "action_type": "owner_authorized_bounded_gc_observation_evidence",
       "procedure": [
-        "RUN: Verify the deployed image contains an executable gc_sweep and confirm GC_LIVE_DELETE=false, credential removal, timeout, tenant/run binding, and region guard before touching customer data.",
-        "RUN: In the owner-approved production observation window, use scripts/collect_b071_gc_observation.py with the immutable deployed image digest and an explicit manifest of tenant, region, run, and bucket scopes; it invokes /usr/local/bin/corelink-gc-sweep-production with GC_OBSERVATION_ONLY=true and GC_LIVE_DELETE=false and captures bounded zero-delete measurements.",
-        "RUN: Validate evidence/owner-actions/B-071/gc-production-dry-run.json with scripts/collect_b071_gc_observation.py verify; every requested scope must have balanced candidates_scanned, reclaimable_count, reclaimable_bytes, phase budget, PASS verdict, and zero deletes.",
-        "UI: Review the per-tenant evidence and record APPROVED or REJECTED with reviewer and decision time. This package never authorizes a future first live delete and must not enable GC_LIVE_DELETE."
+        "UI: Owner records a source-backed retention and eviction decision for one exact proposed tenant, region, and already-running production physical_delete run, then references that decision from #2167. Cover workspace pins, active references, legal and audit holds, grace period, and stop/rollback condition. This authorizes observation only and never live deletion.",
+        "UI: SRE/provider provisions and verifies isolated staging, its D1 binding, the region-matched R2 bucket, DNS, and resource access. Commit redacted evidence/staging/readiness.json with deployment_state=ready, canonical host, provider readback, and protected secret names only; never include secret values.",
+        "UI: Environment owner verifies the seven required staging names are protected and reviewer-gated: K6_STAGING_BYOK_CMK_ID, K6_STAGING_MFA_STUB, K6_STAGING_PAT, K6_STAGING_STRIPE_WHSEC, K6_STAGING_TEARDOWN_TOKEN, K6_TARGET_IDENTITY_RECEIPT, and K6_TARGET_HOST. Record names only.",
+        "UI: Release/SRE deploys the observation-capable image to the verified staging target and records its immutable image@sha256 digest in the readiness/deployment receipt. A tag or build result does not identify the deployed artifact.",
+        "UI: Observation operator and SRE/provider source the immutable digest of the exact production container or extracted image that will perform the observation, then record whether it is the same digest as the staging deployment or provide source-backed artifact equivalence. This production-runtime identity is required by the collector; staging readiness alone does not prove it.",
+        "RUN: Only after the owner, staging/provider, protected-input, staging-image, and production-runtime identity/equivalence receipts exist, the authorized operator supplies CLOUDFLARE_ACCOUNT_ID, D1_DATABASE_ID, CF_API_TOKEN, and R2_TDK_HEX through secured runtime configuration; scopes one already-running production physical_delete run to its approved tenant, region, and bucket; then runs scripts/collect_b071_gc_observation.py from the deployed production container or exact extracted image using that production artifact digest.",
+        "RUN: Verify evidence/owner-actions/B-071/gc-production-dry-run.json with scripts/collect_b071_gc_observation.py verify --expect-approval pending. Require balanced classifications, at most 250 candidates per run, phase duration within budget, PASS verdict, delete_count=0, deleted_bytes=0, live_delete_flag=false, approval.status=PENDING_OWNER_REVIEW, reviewer and decision time unset, and live_delete_authorized=false.",
+        "UI: Owner reviews the measured receipt and records any human decision in a separate source-backed owner record referenced from #2167. Keep the observation JSON unchanged at PENDING_OWNER_REVIEW with reviewer/time unset; package approval is not needed to verify the observation and never authorizes a first destructive run. Link accepted evidence from #1651 and keep #1651 open until its canonical contract is satisfied."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["deployed image digest", "tenant and region allow-list", "gc_sweep run identifier", "dry-run budget"],
-        "credentials": "Owner supplies a D1 read-only Cloudflare API token and approved runtime access for the real observation. The fixture-only scheduled lane remains credentialless; the real collector strips R2 credentials and live-delete confirmation, and no delete authority is granted here."
+        "inputs": [
+          "owner-approved tenant, region, retention/eviction terms, stop/rollback condition, and already-running production physical_delete run identifier",
+          "verified staging target, D1 binding, region-matched R2 bucket, current provider readback, and readiness receipt",
+          "provider-verified protected and reviewer-gated names: K6_STAGING_BYOK_CMK_ID, K6_STAGING_MFA_STUB, K6_STAGING_PAT, K6_STAGING_STRIPE_WHSEC, K6_STAGING_TEARDOWN_TOKEN, K6_TARGET_IDENTITY_RECEIPT, and K6_TARGET_HOST",
+          "immutable digest of the observation-capable image deployed to the verified staging target",
+          "source-backed resolution of the production observation runtime relationship to staging readiness",
+          "explicit tenant, region, already-running run, and bucket scope plus bounded phase budget"
+        ],
+        "credentials": "Only the authorized observation operator supplies CLOUDFLARE_ACCOUNT_ID, D1_DATABASE_ID, CF_API_TOKEN, and R2_TDK_HEX through secured runtime configuration; CF_API_TOKEN must be a D1 read-only Cloudflare token. Never place secret values in the packet, repository, logs, evidence, or issue comments. The collector forces GC_OBSERVATION_ONLY=true and GC_LIVE_DELETE=false and strips live-delete confirmation and R2 write credentials."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-071/gc-production-dry-run.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "image_digest", "runs", "tenant_region_population", "candidates_scanned", "reclaimable_count", "reclaimable_bytes", "delete_count", "live_delete_flag", "approval", "operator"],
-        "item_schema": "runs[] contains run_id, tenant_id, region, started_at, completed_at, candidates_scanned, reclaimable_count, reclaimable_bytes, phase_budget, and verdict; delete_count must be zero for dry-run evidence."
+        "required_fields": [
+          "schema_version",
+          "captured_at",
+          "image_digest",
+          "runs",
+          "tenant_region_population",
+          "candidates_scanned",
+          "reclaimable_count",
+          "reclaimable_bytes",
+          "delete_count",
+          "deleted_bytes",
+          "live_delete_flag",
+          "approval",
+          "operator"
+        ],
+        "item_schema": "Each runs[] record contains run_id, tenant_id, region, started_at, completed_at, candidates_scanned, reclaimable_count, reclaimable_bytes, delete_count, deleted_bytes, skipped_grace_pending, skipped_refcount_non_zero, already_resolved, phase_budget:{budget_ms,duration_ms}, max_candidates, and verdict. Verification requires balanced classifications, max_candidates is at most 250, duration_ms does not exceed budget_ms, verdict=PASS, and zero delete totals. approval.status remains PENDING_OWNER_REVIEW with reviewer and decision time unset and live_delete_authorized=false. Legal-hold and accounting outcomes are not fields in this strict package schema; record any required outcome in separate source-backed owner/provider evidence without adding unsupported package fields."
       },
-      "expected_postcondition": "The shipped binary produces bounded, tenant/region-scoped dry-run evidence with zero deletes before any owner decision to arm live GC; B-071 remains open.",
-      "retry_and_rollback": "Retry a read-only dry-run with a new run identifier after a transient failure. If any guard is missing or a delete is observed, stop and disable the feature through the deployment control; preserve all reports and do not re-run against a broader population.",
-      "references": ["BACKLOG.md#B-071", "crates/corelink-container/src/bin/gc_sweep.rs", "crates/corelink-container/src/gc_sweep.rs", "scripts/collect_b071_gc_observation.py", "docs/operator/gc-production-observation.md", ".github/workflows/gc-sweep-dry-run.yml", "Dockerfile"]
+      "expected_postcondition": "Current source-backed owner retention/stop decision, verified staging/provider readiness, reviewer-gated protected-name readback, staging image digest, production observation image identity/equivalence, and a bounded zero-delete receipt are recorded. The GC receipt remains PENDING_OWNER_REVIEW with reviewer and decision time unset and live deletion unauthorized; B-071 stays open, and no step authorizes live deletion.",
+      "retry_and_rollback": "Stop on missing or contradictory authority, provider readback, protected inputs, digest, scope, production/runtime relationship, budget, or any nonzero deletion. Do not broaden scope, create or advance a run through this collector, retry against a different run without fresh owner/provider authorization, or attempt cleanup or destructive compensation. Preserve the receipts and leave B-071 open.",
+      "references": [
+        "BACKLOG.md#B-071",
+        "#2167",
+        "#1651",
+        "infra/staging/topology.json",
+        "evidence/staging/readiness.json",
+        "scripts/verify_staging_target.py",
+        "scripts/collect_b071_gc_observation.py",
+        "docs/operator/gc-production-observation.md",
+        "crates/corelink-container/src/bin/gc_sweep.rs",
+        "crates/corelink-container/src/gc_sweep.rs",
+        ".github/workflows/gc-sweep-dry-run.yml",
+        ".github/workflows/issue-1651-gc-live-readiness.yml",
+        "Dockerfile"
+      ]
     },
     {
       "id": "B-072",

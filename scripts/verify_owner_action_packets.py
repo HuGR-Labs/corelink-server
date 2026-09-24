@@ -191,6 +191,57 @@ B083_REFERENCES = frozenset({
     ".github/workflows/issue-1653-byok-kms-contract.yml",
     "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json",
 })
+B071_PROCEDURE_MARKERS = (
+    ("source-backed retention and eviction decision", "already-running production physical_delete run", "workspace pins", "active references", "legal and audit holds", "grace period", "stop/rollback condition", "observation only"),
+    ("SRE/provider provisions and verifies isolated staging", "D1 binding", "region-matched R2 bucket", "DNS", "evidence/staging/readiness.json", "deployment_state=ready", "protected secret names only"),
+    ("Environment owner verifies the seven required staging names", "protected and reviewer-gated", "K6_STAGING_BYOK_CMK_ID", "K6_STAGING_MFA_STUB", "K6_STAGING_PAT", "K6_STAGING_STRIPE_WHSEC", "K6_STAGING_TEARDOWN_TOKEN", "K6_TARGET_IDENTITY_RECEIPT", "K6_TARGET_HOST"),
+    ("immutable image@sha256 digest", "verified staging target", "tag or build result does not identify"),
+    ("immutable digest of the exact production container or extracted image", "same digest as the staging deployment", "source-backed artifact equivalence", "staging readiness alone does not prove"),
+    ("Only after the owner, staging/provider, protected-input", "production-runtime identity/equivalence receipts exist", "CLOUDFLARE_ACCOUNT_ID", "D1_DATABASE_ID", "CF_API_TOKEN", "R2_TDK_HEX", "already-running production physical_delete run", "production artifact digest"),
+    ("verify --expect-approval pending", "balanced classifications", "at most 250 candidates per run", "phase duration within budget", "delete_count=0", "deleted_bytes=0", "live_delete_flag=false", "PENDING_OWNER_REVIEW", "reviewer and decision time unset", "live_delete_authorized=false"),
+    ("separate source-backed owner record", "Keep the observation JSON unchanged at PENDING_OWNER_REVIEW", "reviewer/time unset", "never authorizes a first destructive run", "link accepted evidence from #1651", "keep #1651 open"),
+)
+B071_BOUNDARY_MARKERS = (
+    "owner-approved tenant", "retention/eviction terms", "already-running production physical_delete run identifier",
+    "verified staging target", "region-matched R2 bucket", "reviewer-gated names",
+    "production observation runtime relationship", "bounded phase budget",
+)
+B071_CREDENTIAL_MARKERS = (
+    "CLOUDFLARE_ACCOUNT_ID", "D1_DATABASE_ID", "CF_API_TOKEN", "R2_TDK_HEX",
+    "CF_API_TOKEN must be a D1 read-only Cloudflare token",
+    "Never place secret values", "GC_OBSERVATION_ONLY=true", "GC_LIVE_DELETE=false",
+    "strips live-delete confirmation and R2 write credentials",
+)
+B071_EVIDENCE_REQUIRED_FIELDS = [
+    "schema_version", "captured_at", "image_digest", "runs", "tenant_region_population",
+    "candidates_scanned", "reclaimable_count", "reclaimable_bytes", "delete_count",
+    "deleted_bytes", "live_delete_flag", "approval", "operator",
+]
+B071_SCHEMA_REQUIRED_TERMS = (
+    "run_id", "tenant_id", "region", "started_at", "completed_at", "candidates_scanned",
+    "reclaimable_count", "reclaimable_bytes", "delete_count", "deleted_bytes",
+    "skipped_grace_pending", "skipped_refcount_non_zero", "already_resolved",
+    "phase_budget:{budget_ms,duration_ms}", "max_candidates", "verdict",
+    "max_candidates is at most 250", "duration_ms does not exceed budget_ms", "PENDING_OWNER_REVIEW",
+    "reviewer and decision time unset", "live_delete_authorized=false",
+    "Legal-hold and accounting outcomes are not fields",
+)
+B071_POSTCONDITION_MARKERS = (
+    "source-backed owner retention/stop decision", "verified staging/provider readiness",
+    "production observation image identity/equivalence", "bounded zero-delete receipt",
+    "PENDING_OWNER_REVIEW", "reviewer and decision time unset", "B-071 stays open",
+)
+B071_RETRY_MARKERS = (
+    "Stop on missing or contradictory authority", "production/runtime relationship",
+    "Do not broaden scope", "do not create or advance a run through this collector",
+    "without fresh owner/provider authorization", "leave B-071 open",
+)
+B071_REFERENCES = frozenset({
+    "#2167", "#1651", "infra/staging/topology.json", "evidence/staging/readiness.json",
+    "scripts/verify_staging_target.py", "scripts/collect_b071_gc_observation.py",
+    "docs/operator/gc-production-observation.md",
+    ".github/workflows/issue-1651-gc-live-readiness.yml",
+})
 B110_EVIDENCE_REQUIRED_FIELDS = [
     "schema_version",
     "captured_at",
@@ -891,6 +942,53 @@ def _check_repository_checks(value: object, label: str, expected: list[dict[str,
         raise PacketError(f"{label} repository_checks commands/details drifted")
 
 
+def _check_b071_owner_packet(item: dict[str, object]) -> None:
+    if item["action_type"] != "owner_authorized_bounded_gc_observation_evidence":
+        raise PacketError("B-071 action type must preserve the owner-authorized observation boundary")
+    procedure = item["procedure"]
+    assert isinstance(procedure, list)
+    if len(procedure) != len(B071_PROCEDURE_MARKERS):
+        raise PacketError("B-071 procedure must retain all eight ordered owner/provider actions")
+    for index, markers in enumerate(B071_PROCEDURE_MARKERS):
+        if any(marker not in procedure[index] for marker in markers):
+            raise PacketError(f"B-071 procedure[{index}] lost a scope, evidence, or zero-delete boundary")
+
+    boundary = item["inputs_and_credentials_boundary"]
+    assert isinstance(boundary, dict)
+    inputs = boundary["inputs"]
+    credentials = boundary["credentials"]
+    assert isinstance(inputs, list) and isinstance(credentials, str)
+    boundary_text = " ".join(inputs) + " " + credentials
+    if any(marker not in boundary_text for marker in B071_BOUNDARY_MARKERS):
+        raise PacketError("B-071 inputs lost retention, readiness, runtime, or bounded-scope evidence")
+    if any(marker not in credentials for marker in B071_CREDENTIAL_MARKERS):
+        raise PacketError("B-071 credential boundary lost secret or no-delete controls")
+
+    evidence = item["evidence"]
+    assert isinstance(evidence, dict)
+    if evidence["path"] != "evidence/owner-actions/B-071/gc-production-dry-run.json" or evidence["format"] != "json":
+        raise PacketError("B-071 evidence must retain the canonical GC observation receipt path")
+    if evidence["required_fields"] != B071_EVIDENCE_REQUIRED_FIELDS:
+        raise PacketError("B-071 evidence must match the collector's exact root schema")
+    schema = evidence["item_schema"]
+    assert isinstance(schema, str)
+    if any(marker not in schema for marker in B071_SCHEMA_REQUIRED_TERMS):
+        raise PacketError("B-071 evidence schema lost a required field, bound, or pending-review rule")
+
+    postcondition = item["expected_postcondition"]
+    retry = item["retry_and_rollback"]
+    assert isinstance(postcondition, str) and isinstance(retry, str)
+    if any(marker not in postcondition for marker in B071_POSTCONDITION_MARKERS):
+        raise PacketError("B-071 postcondition lost required external evidence or zero-delete boundary")
+    if any(marker not in retry for marker in B071_RETRY_MARKERS):
+        raise PacketError("B-071 retry path lost its fail-closed owner/provider boundary")
+
+    references = item["references"]
+    assert isinstance(references, list)
+    if not B071_REFERENCES.issubset(references):
+        raise PacketError("B-071 references lost its issue, readiness, collector, or procedure anchor")
+
+
 def _check_b083_evidence(item: dict[str, object]) -> None:
     if item["action_type"] != "owner_authorized_real_kms_lifecycle_evidence":
         raise PacketError("B-083 action type must name the owner-authorized lifecycle evidence boundary")
@@ -1405,6 +1503,8 @@ def _check_item(
         _check_b110_evidence(item)
     if expected_id == "B-054":
         _check_b054_evidence(item)
+    if expected_id == "B-071":
+        _check_b071_owner_packet(item)
     if expected_id == "B-083":
         _check_b083_evidence(item)
     if expected_id == "B-097":

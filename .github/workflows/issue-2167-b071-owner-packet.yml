@@ -1,0 +1,28 @@
+name: Issue 2167 — B-071 owner packet contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/issue-2167-b071-owner-packet.yml'
+      - 'docs/handoff/2026-09-05-owner-action-packets-b008-b154.json'
+      - 'scripts/verify_owner_action_packets.py'
+      - 'tests/test_owner_action_packets.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Verify B-071 owner packet and negative controls
+    if: github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify B-071 owner packet
+        run: python3 -S scripts/verify_owner_action_packets.py --id B-071
+      - name: Reject B-071 owner packet omissions
+        run: python3 -m unittest -q tests.test_owner_action_packets.OwnerActionPacketTests.test_b071_owner_packet_external_evidence_contract_rejects_omissions
