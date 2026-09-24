@@ -20,6 +20,7 @@ TOPOLOGY = ROOT / "infra/staging/topology.json"
 READINESS = ROOT / "evidence/staging/readiness.json"
 DRY_RUN_WORKFLOW = ROOT / ".github/workflows/gc-sweep-dry-run.yml"
 CONTROL_WORKFLOW = ROOT / ".github/workflows/issue-1651-gc-control.yml"
+OBSERVATION_WORKFLOW = "issue-1651-gc-staging-observation.yml"
 
 REQUIRED_STAGING_SECRETS = (
     "K6_STAGING_BYOK_CMK_ID",
@@ -62,6 +63,82 @@ def _secret_names(readiness: dict) -> set[str]:
         "readiness evidence must list redacted secret names under secret_names "
         "or secrets; secret values are forbidden"
     )
+
+
+def _block(source: list[str], header: str, indent: int) -> list[str] | None:
+    """Return one indentation-scoped YAML block without accepting comments."""
+    expected = " " * indent + header
+    try:
+        start = source.index(expected)
+    except ValueError:
+        return None
+
+    result: list[str] = []
+    for line in source[start + 1 :]:
+        if len(line) - len(line.lstrip()) <= indent:
+            break
+        result.append(line)
+    return result
+
+
+def _verify_observation_workflow(workflow_texts: dict[str, str]) -> None:
+    """Require a dedicated, bounded staging observation lane.
+
+    Image-build references are not execution evidence.  This checks only a
+    future dedicated lane's declarative safety boundary; it never dispatches
+    that lane or accepts it as provider or owner evidence.
+    """
+    workflow = workflow_texts.get(OBSERVATION_WORKFLOW)
+    if workflow is None:
+        raise Blocked(
+            "missing dedicated staging observation workflow: "
+            f".github/workflows/{OBSERVATION_WORKFLOW}"
+        )
+
+    lines = [
+        line.rstrip()
+        for line in workflow.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    triggers = _block(lines, "on:", 0)
+    if triggers != ["  workflow_dispatch:"]:
+        raise Blocked("staging observation workflow must have only a manual trigger")
+
+    permissions = _block(lines, "permissions:", 0)
+    if permissions != ["  contents: read"]:
+        raise Blocked("staging observation workflow must grant contents: read only")
+
+    jobs = _block(lines, "jobs:", 0)
+    if jobs is None or [line for line in jobs if len(line) - len(line.lstrip()) == 2] != [
+        "  observe:"
+    ]:
+        raise Blocked("staging observation workflow must define only the observe job")
+    job = _block(jobs, "observe:", 2)
+    required_job_lines = (
+        "    runs-on: ubuntu-24.04",
+        "    environment: staging",
+        "    timeout-minutes: 5",
+    )
+    if job is None or any(job.count(line) != 1 for line in required_job_lines):
+        raise Blocked("staging observation job is missing its bounded staging controls")
+    if any(line.strip().startswith(("if:", "continue-on-error:")) for line in job):
+        raise Blocked("staging observation job cannot be conditional or suppress errors")
+
+    steps = _block(job, "steps:", 4)
+    step_header = "      - name: Invoke production GC observation"
+    if steps is None or steps.count(step_header) != 1:
+        raise Blocked("staging observation job must have one production observation step")
+    step = _block(steps, "- name: Invoke production GC observation", 6)
+    required_step_lines = (
+        "        run: /usr/local/bin/corelink-gc-sweep-production",
+        "        env:",
+        '          GC_OBSERVATION_ONLY: "true"',
+        '          GC_LIVE_DELETE: "false"',
+    )
+    if step is None or any(step.count(line) != 1 for line in required_step_lines):
+        raise Blocked("production observation step is missing its read-only runtime fence")
+    if any(line.strip().startswith(("if:", "continue-on-error:")) for line in step):
+        raise Blocked("production observation step cannot be conditional or suppress errors")
 
 
 def verify() -> None:
@@ -119,16 +196,18 @@ def verify() -> None:
         if marker not in control:
             blockers.append(f"control lane is missing credentialless marker: {marker}")
 
-    # A live observation must be an explicitly reviewed workflow, and must not
-    # be inferred from the fixture lane.  The production binary's absence from
-    # workflows is an exact external-state blocker, not a reason to dispatch.
-    workflow_texts = "\n".join(
-        path.read_text(encoding="utf-8")
+    # A binary in the image-build workflow does not establish an observation
+    # path.  Require the dedicated lane by name so an unrelated reference or a
+    # comment cannot suppress this blocker.
+    workflow_texts = {
+        path.name: path.read_text(encoding="utf-8")
         for path in (ROOT / ".github/workflows").glob("*.yml")
         if path.is_file() and not path.is_symlink()
-    )
-    if "corelink-gc-sweep-production" not in workflow_texts:
-        blockers.append("no workflow invokes corelink-gc-sweep-production for a staging observation")
+    }
+    try:
+        _verify_observation_workflow(workflow_texts)
+    except Blocked as exc:
+        blockers.append(str(exc))
 
     if blockers:
         raise Blocked("\n".join(f"- {item}" for item in blockers))
