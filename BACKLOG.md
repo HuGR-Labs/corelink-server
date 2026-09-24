@@ -15101,41 +15101,40 @@ SARIF em vez de alegar upload no Security tab. O packet de ação está em
 enquanto o braço `secrets-drift` — explicitamente separado e pertencente ao B-132 — não for
 fechado no mesmo cutover; não se conta o slice como fechamento do item inteiro.
 
-**Reconciliação de evidência 2026-09-22 — residual externo ainda aberto.** O PR #1774 foi
-integrado em `main` no commit `5cfcb86c64f4fc6e6b885ccd414ecf5d411dfe13`; o recibo hospedado
-focado de CodeQL é o run
-`https://github.com/HuGR-dev/corelink-server/actions/runs/35695599538` (Rust,
-JavaScript/TypeScript e Python, com os artefatos SARIF e as guardas de evidência verdes). A
-execução agendada de `secrets-drift` mais recente que a plataforma ainda lista como sucesso é
-`https://github.com/HuGR-dev/corelink-server/actions/runs/33489746051`, de 2026-09-01, e já
-está fora da janela de 26 horas exigida pelo watchdog. A dispatch manual não satisfaz o
-predicado: `scripts/check_secrets_drift_evidence.py` exige `event=schedule` e
-`head_branch=main`; não há um recibo agendado atual nem um resultado atual do watchdog. Os
-workflows permanecem desabilitados até que o owner autorize e disponibilize a lane; portanto
-este item permanece `parked`, a issue #1674 permanece aberta, e não se afirma fechamento por
-fiação estrutural ou por um run manual.
+**Reconciliação de evidência 2026-09-24 — CI hospedado restaurado, observado.** A auditoria
+atual da issue #1674 confirmou os quatro workflows B-142 como `active` e quatro recibos
+agendados bem-sucedidos em `main`, no SHA
+`e0702bcbdee56c09e775d07eaba314b473a7cba4`:
+
+- [CodeQL agendado, run 35847277993](https://github.com/HuGR-dev/corelink-server/actions/runs/35847277993): os jobs Rust, JavaScript/TypeScript e Python concluíram; guardas SARIF, upload para Security e retenção dos três artefatos passaram.
+- [secrets-drift agendado, run 35839886709](https://github.com/HuGR-dev/corelink-server/actions/runs/35839886709): relatório e manifesto do run foram publicados e os gates do contrato de drift passaram.
+- [watchdog de CodeQL, run 35875274453](https://github.com/HuGR-dev/corelink-server/actions/runs/35875274453): inspeção da evidência agendada passou.
+- [watchdog de secrets-drift, run 35844380852](https://github.com/HuGR-dev/corelink-server/actions/runs/35844380852): inspeção do relatório agendado passou.
+
+A API Code Scanning estava acessível, e o upload bem-sucedido classifica a aceitação GHAS
+desse run de CodeQL. O estado `done` cobre a execução hospedada observada por estes recibos e
+a configuração estrutural protegida pelo verificador; não declara mudança de billing/provider
+nem garante disponibilidade futura. O histórico permanece: [run 33306916966](https://github.com/HuGR-dev/corelink-server/actions/runs/33306916966) falhou antes da alocação do runner, com zero steps. Ele registra o bloqueio de billing daquela época e não descreve o estado atual. Nenhuma configuração de billing/provider foi alterada para este fechamento.
 
 ```backlog
 id: B-142
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
   python3 -S scripts/verify_b142_workflows.py
 verify-means: |
-  parked — **Predicado de engenharia:** sai 0 somente quando os jobs canônicos de CodeQL,
-  secrets-drift e seus watchdogs estão presentes e seus `runs-on` estruturais
-  preservam a política `corelink`; comentários/string bait, job renomeado e
-  mutação de label falham. O watchdog de secrets-drift só aceita o fallback
-  hospedado explicitamente condicionado a `vars.HOSTED_ACTIONS_AVAILABLE ==
-  'true'`, com `corelink` como ramo padrão.
-
-  **Fronteira externa:** este comando não consulta Actions/GHAS e não transforma
-  wiring local em evidência de execução. O item continua `open` até o owner
-  registrar runs e artefatos reais, e até o GHAS upload ser classificado; o
-  secrets-drift continua pertencendo ao B-132.
-last-verified: 2026-09-05
+  done — **Critérios de fechamento:** o verificador estrutural passa para os quatro jobs
+  canônicos em `ubuntu-latest`, rejeitando comentários/string bait, renomeação de job e
+  alteração de runner. Além disso, os quatro recibos agendados acima devem permanecer
+  vinculados à evidência publicada: CodeQL com os três jobs concluídos, SARIF aceito e
+  artefatos retidos; secrets-drift com relatório/manifesto; ambos os watchdogs aprovados.
+  Esta fotografia hospedada satisfaz o contrato sem inferir que billing/provider foi
+  alterado ou que a disponibilidade futura está garantida. A falha histórica de
+  `33306916966` permanece registrada; o secrets-drift conserva seu contrato próprio em
+  B-132.
+last-verified: 2026-09-24
 ```
 
 ### B-143 — `id:` de placeholder passava CONFIRMED e a densidade não o via: o portão do BACKLOG falhava ABERTO — FECHADO
