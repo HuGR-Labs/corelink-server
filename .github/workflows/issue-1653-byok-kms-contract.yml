@@ -32,7 +32,7 @@ jobs:
       - name: Reject forged lifecycle evidence
         run: python3 tests/test_verify_b083_kms_lifecycle_evidence.py
       - name: Reject B-083 owner-packet omissions
-        run: python3 -m unittest -q tests/test_owner_action_packets.py
+        run: python3 -m unittest -q tests.test_owner_action_packets.OwnerActionPacketTests.test_b083_owner_packet_lifecycle_contract_rejects_omissions
       - name: Verify the redacted isolated provider probe boundary
         run: python3 scripts/verify_b083_aws_probe_receipt.py
       - name: Reject forged partial-provider completion

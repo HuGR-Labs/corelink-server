@@ -378,6 +378,18 @@ class OwnerActionPacketTests(unittest.TestCase):
                 with self.assertRaises(MODULE.PacketError):
                     MODULE.check_data(self.data, "B-083")
 
+        for field, value in (
+            ("command", "backlog B-083 verification shell"),
+            ("detail", "activation remains fail-closed"),
+        ):
+            mutated = copy.deepcopy(original(MODULE.B083_EVIDENCE_PATH, MODULE.B083_EVIDENCE_REQUIRED_FIELDS, "B-083"))
+            mutated["repository_checks"][1][field] = value
+            def read_repository_check(path, fields, label, receipt=mutated):
+                return receipt if path == MODULE.B083_EVIDENCE_PATH else original(path, fields, label)
+            with self.subTest(repository_check_field=field), mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_repository_check):
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(self.data, "B-083")
+
     def test_b083_owner_packet_lifecycle_contract_rejects_omissions(self) -> None:
         self.assertEqual(MODULE.check_data(self.data, "B-083"), {"items": 29, "population": 29})
         mutations = (
@@ -407,18 +419,6 @@ class OwnerActionPacketTests(unittest.TestCase):
                     item["retry_and_rollback"] = item["retry_and_rollback"].replace(before, after, 1)
                 with self.assertRaises(MODULE.PacketError):
                     MODULE.check_data(mutated, "B-083")
-
-        for field, value in (
-            ("command", "backlog B-083 verification shell"),
-            ("detail", "activation remains fail-closed"),
-        ):
-            mutated = copy.deepcopy(original(MODULE.B083_EVIDENCE_PATH, MODULE.B083_EVIDENCE_REQUIRED_FIELDS, "B-083"))
-            mutated["repository_checks"][1][field] = value
-            def read_repository_check(path, fields, label, receipt=mutated):
-                return receipt if path == MODULE.B083_EVIDENCE_PATH else original(path, fields, label)
-            with self.subTest(repository_check_field=field), mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_repository_check):
-                with self.assertRaises(MODULE.PacketError):
-                    MODULE.check_data(self.data, "B-083")
 
     def test_b097_read_only_capture_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence
