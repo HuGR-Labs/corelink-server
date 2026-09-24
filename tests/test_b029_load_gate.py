@@ -397,6 +397,21 @@ class B029LoadGateTests(unittest.TestCase):
                     gaps,
                 )
 
+    def test_corelink_runner_mutation_is_rejected(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(self._assess_workflow(workflow), [])
+        parts = workflow.split("runs-on: ubuntu-24.04")
+        self.assertEqual(len(parts), 3)
+        for occurrence in (0, 1):
+            with self.subTest(occurrence=occurrence):
+                shutil.rmtree(self.root / "workflow-contract", ignore_errors=True)
+                mutated = "".join(
+                    segment + ("runs-on: ubuntu-24.04" if index != occurrence else "runs-on: corelink")
+                    for index, segment in enumerate(parts[:-1])
+                ) + parts[-1]
+                gaps = self._assess_workflow(mutated)
+                self.assertIn("both load jobs must run on ubuntu-24.04", gaps)
+
     def test_mutation_of_checklist_hostname_is_rejected(self) -> None:
         workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
         self.assertEqual(self._assess_workflow(workflow), [])
