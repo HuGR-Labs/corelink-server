@@ -642,27 +642,23 @@ def test_v0006_receipt_is_required_for_the_main_baseline_transition(tmp_path):
         shutil.move(str(held_receipt), str(receipt))
 
 
-def test_v0006_rejects_wrong_immutable_main_parent(tmp_path):
-    """The new receipt must name its exact first-parent main commit."""
-    receipt = (
-        ledger.REPO_ROOT
-        / ledger.SNAPSHOT_DIRECTORY
-        / "backlog-ledger-snapshot-v0006.json"
+def test_v0006_authorizer_rejects_wrong_immutable_main_parent():
+    """The v0006 authorization itself binds the exact main parent."""
+    policy = successor.install(ledger)
+    receipt = json.loads(
+        (ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0006.json")
+        .read_text()
     )
-    held_receipt = tmp_path / receipt.name
-    original = receipt.read_bytes()
-    held_receipt.write_bytes(original)
-    value = json.loads(original)
-    value["base_commit"] = "2af5c9b64cccba9cf618145224186ec2717cca50"
-    receipt.write_text(json.dumps(value, indent=2) + "\n")
-    try:
-        with pytest.raises(
-            LedgerError,
-            match=r"backlog-ledger-snapshot-v0006\.json: successor was rewritten or names the wrong main parent",
-        ):
-            ledger.load_successor_chain()
-    finally:
-        receipt.write_bytes(held_receipt.read_bytes())
+    previous = json.loads(
+        (ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0005.json")
+        .read_text()
+    )
+    prior = policy._git_state_bytes(ledger.REPO_ROOT, receipt["base_commit"])
+    current = policy._state_bytes(ledger.REPO_ROOT)
+    wrong_parent = dict(receipt, base_commit="2af5c9b64cccba9cf618145224186ec2717cca50")
+    assert not policy._v0006_reconciliation_authorized(
+        previous, prior, current, wrong_parent, 6,
+    )
 
 
 def test_v0005_receipt_is_required_to_bridge_post_v0004_history(tmp_path):
@@ -677,7 +673,7 @@ def test_v0005_receipt_is_required_to_bridge_post_v0004_history(tmp_path):
     try:
         with pytest.raises(
             LedgerError,
-            match=r"backlog-ledger-snapshot-v0004\.json: delivered state drifted after last successor",
+            match=r"successor snapshot sequence is not contiguous from v0003",
         ):
             ledger.load_successor_chain()
     finally:

@@ -44,4 +44,4 @@ jobs:
           tests/test_backlog_ledger_successor.py::test_v0006_replays_the_exact_delivered_successor_chain
           tests/test_backlog_ledger_successor.py::test_v0006_pins_source_hash_and_exact_changed_ids
           tests/test_backlog_ledger_successor.py::test_v0006_receipt_is_required_for_the_main_baseline_transition
-          tests/test_backlog_ledger_successor.py::test_v0006_rejects_wrong_immutable_main_parent
+          tests/test_backlog_ledger_successor.py::test_v0006_authorizer_rejects_wrong_immutable_main_parent
