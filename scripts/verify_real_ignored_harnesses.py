@@ -506,7 +506,7 @@ def assert_contract(workflow: str, runner: str) -> None:
 
     # Environment preconditions are part of correctness: absent credentials
     # must fail before a test can fall back to an in-memory adapter.
-    expected_blank_env = (
+    for name in (
         "CLOUDFLARE_ACCOUNT_ID",
         "CF_API_TOKEN",
         "D1_DATABASE_ID",
