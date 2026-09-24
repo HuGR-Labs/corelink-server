@@ -8,7 +8,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 SOURCE = "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics"
 PROVIDER = "cloudflare-wrangler"
@@ -64,7 +64,14 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
-def validate_provider_binding(binding: dict[str, Any]) -> None:
+ProviderBindingMode = Literal["live", "historical"]
+
+
+def validate_provider_binding(binding: dict[str, Any], *, mode: ProviderBindingMode = "live") -> None:
+    """Validate binding truth; enforce age for live/operator evidence."""
+
+    if mode not in ("live", "historical"):
+        raise ProviderBindingError("provider validation mode must be live or historical")
     if set(binding) != PROVIDER_KEYS:
         missing = sorted(PROVIDER_KEYS - set(binding))
         extra = sorted(set(binding) - PROVIDER_KEYS)
@@ -111,7 +118,9 @@ def validate_provider_binding(binding: dict[str, Any]) -> None:
     except ValueError as exc:
         raise ProviderBindingError("provider timestamp is invalid") from exc
     now = datetime.now(timezone.utc)
-    if captured_at < now - MAX_RECEIPT_AGE or captured_at > now + MAX_RECEIPT_FUTURE:
+    is_stale_live_receipt = mode == "live" and captured_at < now - MAX_RECEIPT_AGE
+    is_from_future = captured_at > now + MAX_RECEIPT_FUTURE
+    if is_stale_live_receipt or is_from_future:
         raise ProviderBindingError("provider evidence is stale or from the future")
 
 

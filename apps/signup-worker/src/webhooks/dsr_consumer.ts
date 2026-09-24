@@ -22,6 +22,8 @@
 
 import type { DsrQueuedV1 } from "./clerk.js";
 import { resolveEraseAuthKey } from "../lib/erase-auth-key.js";
+import { deriveErasureSalt } from "./clerk_erasure.js";
+import { constantTimeEqual } from "./github_provision.js";
 
 /** Minimal env surface the consumer needs (kept independent of the full Worker Env). */
 export interface DsrConsumerEnv {
@@ -217,11 +219,129 @@ export interface DsrDlqReceiptStore {
 interface D1Statement {
   bind(...values: unknown[]): D1Statement;
   first<T = unknown>(): Promise<T | null>;
-  run(): Promise<{ success: boolean; meta?: { changes?: number } }>;
+  run(): Promise<D1RunResult>;
+}
+
+interface D1RunResult {
+  success: boolean;
+  meta?: { changes?: number };
 }
 
 interface D1ReceiptDatabase {
   prepare(sql: string): D1Statement;
+  batch(statements: D1Statement[]): Promise<D1RunResult[]>;
+}
+
+const REDRIVE_TTL_MS = 7 * 24 * 60 * 60_000;
+const REDRIVE_LEASE_MS = 5 * 60_000;
+const EVENT_ID_RE = /^dsr-erasure-dlq:[0-9a-f]{64}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const CAPTURE_ACTOR_REF = "system:dlq-capture";
+const CAPTURE_APPROVAL_REF = "not-applicable";
+
+interface RedriveEnvelope {
+  dsr_id: string;
+  tenant_id: string;
+  queued_at_ms: number;
+  legal_hold: number;
+  requeue_count: number;
+}
+
+export interface RedriveStore {
+  capture(eventId: string, body: DsrDlqBody, nowMs: number): Promise<boolean>;
+  claim(eventId: string, actorRef: string, approvalRef: string, nowMs: number): Promise<"claimed" | "expired" | "denied">;
+  envelope(eventId: string): Promise<RedriveEnvelope | null>;
+  fence(eventId: string, nowMs: number): Promise<boolean>;
+  submitted(eventId: string, nowMs: number): Promise<void>;
+  ambiguous(eventId: string, nowMs: number): Promise<void>;
+  cleanup(nowMs: number): Promise<void>;
+}
+
+/** Stores only the migration 0145 recovery allowlist, never the queue body. */
+export class D1RedriveStore implements RedriveStore {
+  constructor(private readonly db: D1ReceiptDatabase) {}
+
+  /**
+   * D1 batch is transactional. The audit insert is conditional on the new
+   * state, so a denied claim/fence cannot manufacture a transition record.
+   */
+  private async transition(
+    eventId: string,
+    transition: "claimed" | "submitted" | "ambiguous",
+    update: D1Statement,
+  ): Promise<boolean> {
+    const audit = this.db.prepare(
+      "INSERT OR IGNORE INTO dsr_dlq_redrive_audit (event_id, transition) SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM dsr_dlq_redrive_envelopes WHERE event_id=?1 AND state=?2)",
+    ).bind(eventId, transition);
+    const [result] = await this.db.batch([update, audit]);
+    if (!result?.success) throw new Error(`dsr_dlq_redrive_${transition}_failed`);
+    return result.meta?.changes === 1;
+  }
+
+  async capture(eventId: string, body: DsrDlqBody, nowMs: number): Promise<boolean> {
+    const requeueCount = normalizedDlqRequeueCount(body._dlq_requeue);
+    if (!EVENT_ID_RE.test(eventId) || !UUID_RE.test(body.dsr_id) || !UUID_RE.test(body.tenant_id)
+      || !Number.isSafeInteger(body.queued_at_ms) || body.queued_at_ms < 0
+      || typeof body.legal_hold !== "boolean" || body.subject_id !== body.tenant_id) return false;
+    const result = await this.db.prepare(
+      "INSERT OR IGNORE INTO dsr_dlq_redrive_envelopes (event_id, dsr_id, tenant_id, queued_at_ms, legal_hold, requeue_count, state, actor_ref, approval_ref, expires_at_ms, claim_expires_at_ms, updated_at_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ready', ?7, ?8, ?9, 0, ?10)",
+    ).bind(eventId, body.dsr_id, body.tenant_id, body.queued_at_ms, body.legal_hold ? 1 : 0,
+      requeueCount, CAPTURE_ACTOR_REF, CAPTURE_APPROVAL_REF, nowMs + REDRIVE_TTL_MS, nowMs).run();
+    if (!result.success) throw new Error("dsr_dlq_redrive_capture_failed");
+    return true;
+  }
+
+  async claim(eventId: string, actorRef: string, approvalRef: string, nowMs: number): Promise<"claimed" | "expired" | "denied"> {
+    const claimed = await this.transition(eventId, "claimed", this.db.prepare(
+      "UPDATE dsr_dlq_redrive_envelopes SET state='claimed', actor_ref=?2, approval_ref=?3, claim_expires_at_ms=?4, updated_at_ms=?5 WHERE event_id=?1 AND state='ready' AND requeue_count=0 AND expires_at_ms>?5",
+    ).bind(eventId, actorRef, approvalRef, nowMs + REDRIVE_LEASE_MS, nowMs));
+    if (claimed) return "claimed";
+    const row = await this.db.prepare("SELECT expires_at_ms FROM dsr_dlq_redrive_envelopes WHERE event_id=?1")
+      .bind(eventId).first<{ expires_at_ms: number }>();
+    return row && row.expires_at_ms <= nowMs ? "expired" : "denied";
+  }
+
+  async envelope(eventId: string): Promise<RedriveEnvelope | null> {
+    return this.db.prepare("SELECT dsr_id, tenant_id, queued_at_ms, legal_hold, requeue_count FROM dsr_dlq_redrive_envelopes WHERE event_id=?1 AND state='claimed'")
+      .bind(eventId).first<RedriveEnvelope>();
+  }
+
+  async fence(eventId: string, nowMs: number): Promise<boolean> {
+    return this.transition(eventId, "ambiguous", this.db.prepare(
+      "UPDATE dsr_dlq_redrive_envelopes SET state='ambiguous', updated_at_ms=?2 WHERE event_id=?1 AND state='claimed' AND claim_expires_at_ms>?2 AND expires_at_ms>?2",
+    ).bind(eventId, nowMs));
+  }
+
+  async submitted(eventId: string, nowMs: number): Promise<void> {
+    const submitted = await this.transition(eventId, "submitted", this.db.prepare(
+      "UPDATE dsr_dlq_redrive_envelopes SET state='submitted', updated_at_ms=?2 WHERE event_id=?1 AND state='ambiguous'",
+    ).bind(eventId, nowMs));
+    if (!submitted) throw new Error("dsr_dlq_redrive_submit_failed");
+  }
+
+  async ambiguous(eventId: string, nowMs: number): Promise<void> {
+    const ambiguous = await this.transition(eventId, "ambiguous", this.db.prepare(
+      "UPDATE dsr_dlq_redrive_envelopes SET state='ambiguous', updated_at_ms=?2 WHERE event_id=?1 AND state='claimed'",
+    ).bind(eventId, nowMs));
+    if (!ambiguous) throw new Error("dsr_dlq_redrive_ambiguous_failed");
+  }
+
+  async cleanup(nowMs: number): Promise<void> {
+    const leaseExpiry = this.db.prepare(
+      "UPDATE dsr_dlq_redrive_envelopes SET state='ambiguous', updated_at_ms=?1 WHERE state='claimed' AND claim_expires_at_ms<=?1",
+    ).bind(nowMs);
+    const leaseAudit = this.db.prepare(
+      "INSERT OR IGNORE INTO dsr_dlq_redrive_audit (event_id, transition) SELECT event_id, 'ambiguous' FROM dsr_dlq_redrive_envelopes WHERE state='ambiguous' AND claim_expires_at_ms<=?1",
+    ).bind(nowMs);
+    const leaseResults = await this.db.batch([leaseExpiry, leaseAudit]);
+    if (!leaseResults.every((result) => result.success)) throw new Error("dsr_dlq_redrive_cleanup_failed");
+    // Frozen 0145 does not timestamp audit rows. Deleting them with their
+    // seven-day envelope is stricter than the required 30-day maximum.
+    await this.db.prepare("DELETE FROM dsr_dlq_redrive_audit WHERE event_id IN (SELECT event_id FROM dsr_dlq_redrive_envelopes WHERE expires_at_ms<=?1)")
+      .bind(nowMs).run();
+    await this.db.prepare("DELETE FROM dsr_dlq_redrive_envelopes WHERE expires_at_ms<=?1 AND state<>'claimed'")
+      .bind(nowMs).run();
+  }
 }
 
 class D1DsrDlqReceiptStore implements DsrDlqReceiptStore {
@@ -304,6 +424,15 @@ export interface DsrDlqEnv {
   PAGERDUTY_FETCH?: typeof fetch;
   CONFIG_DB?: D1ReceiptDatabase;
   DSR_DLQ_RECEIPTS?: DsrDlqReceiptStore;
+  DSR_DLQ_REDRIVE_AUTH_KEY?: string;
+  ERASURE_SALT_KEY?: string;
+  ENVIRONMENT?: string;
+  DSR_DLQ_REDRIVE?: RedriveStore;
+}
+
+function isRedriveStore(value: unknown): value is RedriveStore {
+  return !!value && typeof (value as RedriveStore).capture === "function"
+    && typeof (value as RedriveStore).claim === "function";
 }
 
 type PagingResult =
@@ -388,7 +517,9 @@ function retryReceiptBoundaryFailure(
     receipt_boundary: reason,
     note: "DLQ receipt boundary is unavailable at the retry limit; manual operator disposition required",
   });
-  m.ack();
+  // A receipt-bound recovery envelope is the precondition for every terminal
+  // ACK. Retain the DLQ copy even after the alert retry budget is exhausted.
+  m.retry();
 }
 
 /**
@@ -417,6 +548,19 @@ export async function handleErasureDlqBatch(
     let eventId: string;
     try {
       eventId = await dlqEventId(body, priorRequeues);
+    } catch {
+      m.retry();
+      continue;
+    }
+    const redrive = env.DSR_DLQ_REDRIVE
+      ?? (env.CONFIG_DB ? new D1RedriveStore(env.CONFIG_DB) : isRedriveStore(env.DSR_DLQ_RECEIPTS) ? env.DSR_DLQ_RECEIPTS : undefined);
+    // A terminal DLQ acknowledgment is permitted only after a strict recovery
+    // envelope is durable. Malformed or unavailable recovery storage retries.
+    try {
+      if (!redrive || !await redrive.capture(eventId, body, Date.now())) {
+        m.retry();
+        continue;
+      }
     } catch {
       m.retry();
       continue;
@@ -593,5 +737,67 @@ export async function handleErasureDlqBatch(
       });
       m.ack();
     }
+  }
+}
+
+function redriveResponse(status: number, error: string): Response {
+  return Response.json({ error }, { status });
+}
+
+function validRedriveRef(value: string, prefix: string): boolean {
+  return value.length <= 96 && new RegExp(`^${prefix}[A-Za-z0-9._:-]+$`).test(value);
+}
+
+/** Operator-only: accepts an opaque receipt id, never caller tenant or payload. */
+export async function handleDsrDlqRedrive(request: Request, env: DsrDlqEnv): Promise<Response> {
+  if (request.method !== "POST") return redriveResponse(405, "method_not_allowed");
+  const expected = env.DSR_DLQ_REDRIVE_AUTH_KEY?.trim();
+  if (!expected || expected.length < 32) return redriveResponse(503, "unavailable");
+  const authorization = request.headers.get("authorization") ?? "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+  if (!constantTimeEqual(token, expected)) return redriveResponse(401, "unauthorized");
+  if ((!env.CONFIG_DB && !env.DSR_DLQ_REDRIVE) || !env.DSR_QUEUE) return redriveResponse(503, "unavailable");
+  const actorRef = request.headers.get("x-corelink-operator-ref") ?? "";
+  const approvalRef = request.headers.get("x-corelink-approval-ref") ?? "";
+  if (!validRedriveRef(actorRef, "op_") || !validRedriveRef(approvalRef, "apr_")) return redriveResponse(400, "invalid_operator_reference");
+  let parsed: unknown;
+  try { parsed = await request.json(); } catch { return redriveResponse(400, "invalid_receipt"); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || Object.keys(parsed).length !== 1) return redriveResponse(400, "invalid_receipt");
+  const eventId = (parsed as { event_id?: unknown }).event_id;
+  if (typeof eventId !== "string" || !EVENT_ID_RE.test(eventId)) return redriveResponse(400, "invalid_receipt");
+  const store = env.DSR_DLQ_REDRIVE ?? new D1RedriveStore(env.CONFIG_DB!);
+  const nowMs = Date.now();
+  try { await store.cleanup(nowMs); } catch { return redriveResponse(503, "unavailable"); }
+  let claimed: "claimed" | "expired" | "denied";
+  try { claimed = await store.claim(eventId, actorRef, approvalRef, nowMs); } catch { return redriveResponse(503, "unavailable"); }
+  if (claimed === "expired") return redriveResponse(410, "receipt_expired");
+  if (claimed !== "claimed") return redriveResponse(409, "receipt_not_redriveable");
+  let envelope: RedriveEnvelope | null;
+  try { envelope = await store.envelope(eventId); } catch {
+    await store.ambiguous(eventId, Date.now()).catch(() => undefined);
+    return redriveResponse(503, "unavailable");
+  }
+  if (!envelope || !UUID_RE.test(envelope.dsr_id) || !UUID_RE.test(envelope.tenant_id)
+    || envelope.requeue_count !== 0 || !Number.isSafeInteger(envelope.queued_at_ms) || envelope.queued_at_ms < 0
+    || (envelope.legal_hold !== 0 && envelope.legal_hold !== 1)) {
+    await store.ambiguous(eventId, Date.now()).catch(() => undefined);
+    return redriveResponse(503, "unavailable");
+  }
+  let salt: string;
+  try { salt = await deriveErasureSalt(envelope.dsr_id, env.ERASURE_SALT_KEY, env.ENVIRONMENT); } catch {
+    await store.ambiguous(eventId, Date.now()).catch(() => undefined);
+    return redriveResponse(503, "unavailable");
+  }
+  try {
+    // Durable ambiguous state precedes send. Unknown outcomes cannot resend.
+    if (!await store.fence(eventId, Date.now())) return redriveResponse(409, "receipt_not_redriveable");
+    await env.DSR_QUEUE.send({ schema: "dev.hugr.corelink.dsr.queued.v1", dsr_id: envelope.dsr_id,
+      tenant_id: envelope.tenant_id, subject_id: envelope.tenant_id, erasure_salt_hex: salt,
+      queued_at_ms: envelope.queued_at_ms, legal_hold: envelope.legal_hold === 1,
+      source: "clerk.user.deleted", _dlq_requeue: 1 });
+    await store.submitted(eventId, Date.now());
+    return Response.json({ status: "submitted" }, { status: 202 });
+  } catch {
+    return redriveResponse(502, "redrive_ambiguous");
   }
 }
