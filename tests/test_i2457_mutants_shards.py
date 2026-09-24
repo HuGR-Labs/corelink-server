@@ -27,10 +27,25 @@ from scripts.verify_i2457_mutants_shards import (
 
 
 class MutantsShardAggregateTests(unittest.TestCase):
+    @staticmethod
+    def raw_mutant(index: int, *, name: str | None = None, file: str | None = None, line: int | None = None) -> dict:
+        line = index + 1 if line is None else line
+        return {
+            "name": name or f"mutant-{index}",
+            "package": "corelink-test-package",
+            "file": file or "crates/corelink-test/src/lib.rs",
+            "span": {
+                "start": {"line": line, "column": 1},
+                "end": {"line": line, "column": 2},
+            },
+            "replacement": str(index),
+            "genre": "FnValue",
+        }
+
     def setUp(self) -> None:
         self.sha = "a" * 40
         self.run_id = "777"
-        raw = [{"name": f"mutant-{index}"} for index in range(SHARD_COUNT * 2)]
+        raw = [self.raw_mutant(index) for index in range(SHARD_COUNT * 2)]
         self.inventory = make_inventory(raw, self.sha, self.run_id, 1)
         self.baseline = {
             "schema": BASELINE_SCHEMA,
@@ -103,6 +118,22 @@ class MutantsShardAggregateTests(unittest.TestCase):
         invalid["inventory_shard"] = "0/27"
         with self.assertRaisesRegex(VerificationError, "complete denominator-one"):
             validate_inventory(invalid)
+
+    def test_canonical_identity_distinguishes_duplicate_names_by_source_location(self) -> None:
+        raw = [
+            self.raw_mutant(0, name="same display name", file="crates/one/src/lib.rs", line=10),
+            self.raw_mutant(1, name="same display name", file="crates/two/src/lib.rs", line=10),
+        ]
+        first = make_inventory(raw, self.sha, self.run_id, 1)
+        second = make_inventory(copy.deepcopy(raw), self.sha, self.run_id, 1)
+        self.assertEqual(first["mutant_ids"], second["mutant_ids"])
+        self.assertEqual(len(first["mutant_ids"]), len(set(first["mutant_ids"])))
+        self.assertTrue(all(identity.startswith("sha256:") for identity in first["mutant_ids"]))
+
+    def test_canonical_identity_rejects_an_identical_duplicate(self) -> None:
+        raw = self.raw_mutant(0, name="same display name", file="crates/one/src/lib.rs", line=10)
+        with self.assertRaisesRegex(VerificationError, "duplicate identities"):
+            make_inventory([raw, copy.deepcopy(raw)], self.sha, self.run_id, 1)
 
     def test_rejects_missing_duplicate_and_unexpected_shards(self) -> None:
         with self.assertRaisesRegex(VerificationError, "missing"):
