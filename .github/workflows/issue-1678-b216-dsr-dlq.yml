@@ -7,7 +7,7 @@ on:
       - "apps/signup-worker/src/index.ts"
       - "apps/signup-worker/tests/dsr_consumer.test.ts"
       - "migrations/d1/0138_dsr_dlq_delivery_receipts.sql"
-      - "migrations/d1/0144_dsr_dlq_redrive_authority.sql"
+      - "migrations/d1/0145_dsr_dlq_redrive_authority.sql"
       - "docs/internal/b215-b230-runtime-owner-actions.md"
       - "BACKLOG.md"
       - ".github/workflows/issue-1678-b216-dsr-dlq.yml"

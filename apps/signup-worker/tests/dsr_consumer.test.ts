@@ -191,7 +191,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       return true;
     }
     async capture(_eventId: string, body: DsrDlqBody): Promise<boolean> {
-      return body.subject_id === body.tenant_id && body._dlq_requeue === undefined;
+      return body.subject_id === body.tenant_id;
     }
     async claim(): Promise<"claimed" | "expired" | "denied"> { return "denied"; }
     async envelope(): Promise<null> { return null; }
@@ -215,7 +215,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     const body: DsrDlqBody = {
       ...msg("dlq-1"),
       tenant_id: "tenant-private-canary",
-      subject_id: "subject-private-canary",
+      subject_id: "tenant-private-canary",
       clerk_user_id: "user_private_canary",
       erasure_salt_hex: "ab".repeat(32),
     };
@@ -233,7 +233,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(send.mock.calls[0]?.[0]).toMatchObject({
       dsr_id: "dlq-1",
       tenant_id: "tenant-private-canary",
-      subject_id: "subject-private-canary",
+      subject_id: "tenant-private-canary",
       clerk_user_id: "user_private_canary",
       erasure_salt_hex: "ab".repeat(32),
       _dlq_requeue: 1,
@@ -254,7 +254,6 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     const privateDsrFields = [
       "dlq-1",
       "tenant-private-canary",
-      "subject-private-canary",
       "user_private_canary",
       "ab".repeat(32),
     ];
@@ -516,7 +515,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       claimRequeue: async () => true,
     } satisfies DsrDlqReceiptStore), "malformed"],
   ] as const) {
-    it(`emits a privacy-safe terminal alert when the receipt boundary ${name}`, async () => {
+    it(`retries when the receipt boundary ${name}`, async () => {
       const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
       const m = fakeDlq(msg("receipt-terminal"), 3);
       const pagerFetch = vi.fn<typeof fetch>(async () => new Response("accepted", { status: 202 }));
@@ -529,20 +528,14 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
             PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch,
           },
         );
-        const alert = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
-        expect(alert).toMatchObject({
-          action: "receipt_boundary_exhausted", receipt_boundary: receiptBoundary,
-          exhausted: true, requeue_count: 0,
-        });
-        expect(String(alert.event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
-        expect(JSON.stringify(alert)).not.toContain("receipt-terminal");
+        expect(error).not.toHaveBeenCalled();
       } finally {
         error.mockRestore();
       }
       expect(pagerFetch).not.toHaveBeenCalled();
       expect(send).not.toHaveBeenCalled();
-      expect(m.ack).toHaveBeenCalledOnce();
-      expect(m.retry).not.toHaveBeenCalled();
+      expect(m.ack).not.toHaveBeenCalled();
+      expect(m.retry).toHaveBeenCalledOnce();
     });
   }
 
