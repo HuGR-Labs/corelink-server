@@ -51,7 +51,8 @@ jobs:
           toolchain: 1.91.1
           components: clippy
 
-      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+      - if: runner.environment == 'github-hosted'
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
 
