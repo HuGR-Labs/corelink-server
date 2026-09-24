@@ -1023,6 +1023,14 @@ def _validate_b006_committed_evidence(root: Path, *, require_closure: bool) -> N
         raise GraduationError(f"B-006: {message}: {exc}") from exc
 
 
+def _check_b006_done_population(packets: dict[str, dict[str, Any]]) -> None:
+    """Keep B-006 in the closed D03 DONE population."""
+
+    b006 = packets.get("B-006")
+    if not isinstance(b006, dict) or b006.get("disposition") != "DONE":
+        raise GraduationError("B-006 must remain in the DONE population")
+
+
 def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict[str, Any]]:
     if packets.get("schema_version") != 2:
         raise GraduationError("packet schema_version must be 2")
@@ -1229,6 +1237,7 @@ def verify_document(
             raise GraduationError(f"{item}: retired disposition must name the B-119 decision")
     _check_owner_packets(packet_data, by_id)
     packets = _check_packets(packet_data, root)
+    _check_b006_done_population(packets)
     packet_done = frozenset(item for item, packet in packets.items() if packet["disposition"] == "DONE")
     if packet_done != DONE_SET:
         raise GraduationError(f"DONE population is not exactly {sorted(DONE_SET)}: {sorted(packet_done)}")

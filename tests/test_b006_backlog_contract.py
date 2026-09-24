@@ -13,7 +13,7 @@ from scripts.collect_b006_metrics import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, Rej
 from scripts import collect_b006_provider_binding as provider_collector
 from scripts.verify_b006_evidence import EvidenceError, validate_closure, validate_receipt
 from scripts.verify_b006_provider_binding import EXPECTED_ACCOUNT_ID, EXPECTED_AUTH_EMAIL, EXPECTED_AUTH_TYPE, EXPECTED_DEPLOYMENT_ID, EXPECTED_SCRIPT_ETAG, EXPECTED_VERSION_ID, EXPECTED_VERSION_NUMBER, ProviderBindingError, validate_provider_binding
-from scripts.verify_d03_graduation import GraduationError, _check_packets, _load_packets, _validate_b006_committed_evidence
+from scripts.verify_d03_graduation import GraduationError, _check_b006_done_population, _load_packets, _validate_b006_committed_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -257,6 +257,7 @@ def test_b006_provider_collector_rejects_substituted_tarball_before_execution(mo
 
 def test_b006_d03_packet_cannot_reopen_after_authenticated_zero_closure() -> None:
     packet = _load_packets(PACKET.read_text(encoding="utf-8"))
+    _validate_b006_committed_evidence(ROOT, require_closure=True)
     packet["packets"]["B-006"]["disposition"] = "REOPENED"
     with pytest.raises(GraduationError, match="B-006"):
-        _check_packets(packet, ROOT)
+        _check_b006_done_population(packet["packets"])
