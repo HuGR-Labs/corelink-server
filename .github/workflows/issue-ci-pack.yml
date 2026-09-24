@@ -11,6 +11,7 @@ on:
           - issue-2440-ci-scoping
           - issue-2437-worker-three-arm
           - issue-1948-mutants-receipt
+          - issue-1677-b170-owner-actions
       candidate_sha:
         description: Exact candidate head SHA for this dispatch ref
         required: true
@@ -76,7 +77,7 @@ jobs:
           fi
           [[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]
           case "$PACK_ID" in
-            issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt) ;;
+            issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt|issue-1677-b170-owner-actions) ;;
             *) echo "::error::unknown issue CI pack ID" >&2; exit 1 ;;
           esac
 
@@ -133,6 +134,19 @@ jobs:
           set -euo pipefail
           python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py
           python3 scripts/verify_i1863_mutants_hosted.py
+        working-directory: candidate
+
+      - name: Run issue 1677 B-170 owner-actions verifier
+        id: python-b170-owner-actions
+        if: inputs.pack_id == 'issue-1677-b170-owner-actions'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -S scripts/verify_b170_owner_actions.py
+          template=docs/internal/b170-owner-artifact-templates/legal-contract-disposition.md
+          grep -Fq 'docs/customer/dpa-onboarding.md' "$template"
+          grep -Fq 'lighthouse enterprise customer' "$template"
         working-directory: candidate
 
       - name: Verify pack contract and adversarial controls

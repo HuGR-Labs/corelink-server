@@ -37,11 +37,13 @@ CHECK_IDS = {
     "ci-pack-contract",
     "rust-worker-three-arm",
     "python-mutants-receipt",
+    "python-b170-owner-actions",
 }
 REQUIRED_PACK_CHECKS = {
     "issue-2440-ci-scoping": {"actionlint", "ci-pack-contract"},
     "issue-2437-worker-three-arm": {"ci-pack-contract", "rust-worker-three-arm"},
     "issue-1948-mutants-receipt": {"ci-pack-contract", "python-mutants-receipt"},
+    "issue-1677-b170-owner-actions": {"ci-pack-contract", "python-b170-owner-actions"},
 }
 REQUIRED_PACK_JOBS = {pack_id: {"issue-pack"} for pack_id in REQUIRED_PACK_CHECKS}
 TARGET_BASE_RULE = (
@@ -56,19 +58,24 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "github.ref == 'refs/heads/main' && github.ref_protected",
         "path: candidate",
         'ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"',
-        "issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt",
+        "issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt|issue-1677-b170-owner-actions",
         "id: actionlint",
         "id: ci-pack-contract",
         "id: rust-worker-three-arm",
         "id: python-mutants-receipt",
+        "id: python-b170-owner-actions",
         "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm'",
         "if: inputs.pack_id == 'issue-2437-worker-three-arm'",
         "if: inputs.pack_id == 'issue-1948-mutants-receipt'",
+        "if: inputs.pack_id == 'issue-1677-b170-owner-actions'",
         "timeout-minutes: 15",
         "timeout-minutes: 10",
         "cargo test --package corelink-worker --features tower-middleware --lib three_arm_ -- --nocapture",
         "python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py",
         "python3 scripts/verify_i1863_mutants_hosted.py",
+        "python3 -S scripts/verify_b170_owner_actions.py",
+        "grep -Fq 'docs/customer/dpa-onboarding.md'",
+        "grep -Fq 'lighthouse enterprise customer'",
         "--candidate-root candidate",
         "TRUSTED_MAIN_SHA: ${{ github.sha }}",
         '--trusted-main-sha "$TRUSTED_MAIN_SHA"',
@@ -181,7 +188,7 @@ def validate(catalog: object) -> list[str]:
             job_timeout = budget.get("job_timeout_minutes")
             step_timeout = budget.get("step_timeout_minutes")
             cost_cap = budget.get("max_billable_minutes_per_dispatch")
-            if budget.get("runner") != "ubuntu-24.04" or not isinstance(job_timeout, int) or not 1 <= job_timeout <= 15 or not isinstance(step_timeout, int) or not 1 <= step_timeout <= job_timeout or not isinstance(cost_cap, int) or not 1 <= cost_cap <= job_timeout or budget.get("matrix_limit") != 1 or budget.get("max_dispatches_per_pack_and_sha") != 1:
+            if budget.get("runner") != "ubuntu-24.04" or not isinstance(job_timeout, int) or not 1 <= job_timeout <= 15 or not isinstance(step_timeout, int) or not 1 <= step_timeout <= job_timeout or not isinstance(cost_cap, int) or not 1 <= cost_cap <= job_timeout or budget.get("matrix_limit") != 1 or budget.get("max_concurrent_dispatches_per_pack_and_sha") != 1:
                 errors.append(f"{prefix}.budget exceeds the declared hosted-runner cap")
         escalation = pack["escalation_policy"]
         if not isinstance(escalation, dict) or not set(escalation.get("critical_surfaces", [])) >= {"workflow", "security", "release", "core"} or escalation.get("required_jobs_for_this_pack") != pack["required_focused_jobs"] or escalation.get("protected_main_full_suite_required_after_merge") is not True:
