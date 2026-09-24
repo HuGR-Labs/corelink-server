@@ -444,7 +444,11 @@ def main() -> int:
 
         stale_variable_config = directory / "stale-variable.yaml"
         stale_variable_config.write_text(
-            canonical_text + "  - B254_STALE\n",
+            canonical_text.replace(
+                "\npaths:\n",
+                "\n  - B254_STALE\n\npaths:\n",
+                1,
+            ),
             encoding="utf-8",
         )
         if _variable_population_error(stale_variable_config, workflow_variables) is None:
