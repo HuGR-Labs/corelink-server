@@ -183,8 +183,9 @@ def self_test(catalog: dict) -> list[str]:
         failures.append("weak SHA binding was accepted")
     if valid_sha_pair("a" * 40, "b" * 40) or valid_sha_pair("not-a-sha", "not-a-sha"):
         failures.append("malformed or mismatched candidate SHA was accepted")
-    if not validate_workflow_contract((ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8")):
-        failures.append("workflow missing the per-step candidate SHA binding was accepted")
+    canonical_workflow = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8")
+    if validate_workflow_contract(canonical_workflow):
+        failures.append("canonical workflow failed its static contract")
     unbound_workflow = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8").replace(
         'ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"', "ACTUAL_SHA=$EXPECTED_SHA"
     )
