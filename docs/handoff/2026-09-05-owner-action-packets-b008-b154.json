@@ -9,7 +9,7 @@
   "items": [
     {
       "id": "B-008",
-      "owner": "owner",
+      "owner": "tl",
       "status": "open",
       "action_type": "external_read_credential_and_delivery_review",
       "procedure": [
@@ -491,17 +491,21 @@
     },
     {
       "id": "B-083",
-      "owner": "tl",
+      "owner": "owner",
       "status": "open",
-      "action_type": "real_kms_byok_activation_and_revocation_proof",
+      "action_type": "owner_authorized_real_kms_lifecycle_evidence",
       "procedure": [
-        "UI: Provision one test tenant CMK and the least-privilege AWS KMS role, endpoint, and region required by the byok-aws-real image; keep plaintext key material outside the repository.",
-        "RUN: In the protected runtime, call the existing POST /v1/admin/byok/activate path with the operator internal credential and CMK-wrapped Tcs, then verify check_access, encrypted CAS/AC round-trip, and fail-closed behavior without logging secrets.",
-        "RUN: Invoke the existing POST /v1/admin/byok/deactivate path and capture the revocation run_loop transition, audit receipt, and bounded timing; retain the run references and leave production tenants unchanged."
+        "UI: Authorize and provision one protected, isolated nonproduction AWS runtime for the exact shipped byok-aws-real image. Pin the execution region and retain the sha256 image digest in the protected operator record; do not use a production tenant or expose identifiers in repository evidence.",
+        "UI: Provision one disposable protected test tenant and a distinct isolated test tenant for cross-tenant rejection. Provision a customer-controlled CMK and retain customer control of create/import, rotation authorization, and deletion scheduling.",
+        "UI: Bind a least-privilege runtime identity limited to wrap, unwrap, and check_access. Protect operator authorization and configure the durable audit receipt sink before activating either test tenant; keep credentials, plaintext TCS, ciphertext, CMK/account/tenant identifiers, and provider response bodies outside git and issue comments.",
+        "RUN: From the protected runtime, capture authenticated receipts for customer create/import; provider check_access and activation before the first D1 mutation; envelope/CAS wrap and unwrap; production-binary run_loop revoke/restore; CMK rotation; customer-authorized deletion scheduling; durable audit delivery; cross-tenant rejection; provider failure with bounded retry; and residency in the pinned region.",
+        "RUN: For revoke/restore, measure the production binary's run_loop p99 and retain its authenticated source record. The measured result must satisfy the Enterprise boundary of no more than five minutes; a mock, source-only check, synthetic delay, scheduler flag, or AWS CLI-only result is insufficient.",
+        "RUN: Reconcile evidence/owner-actions/B-083/byok-real-kms-lifecycle.json on the exact candidate tree: set evidence_state to VERIFIED, mark all five external prerequisites PROVISIONED, retain the customer-controlled custody policy, bind the runtime digest and region, and give each of the ten lifecycle keys one distinct redacted audit://<step>/<reference> receipt reference and UTC completion timestamp. Keep the p99 source record in the protected boundary and publish only the redacted receipt reference and outcome metadata.",
+        "RUN: Have the repository owner run scripts/verify_b083_kms_lifecycle_evidence.py through the exact-head GitHub Actions contract. Link accepted redacted evidence from #2165, #1653, and the canonical B-083 BACKLOG.md row; keep #1653 open until its full acceptance contract is met."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["test tenant identifier", "AWS KMS CMK identity", "byok-aws-real image digest", "wrapped Tcs and operator routes"],
-        "credentials": "Owner provisions AWS role credentials, KMS endpoint, CMK access, and the internal operator credential in protected runtime storage; plaintext Tcs, key material, and tokens never enter evidence."
+        "inputs": ["owner authorization for the protected isolated nonproduction AWS boundary", "exact shipped byok-aws-real image digest and pinned execution region", "two disposable isolated test tenants and a customer-controlled CMK", "least-privilege runtime identity, protected operator route, and durable audit receipt sink", "authenticated lifecycle receipts for all ten B-083 steps, including the production run_loop p99 source record"],
+        "credentials": "The owner provisions AWS role credentials, KMS endpoint, customer-controlled CMK access, and the internal operator credential only in protected runtime storage. The repository action never creates, imports, rotates, disables, schedules deletion for, or cleans up a provider resource. Plaintext TCS, key material, credentials, account/tenant/CMK identifiers, provider response bodies, ciphertext, and tokens never enter git, logs, or issue comments."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json",
@@ -509,9 +513,9 @@
         "required_fields": ["schema_version", "captured_at", "evidence_state", "tenant_redacted", "runtime", "external_prerequisites", "custody_policy", "lifecycle", "operator", "repository_checks"],
         "item_schema": "runtime contains provider, image_digest, and execution_region. external_prerequisites exactly names isolated_test_tenant, customer_controlled_cmk, least_privilege_runtime_identity, protected_operator_authorization, and durable_audit_receipt_sink. custody_policy fixes CMK create/import and deletion scheduling as customer controlled and service permissions as wrap_unwrap_check_access_only. lifecycle exactly records customer_create_or_import, provider_access, wrap_unwrap, revoke_restore, rotate, deletion_schedule, audit_receipts, tenant_isolation, failure_retry, and residency with status, receipt_reference, completed_at, and blocker. BLOCKED records require every prerequisite MISSING and every lifecycle step NOT_EXECUTED; VERIFIED records require all PROVISIONED, the shipped image digest, and one operation-bound redacted audit receipt per step. No key identifier, key material, plaintext TCS, ciphertext, credential, or token is stored. repository_checks is the exact focused command list and PASS details."
       },
-      "expected_postcondition": "A test tenant proves real KMS access, encrypted CAS/AC behavior, and bounded revocation through the shipped image; B-083 remains open until owner evidence exists and no production claim is inferred.",
-      "retry_and_rollback": "Retry only after checking CMK grants and preserving the first run. Deactivate the test tenant through the same route on cleanup; if activation is ambiguous, fail closed, do not retry with plaintext, and retain the audit record for investigation.",
-      "references": ["BACKLOG.md#B-083", "Dockerfile", "crates/corelink-container/src/routes/byok_admin.rs", "crates/corelink-container/src/byok_orchestrator.rs", "crates/corelink-byok/src/byok_aws/real.rs"]
+      "expected_postcondition": "The protected owner boundary supplies the five prerequisites and authenticated, redacted receipts for all ten lifecycle steps, bound to the exact image, pinned region, and tenant boundary. The production run_loop revoke/restore p99 is at most five minutes. B-083 and #1653 remain open until this evidence is accepted; the packet does not infer a production claim or authorize a provider operation.",
+      "retry_and_rollback": "Before any retry, preserve the first protected receipt set and re-check the CMK grants, tenant isolation, operator authorization, and audit sink. If activation or revocation is ambiguous, fail closed and retain the protected audit record for investigation. Any provider mutation, rollback, or cleanup is separately authorized and performed by the customer/owner; do not retry with plaintext or publish protected material.",
+      "references": ["BACKLOG.md#B-083", "#2165", "#1653", "Dockerfile", "crates/corelink-container/src/routes/byok_admin.rs", "crates/corelink-container/src/byok_orchestrator.rs", "crates/corelink-byok/src/byok_aws/real.rs", "scripts/verify_b083_kms_lifecycle_evidence.py", ".github/workflows/issue-1653-byok-kms-contract.yml", "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"]
     },
     {
       "id": "B-102",
