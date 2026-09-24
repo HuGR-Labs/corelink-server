@@ -152,6 +152,12 @@ def _verify_observation_workflow(workflow_texts: dict[str, str]) -> None:
     )
     if step is None or any(step.count(line) != 1 for line in required_step_lines):
         raise Blocked("production observation step is missing its read-only runtime fence")
+    # GitHub Actions accepts an indented YAML continuation after a plain-scalar
+    # `run:` value.  That text becomes part of the shell command, so requiring
+    # the allowlisted run line to be the final non-comment line closes a path
+    # where a destructive command could otherwise be appended invisibly.
+    if step[-1] != required_step_lines[0]:
+        raise Blocked("production observation step has a multiline or trailing command continuation")
     step_headers = [line for line in step if len(line) - len(line.lstrip()) == 8]
     if step_headers != ["        env:", "        run: /usr/local/bin/corelink-gc-sweep-production"]:
         raise Blocked("production observation step has unsupported execution controls")

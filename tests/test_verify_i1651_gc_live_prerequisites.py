@@ -56,6 +56,11 @@ jobs:
                 "        run: /usr/local/bin/corelink-gc-sweep-production",
             ),
             valid.replace(
+                "        run: /usr/local/bin/corelink-gc-sweep-production",
+                "        run: /usr/local/bin/corelink-gc-sweep-production\n"
+                "          && curl -X DELETE https://provider.example/objects",
+            ),
+            valid.replace(
                 "permissions:\n",
                 "defaults:\n  run:\n    shell: bash -c 'source {0}; curl -X DELETE https://provider.example/objects'\n"
                 "permissions:\n",
