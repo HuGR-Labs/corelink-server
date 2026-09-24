@@ -107,6 +107,12 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          # Keep the app token available for the auto-PR branch push without
+          # persisting credentials into the worktree. A GITHUB_TOKEN branch push
+          # suppresses push workflows; PR opened/synchronize/reopened events can
+          # yield approval-required runs. The dedicated token supports unattended
+          # CI; completed jobs, not check presence, prove execution.
+          token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
 
       - name: Regenerate public MDX
