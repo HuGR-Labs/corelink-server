@@ -106,6 +106,30 @@ B065_SCHEMA_REQUIRED_TERMS = (
     "disabled_at is required only for disabled_now", "Legacy retired_endpoint_id",
     "never replace the typed resolution or either retained ID",
 )
+B083_PROCEDURE_MARKERS = (
+    ("protected, isolated nonproduction AWS runtime", "exact shipped byok-aws-real image", "sha256 image digest"),
+    ("distinct isolated test tenant", "customer-controlled CMK", "deletion scheduling"),
+    ("wrap, unwrap, and check_access", "durable audit receipt sink", "outside git and issue comments"),
+    ("customer create/import", "activation before the first D1 mutation", "provider failure with bounded retry", "residency"),
+    ("production binary's run_loop p99", "no more than five minutes", "AWS CLI-only result is insufficient"),
+    ("evidence_state to VERIFIED", "all five external prerequisites PROVISIONED", "ten lifecycle keys", "UTC completion timestamp"),
+    ("exact-head GitHub Actions contract", "#2165", "#1653", "keep #1653 open"),
+)
+B083_BOUNDARY_MARKERS = (
+    "two disposable isolated test tenants", "customer-controlled CMK", "durable audit receipt sink",
+    "repository action never creates, imports, rotates, disables, schedules deletion for, or cleans up a provider resource",
+)
+B083_POSTCONDITION_MARKERS = (
+    "five prerequisites", "all ten lifecycle steps", "run_loop revoke/restore p99 is at most five minutes",
+)
+B083_RETRY_MARKERS = (
+    "fail closed", "provider mutation, rollback, or cleanup is separately authorized", "do not retry with plaintext",
+)
+B083_REFERENCES = frozenset({
+    "#2165", "#1653", "scripts/verify_b083_kms_lifecycle_evidence.py",
+    ".github/workflows/issue-1653-byok-kms-contract.yml",
+    "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json",
+})
 B110_EVIDENCE_REQUIRED_FIELDS = [
     "schema_version",
     "captured_at",
@@ -807,6 +831,34 @@ def _check_repository_checks(value: object, label: str, expected: list[dict[str,
 
 
 def _check_b083_evidence(item: dict[str, object]) -> None:
+    if item["action_type"] != "owner_authorized_real_kms_lifecycle_evidence":
+        raise PacketError("B-083 action type must name the owner-authorized lifecycle evidence boundary")
+    procedure = item["procedure"]
+    assert isinstance(procedure, list)
+    if len(procedure) != len(B083_PROCEDURE_MARKERS):
+        raise PacketError("B-083 procedure must retain the complete seven-step owner packet")
+    for index, markers in enumerate(B083_PROCEDURE_MARKERS):
+        if any(marker not in procedure[index] for marker in markers):
+            raise PacketError(f"B-083 procedure[{index}] lost a lifecycle, custody, or evidence boundary")
+    boundary = item["inputs_and_credentials_boundary"]
+    assert isinstance(boundary, dict)
+    inputs = boundary["inputs"]
+    credentials = boundary["credentials"]
+    assert isinstance(inputs, list) and isinstance(credentials, str)
+    boundary_text = " ".join(inputs) + " " + credentials
+    if any(marker not in boundary_text for marker in B083_BOUNDARY_MARKERS):
+        raise PacketError("B-083 credential boundary lost tenant, custody, audit, or no-mutation protection")
+    postcondition = item["expected_postcondition"]
+    retry = item["retry_and_rollback"]
+    assert isinstance(postcondition, str) and isinstance(retry, str)
+    if any(marker not in postcondition for marker in B083_POSTCONDITION_MARKERS):
+        raise PacketError("B-083 postcondition lost lifecycle completeness or p99 boundary")
+    if any(marker not in retry for marker in B083_RETRY_MARKERS):
+        raise PacketError("B-083 retry path lost fail-closed or owner-authorization boundary")
+    references = item["references"]
+    assert isinstance(references, list)
+    if not B083_REFERENCES.issubset(references):
+        raise PacketError("B-083 references lost its issue, verifier, workflow, or evidence anchor")
     evidence = item["evidence"]
     assert isinstance(evidence, dict)
     if evidence["path"] != B083_EVIDENCE_PATH or evidence["format"] != "json":
