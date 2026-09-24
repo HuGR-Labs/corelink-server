@@ -99,6 +99,10 @@ class MutantsShardAggregateTests(unittest.TestCase):
         invalid["mutant_ids"][0] = {"name": "mutant-0"}
         with self.assertRaisesRegex(VerificationError, "string identities"):
             validate_inventory(invalid)
+        invalid = copy.deepcopy(self.inventory)
+        invalid["inventory_shard"] = "0/27"
+        with self.assertRaisesRegex(VerificationError, "complete denominator-one"):
+            validate_inventory(invalid)
 
     def test_rejects_missing_duplicate_and_unexpected_shards(self) -> None:
         with self.assertRaisesRegex(VerificationError, "missing"):
