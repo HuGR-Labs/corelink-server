@@ -316,6 +316,21 @@ B245_SCOPE_METADATA_FILES = frozenset(
     }
 )
 
+# This one occurrence is test data, not a credential read: the isolated-lane
+# unit test supplies a dummy token in a mocked environment. Match the complete
+# fixture context so any additional B-245 reference in that file stays visible.
+B245_TEST_FIXTURE_REFERENCE_PATTERNS: dict[tuple[str, str], re.Pattern[str]] = {
+    (
+        "tests/test_b105_isolated_lane_behavior.py",
+        "CORELINK_PERF_PAT",
+    ): re.compile(
+        r'(?ms)^\s*with mock\.patch\.dict\(collector\.os\.environ,\s*\{\s*'
+        r'"CORELINK_PERF_BASE":\s*"https://cache\.example\.invalid",\s*'
+        r'"CORELINK_PERF_PAT":\s*"redacted-test-token",\s*'
+        r'"GITHUB_RUN_ID":\s*"4242",\s*\},\s*clear=False\)'
+    ),
+}
+
 
 def _synthetic_env_names_for_file(root: Path, path: Path) -> frozenset[str]:
     """Return synthetic names only for an exact manifest path."""
@@ -408,6 +423,15 @@ def _b245_reference_paths(root: Path, name: str) -> set[str]:
         except OSError:
             continue
         active = _without_comments(text)
+        fixture_pattern = B245_TEST_FIXTURE_REFERENCE_PATTERNS.get((relative, name))
+        if fixture_pattern is not None:
+            fixture_matches = list(fixture_pattern.finditer(active))
+            if len(fixture_matches) != 1:
+                raise ValueError(
+                    f"B-245 test-fixture annotation drift for {name} in {relative}: "
+                    f"expected one exact dummy mock, found {len(fixture_matches)}"
+                )
+            active = fixture_pattern.sub("", active, count=1)
         if re.search(rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])", active):
             paths.add(relative)
     return paths
