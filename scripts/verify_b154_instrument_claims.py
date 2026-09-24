@@ -176,20 +176,27 @@ def verify_texts(dpa_text: str, sla_text: str) -> list[tuple[str, int, str]]:
 def verify_capability_state(byok: dict, object_lock: dict, dockerfile: str) -> None:
     """Require the exact current evidence boundary, never a stray 501/NotImplemented."""
     try:
+        # B-083 receipt schema v2 structure
         byok_unverified = (
-            byok["tenant_redacted"] == "NOT_PROVISIONED"
-            and byok["image_digest"] is None
-            and byok["check_access"] == "BLOCKED"
-            and all(byok[field]["status"] == "NOT_EXECUTED" for field in (
-                "activation", "cas_ac_round_trip", "revocation", "run_loop"
-            ))
+            byok.get("tenant_redacted") == "NOT_PROVISIONED"
+            and byok.get("runtime", {}).get("image_digest") is None
+            and byok.get("lifecycle", {}).get("provider_access", {}).get("status") == "NOT_EXECUTED"
+            and all(
+                byok.get("lifecycle", {}).get(field, {}).get("status") == "NOT_EXECUTED"
+                for field in (
+                    "customer_create_or_import",
+                    "wrap_unwrap",
+                    "revoke_restore",
+                    "rotate",
+                )
+            )
         )
         probe_indeterminate = (
-            object_lock["classification"] == "INDETERMINATE"
-            and object_lock["bucket_operation"]["status"] == "INDETERMINATE"
-            and object_lock["object_operation"]["status"] == "SKIPPED"
+            object_lock.get("classification") == "INDETERMINATE"
+            and object_lock.get("bucket_operation", {}).get("status") == "INDETERMINATE"
+            and object_lock.get("object_operation", {}).get("status") == "SKIPPED"
         )
-    except (KeyError, TypeError):
+    except (KeyError, TypeError, AttributeError):
         raise VerificationError("B-154 capability evidence shape changed; re-review") from None
     if not byok_unverified or not probe_indeterminate:
         raise VerificationError("B-154 capability evidence changed; re-review runtime/probe before closing")
