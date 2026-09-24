@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "description": "Closed catalog of explicit, change-scoped hosted CI packs. Candidate identity is bound at dispatch time.",
+  "packs": [
+    {
+      "pack_id": "issue-2440-ci-scoping",
+      "issue": 2440,
+      "changed_surfaces": [
+        ".github/workflows/**",
+        "scripts/verify_ci_issue_packs.py",
+        "docs/internal/ci-issue-packs.json"
+      ],
+      "required_focused_jobs": [
+        "actionlint",
+        "ci-pack-contract"
+      ],
+      "admission_checks": [
+        "DCO check on the exact pull request head",
+        "credentialless checkout",
+        "changed-file boundary"
+      ],
+      "negative_controls": [
+        "reject unknown pack ID",
+        "reject malformed or mismatched candidate SHA",
+        "reject missing required pack fields",
+        "reject a candidate surface with no named focused job",
+        "reject a critical-surface downgrade"
+      ],
+      "exact_sha": {
+        "source": "required workflow_dispatch input expected_sha",
+        "binding": "must equal github.sha for the checked-out dispatch ref",
+        "target_base_source": "required workflow_dispatch input target_base_sha",
+        "target_base_sha": "required workflow_dispatch input target_base_sha; must be an ancestor of expected_sha"
+      },
+      "budget": {
+        "runner": "ubuntu-24.04",
+        "job_timeout_minutes": 15,
+        "max_billable_minutes_per_dispatch": 15,
+        "matrix_limit": 1,
+        "max_dispatches_per_pack_and_sha": 1
+      },
+      "escalation_policy": {
+        "critical_surfaces": [
+          "workflow",
+          "security",
+          "release",
+          "core"
+        ],
+        "required_jobs_for_this_pack": [
+          "actionlint",
+          "ci-pack-contract"
+        ],
+        "protected_main_full_suite_required_after_merge": true
+      },
+      "global_suite_escalation_triggers": [
+        "shared dependency manifests, workspace configuration, or central test infrastructure changes",
+        "authentication, authorization, cryptographic, or protocol boundary changes",
+        "cross-service migrations or shared data contracts",
+        "release, signing, deployment, secrets, or provider mutation controls change",
+        "the pack cannot bound affected consumers"
+      ],
+      "merge_evidence": [
+        "exact pack run URL, run ID, candidate SHA, target base SHA, and conclusion",
+        "actionlint and adversarial verifier job receipts",
+        "DCO check on the exact pull request head",
+        "one independent cold review verdict and disposition of each finding",
+        "documented escalation decision for every critical surface touched"
+      ]
+    }
+  ]
+}
