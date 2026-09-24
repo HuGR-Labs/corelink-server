@@ -49,7 +49,7 @@ permissions:
 jobs:
   dr-drill:
     name: DR Drill (staging-only)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     env:
@@ -58,6 +58,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Resolve cycle + cadence
         id: cadence
@@ -105,14 +107,13 @@ jobs:
         if: steps.cadence.outputs.skip == 'true'
         run: echo "Skipped (not first Monday)"
 
-      # Use the runner image's pre-installed, workspace-pinned toolchain — a
-      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py;
-      # `corelink` counts as self-hosted). HOST_TRIPLE selects the Linux triple.
-      - name: Use host toolchain (baked, workspace-pinned)
+      - name: Install pinned workspace Rust toolchain
         if: steps.cadence.outputs.cycle == '1'
-        env:
-          HOST_TRIPLE: x86_64-unknown-linux-gnu
-        run: bash scripts/ci-use-host-toolchain.sh
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+          components: rust-src,rustfmt,clippy
+          targets: wasm32-unknown-unknown,x86_64-unknown-linux-musl
 
       - name: Run DR drill cycle 1 (CF region failover)
         if: steps.cadence.outputs.cycle == '1'
