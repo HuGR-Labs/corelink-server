@@ -74,6 +74,7 @@ jobs:
             echo "actionlint not on PATH — fetching pinned 1.7.12 release"
             bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
             export PATH="$PWD:$PATH"
+            printf '%s\n' "$PWD" >> "$GITHUB_PATH"
           fi
           actionlint -version
           actionlint -color -verbose

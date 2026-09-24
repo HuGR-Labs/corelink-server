@@ -104,6 +104,29 @@ class B139BoundaryTests(unittest.TestCase):
     def test_baseline_passes(self):
         verify_workflows(ROOT / ".github" / "workflows")
 
+    def test_secrets_drift_fork_opt_in_is_candidate_only_and_fail_closed(self):
+        cases = {
+            "missing candidate opt-in": lambda text: text.replace(
+                "          allow-unsafe-pr-checkout: true\n", "", 1
+            ),
+            "false candidate opt-in": lambda text: text.replace(
+                "allow-unsafe-pr-checkout: true", "allow-unsafe-pr-checkout: false", 1
+            ),
+            "trusted checkout opt-in": lambda text: text.replace(
+                "          persist-credentials: false\n\n      - name: Checkout pull-request tree as data",
+                "          persist-credentials: false\n          allow-unsafe-pr-checkout: true\n\n      - name: Checkout pull-request tree as data",
+                1,
+            ),
+        }
+        for label, mutate in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as td:
+                root = self._suppression_tree(td)
+                path = root / ".github" / "workflows" / "secrets-drift.yml"
+                path.write_text(mutate(path.read_text()))
+                with patch.dict(guard.EXPECTED_DOCUMENT_DIGESTS, self._digests(root), clear=False):
+                    with self.assertRaises(VerificationError):
+                        verify_workflows(root / ".github" / "workflows")
+
     def test_mutations_fail(self):
         mutations = {
             "movable head ref": ("ref: ${{ github.event.pull_request.head.sha", "ref: ${{ github.event.pull_request.head.ref"),

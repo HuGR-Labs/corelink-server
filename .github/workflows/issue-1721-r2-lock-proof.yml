@@ -1,0 +1,98 @@
+name: Issue 1721 — R2 native lock proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/issue-1721-r2-lock-proof.yml'
+      - 'scripts/probe_i1721_r2_lock.sh'
+      - 'tests/test_i1721_r2_lock_probe.py'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type i1721-r2-lock-proof to run the staging-only proof'
+        required: true
+        type: string
+      expected_sha:
+        description: 'Full SHA of the exact protected main commit'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1721-r2-lock-proof
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    if: github.event_name == 'pull_request'
+    name: offline probe contract tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Check shell syntax and fail-closed contract
+        run: |
+          bash -n scripts/probe_i1721_r2_lock.sh
+          python3 -m unittest discover -s tests -p 'test_i1721_r2_lock_probe.py' -v
+
+  preflight:
+    if: github.event_name == 'workflow_dispatch'
+    name: verify main-only exact-SHA request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - name: Fail closed before staging environment access
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          REF_PROTECTED: ${{ github.ref_protected }}
+        run: |
+          set -euo pipefail
+          bash scripts/validate_i1721_r2_dispatch.sh
+
+  proof:
+    if: github.event_name == 'workflow_dispatch' && needs.preflight.result == 'success'
+    needs: preflight
+    name: prove R2 staging state and native lock
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_TF_BACKEND_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_TF_BACKEND_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: 'true'
+      TF_BACKEND_BUCKET: corelink-terraform-staging-state
+      TF_BACKEND_ENDPOINT: https://${{ secrets.CF_ACCOUNT_ID }}.r2.cloudflarestorage.com
+    steps:
+      - name: Checkout exact dispatched main commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Terraform 1.11.4
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.11.4'
+          terraform_wrapper: false
+      - name: Prove R2 write/readback, contention, and release
+        run: scripts/probe_i1721_r2_lock.sh
+      - name: Upload secret-free proof receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1721-r2-lock-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/issue-1721-r2-lock-receipt.json
+          retention-days: 30
+          if-no-files-found: error
