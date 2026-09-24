@@ -33,7 +33,7 @@
 # WHY A SCHEDULE: it observes automation PRs independently of whether their
 #   pull_request events were approval-pending, suppressed, or failed before
 #   jobs were created. A PR-event-only monitor cannot provide that independent
-#   observation. This poll still needs an online corelink runner to execute.
+#   observation. This poll runs on a GitHub-hosted Ubuntu runner.
 #   The cron also EARNS its keep under this repo's own rule (CLAUDE.md: "a cron
 #   earns its keep ONLY when something can change WITHOUT a commit"). A bot can
 #   open a PR here on its own schedule with no commit to this repo at all — a
@@ -72,8 +72,8 @@ concurrency:
 jobs:
   audit:
     name: every automation PR has at least one check
-    # Self-hosted fleet — zero GitHub-hosted spend, per the standing mandate.
-    runs-on: corelink
+    # Hosted Linux runner for the read-only API audit.
+    runs-on: ubuntu-24.04
     if: github.repository_id == '1232040291'
     timeout-minutes: 10
     steps:
@@ -281,7 +281,7 @@ jobs:
                   "Do not merge on an empty list. Inspect the PR approval banner "
                   "and Actions run records; approve pending pull_request runs "
                   "only under repository policy, and separately resolve failed "
-                  "workflow startup or unavailable corelink runner capacity. "
+                  "workflow startup failure. "
                   "A token change or a present but zero-job run is not CI proof."
               )
 
