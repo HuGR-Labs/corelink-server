@@ -200,6 +200,9 @@ jobs:
       - name: Verify B-063 protected manual no-page boundary
         run: python3 scripts/verify_audit_archive_lag_workflow.py
 
+      - name: Verify B-245 closed secret scope and mutations
+        run: python3 scripts/verify_b245_secrets_matrix.py
+
       - name: Verify backlog work-package ledger
         shell: bash
         run: |

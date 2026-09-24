@@ -58,10 +58,12 @@ env:
 jobs:
   byok-boundary-static:
     name: BYOK boundary verifier (static + mutation)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Verify multiline production feature selection and mutation teeth
         run: |
           python3 - <<'PY'
@@ -96,16 +98,20 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   byok-matrix-16:
     name: BYOK 16-cell matrix (${{ inputs.mock_mode == 'false' && 'STAGING' || 'MOCK' }})
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Use the runner image's pre-installed, workspace-pinned toolchain — a
-      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py;
-      # `corelink` counts as self-hosted). HOST_TRIPLE selects the Linux triple.
-      - name: Use host toolchain (baked, workspace-pinned)
+      - name: Install workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Use workspace-pinned toolchain
         env:
           HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh
@@ -156,16 +162,20 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   byok-proptest-100k:
     name: BYOK proptest 100k iter (4 props × all providers)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Use the runner image's pre-installed, workspace-pinned toolchain — a
-      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py;
-      # `corelink` counts as self-hosted). HOST_TRIPLE selects the Linux triple.
-      - name: Use host toolchain (baked, workspace-pinned)
+      - name: Install workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Use workspace-pinned toolchain
         env:
           HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh
@@ -195,16 +205,20 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   byok-adversarial:
     name: BYOK adversarial regression (16 scenarios)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Use the runner image's pre-installed, workspace-pinned toolchain — a
-      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py;
-      # `corelink` counts as self-hosted). HOST_TRIPLE selects the Linux triple.
-      - name: Use host toolchain (baked, workspace-pinned)
+      - name: Install workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Use workspace-pinned toolchain
         env:
           HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh
@@ -233,12 +247,14 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   byok-fips-status-check:
     name: BYOK FIPS compliance status check
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 6 * * 1')
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Verify FIPS compliance matrix doc exists
         run: |

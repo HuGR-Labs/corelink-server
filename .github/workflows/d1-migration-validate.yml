@@ -24,6 +24,16 @@ on:
       - 'scripts/d1-migration-verify.py'
       - 'scripts/check_migrations_additive.py'
       - 'scripts/check_migration_prefixes.py'
+      - 'scripts/verify-signup-worker-dsr-redrive-schema.sh'
+      - 'scripts/verify-signup-worker-secrets.sh'
+      - 'scripts/verify_issue_2366_dsr_redrive_prereq.py'
+      - 'tests/test_issue_2366_dsr_redrive_prereq.py'
+      - 'apps/signup-worker/wrangler.toml'
+      - '.github/workflows/signup-worker-deploy.yml'
+      - '.github/workflows/staging-bootstrap.yml'
+      - 'scripts/verify_staging_topology_contract.py'
+      - 'infra/staging/topology.json'
+      - 'docs/internal/secrets-checklist.md'
       - 'scripts/test_terraform_drift_region_contract.py'
       - 'crates/corelink-ops/**'
       - '.github/workflows/d1-migration-validate.yml'
@@ -49,10 +59,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Checkout
+      # A pull_request run otherwise checks out GitHub's synthetic merge ref.
+      # The DSR offline proof must exercise the authored candidate exactly.
+      - name: Checkout exact pull-request head without write credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
           persist-credentials: false
+
+      - name: Assert offline validator checkout matches the requested head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
 
       - name: Install the pinned Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
@@ -71,6 +94,12 @@ jobs:
         run: |
           python3 scripts/d1-migration-verify.py --schema-only migrations/d1/ > /tmp/expected-schema.json
           test -s /tmp/expected-schema.json
+
+      - name: Verify frozen DSR redrive deploy-fence and secret-name contract
+        run: python3 -I scripts/verify_issue_2366_dsr_redrive_prereq.py
+
+      - name: Run adversarial DSR redrive contract mutations
+        run: python3 -I tests/test_issue_2366_dsr_redrive_prereq.py
 
       - name: Run focused Terraform drift migration replay contract
         run: |
@@ -93,6 +122,7 @@ jobs:
         run: bash scripts/ci-assert-pinned-toolchain.sh
 
       - name: Cargo cache
+        if: runner.environment == 'github-hosted'
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: '.'

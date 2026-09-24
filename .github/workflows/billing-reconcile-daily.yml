@@ -89,13 +89,9 @@ env:
 jobs:
   reconcile:
     name: billing-reconcile
-    # Self-hosted `corelink` (ephemeral CF-Container Ubuntu 24.04): pinned Rust
-    # toolchain + `requests` (python3-requests apt pkg) are baked into the runner
-    # image, so this cron runs at zero hosted-Actions cost. Per the zero-hosted-CI
-    # mandate. NOTE: still READ-ONLY and, until the repo var
-    # `BILLING_RECONCILE_LIVE=1` is set, runs the SMOKE (empty-input) no-op lane —
-    # so it neither queries prod D1 nor pages PagerDuty on the self-hosted box.
-    runs-on: corelink
+    # GitHub-hosted Ubuntu 24.04. This job is read-only and, until the repo var
+    # `BILLING_RECONCILE_LIVE=1` is set, runs the SMOKE (empty-input) no-op lane.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout repo
@@ -103,10 +99,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # Use the runner image's pre-installed, workspace-pinned toolchain — a
-      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py;
-      # `corelink` counts as self-hosted). HOST_TRIPLE selects the Linux triple.
-      - name: Use host toolchain (baked, workspace-pinned)
+      - name: Install workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Use workspace-pinned toolchain
         env:
           HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh
@@ -139,12 +137,13 @@ jobs:
           echo "run_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           echo "Reconciling billing period: $PERIOD"
 
-      # No pip install: `requests` is baked into the `corelink` image as the
-      # python3-requests apt package (Ubuntu 24.04 is PEP-668 externally-managed,
-      # so a global `pip install` would fail anyway). The live lane's `import
-      # requests` resolves against the system package; the smoke lane never
-      # imports it. (System requests is 2.31.0 vs the former 2.32.5 pin — a plain
-      # HTTP POST to the D1 API, unaffected by the minor delta.)
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned requests dependency
+        run: python3 -m pip install "requests==2.32.5"
 
       - name: Extract three-layer totals (live lane gated; else empty no-op)
         id: extract

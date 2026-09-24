@@ -517,7 +517,7 @@ jobs:
       - name: Create GitHub Release in HuGR-Labs/corelink-cli
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
-          TAG: ${{ needs.release.outputs.validated_tag }}
+          TAG: ${{ steps.validate-release-tag.outputs.tag }}
         run: |
           set -euo pipefail
           RELEASE_JSON="${RUNNER_TEMP}/corelink-cli-existing-release.json"
