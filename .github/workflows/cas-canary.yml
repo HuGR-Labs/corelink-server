@@ -9,12 +9,9 @@ name: cas-datacenter-canary
 #
 # TWO vantage points, because they do not prove the same thing:
 #
-#   fabric  — `runs-on: corelink`, the Cloudflare container fabric. This is a
-#             REAL customer path (customers run their CI on `runs-on: corelink`)
-#             and it is the vantage that still works today. It does NOT prove
-#             the third-party-datacenter case: the traffic originates inside
-#             Cloudflare's own network, so an edge rule that blocks outside
-#             datacenter ranges would not show up here.
+#   fabric  — historical job id retained for workflow compatibility; this
+#             migrated job now runs from a GitHub-hosted datacenter and cannot
+#             claim the CoreLink-fabric vantage.
 #   hosted  — `ubuntu-latest`, a GitHub-owned datacenter IP genuinely outside
 #             our provider. This is the probe that actually answers the
 #             question the canary was built for.
@@ -59,17 +56,19 @@ concurrency:
   cancel-in-progress: false
 jobs:
   fabric:
-    name: CAS round-trip (CoreLink fabric IP)
-    runs-on: corelink
+    name: CAS round-trip (GitHub-hosted datacenter IP)
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Authenticated CAS BLAKE3 round-trip against prod
         env:
           PAT: ${{ secrets.CORELINK_CANARY_PAT }}
           API: https://corelink-api.humangr.com
           TEN: 93da3f7a-984d-4ef9-86e0-b0bd9fd0252e   # dedicated canary tenant (unmetered $1M; decoupled from the paused githugr/hugit d863fafb dogfood)
-          CANARY_VANTAGE: corelink-fabric
+          CANARY_VANTAGE: github-hosted-datacenter
           RUN_TAG: ${{ github.run_id }}-${{ github.run_attempt }}-fabric
         run: bash scripts/cas-canary-roundtrip.sh
 

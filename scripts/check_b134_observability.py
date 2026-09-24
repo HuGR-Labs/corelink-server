@@ -149,16 +149,25 @@ def require_run_on_corelink(text: str, where: str) -> None:
         )
 
 
+def require_run_on_hosted(text: str, where: str) -> None:
+    runs_on = re.findall(r"(?m)^\s+runs-on:\s*([^#\s]+)", text)
+    if not runs_on or any(value != "ubuntu-24.04" for value in runs_on):
+        raise ContractError(
+            f"{where}: every job must run on ubuntu-24.04 for the hosted observation; got {runs_on!r}"
+        )
+
+
 def check_smoke(text: str) -> None:
     where = WORKFLOW_FILES["smoke-install"]
     script = executable_script(run_blocks(text))
-    require_run_on_corelink(text, where)
+    require_run_on_hosted(text, where)
     if "HOSTED_ACTIONS_AVAILABLE" in text:
         raise ContractError(f"{where}: hosted availability gate would hide the experiment")
-    if "hosted/manual" in text.lower():
-        raise ContractError(f"{where}: hosted wording contradicts the CoreLink fleet route")
+    require(text, "GitHub-hosted", where)
+    if "CoreLink-fleet evidence" in text or "corelink-fleet" in text.lower():
+        raise ContractError(f"{where}: a hosted observation cannot claim CoreLink-fleet evidence")
     require_line(text, r"^\s*workflow_dispatch:\s*$", where)
-    require_line(text, r"^\s*I1672_FLEET_LABEL:\s*corelink\s*$", where)
+    require_line(text, r"^\s*I1672_FLEET_LABEL:\s*github-hosted\s*$", where)
     require_line(text, r"^\s*I1672_RUNNER_NAME:\s*\$\{\{ runner\.name \}\}\s*$", where)
     require_line(text, r"^\s*I1672_RUNNER_OS:\s*\$\{\{ runner\.os \}\}\s*$", where)
     require_line(text, r"^\s*I1672_RUNNER_ARCH:\s*\$\{\{ runner\.arch \}\}\s*$", where)

@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   collect:
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Production credentials and attestation permissions are restricted to
     # the stable repository identity, protected main, and an explicit dispatch.

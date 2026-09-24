@@ -3,9 +3,9 @@ name: perf-regression (r-prep)
 # Perf-regression signal (INFORMATIONAL — non-blocking): runs criterion
 # benches on PRs that touch perf-critical crates (or carry the
 # `perf-sensitive` label) and REPORTS any tracked bench that regressed
-# beyond its tolerance class. It does NOT fail the PR — see the runs-on
-# comment + the WAIVER on the `perfcheck` step for why (shared Mac too noisy
-# to gate; owner mandates zero hosted spend so stable silicon is unavailable).
+# beyond its tolerance class. It does NOT fail the PR — the checked-in baseline
+# predates the GitHub-hosted macOS runner migration and remains informational
+# until it is refreshed on the hosted measurement platform.
 #
 # Tolerance classes still computed + printed on the MEDIAN (per-bench
 # `tolerance_pct` in the baseline JSON wins over the class default):
@@ -98,15 +98,10 @@ jobs:
   # the `paths:` filter), or (c) workflow_dispatch.
   perf-regression:
     name: criterion regression gate
-    # Runner: the self-hosted `corelink-builder` Mac fleet (zero hosted spend) —
-    # NOT the ephemeral `corelink` boxes. The committed baselines under
-    # reports/perf/ were recaptured on this hardware in the same PR that moved
-    # the runner, so the report compares Mac-vs-Mac (systematic hardware offset
-    # ~0). BUT this Mac is a SHARED multi-tenant CI host: run-to-run median
-    # jitter from noisy-neighbour core-steal reaches ~5x on identical code, far
-    # past the 5%/15% thresholds. That is why this lane is INFORMATIONAL, not a
-    # blocking gate (see header WAIVER). The report is for manual trend review.
-    runs-on: [self-hosted, mac, corelink-builder]
+    # Keep macOS and Apple Silicon for the criterion suite. The existing
+    # baseline predates this hosted runner, so the report remains informational
+    # until an authorized baseline refresh compares like-for-like measurements.
+    runs-on: macos-15
     timeout-minutes: 45
     if: >-
       github.event_name == 'workflow_dispatch'
@@ -118,6 +113,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       # `dtolnay/rust-toolchain` removed — self-hosted Macs already ship
       # rustup+cargo and re-provisioning collides on bin/cargo; put the
@@ -132,10 +128,8 @@ jobs:
         with:
           shared-key: perf-regression
 
-      # GitHub-hosted only (shared-$HOME guard, like the rust-cache above): on the
-      # persistent corelink-builder Mac the criterion output already lives in the
-      # on-disk `target/criterion`, so a GitHub-cache round-trip is pure cost (and
-      # the Mac fleet's cache save is disabled elsewhere for the same reason).
+      # Keep the cache on GitHub-hosted runners only; local target data is
+      # ephemeral for this lane and the shared-home guard remains authoritative.
       - name: Cache criterion target dir
         if: runner.environment == 'github-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -181,17 +175,12 @@ jobs:
             echo "::endgroup::"
           done
 
-      # WAIVER (human-authorized) — perf-regression is informational, not blocking.
-      #   authorized-by: repo owner | 2026-08-11 ("0 hosted")
-      #   reason: only zero-hosted silicon (shared corelink-builder Mac) is too
-      #           noisy to gate perf medians (proven ~5x run-to-run swing on
-      #           identical code); hosted stable silicon forbidden by zero-spend.
-      #   remediation: restore blocking status if/when isolated perf silicon
-      #           exists (dedicated box / cgroup-pinned lane). Trend is reviewable
-      #           now via the criterion-report artifact uploaded every run.
+      # The hosted runner has not yet been calibrated against the committed
+      # baseline. Keep this result informational until an authorized baseline
+      # refresh establishes comparable measurements.
       - name: Perf-regression check (median, split thresholds)
         id: perfcheck
-        continue-on-error: true  # informational-only; see WAIVER above
+        continue-on-error: true  # informational-only until hosted baseline refresh
         env:
           PERF_REGRESS_CRITICAL_PCT: ${{ github.event.inputs.critical_threshold_pct || env.PERF_REGRESS_CRITICAL_PCT_DEFAULT }}
           PERF_REGRESS_DEFAULT_PCT: ${{ github.event.inputs.default_threshold_pct || env.PERF_REGRESS_DEFAULT_PCT_DEFAULT }}
@@ -223,13 +212,12 @@ jobs:
             else
               echo "⚠️ One or more benches exceeded their tolerance class on the MEDIAN."
               echo ""
-              echo "This does **not** block the PR. The corelink-builder Mac is a shared,"
-              echo "multi-tenant CI host; back-to-back runs of identical code swing the same"
-              echo "bench up to 5x (core-steal), so a single red run is noise, not proof of a"
-              echo "regression. Review the trend across runs via the **criterion-report**"
+              echo "This does **not** block the PR. The GitHub-hosted macOS runner differs"
+              echo "from the hardware that produced the committed baseline, so a single red"
+              echo "run is not proof of a regression. Review the **criterion-report**"
               echo "artifact + flame-graph before concluding anything real changed."
               echo ""
-              echo "See header WAIVER (owner \"0 hosted\", 2026-08-11) + specs/_runbooks/RB-PERF-REGRESSION.md."
+              echo "See the baseline calibration note in this workflow + specs/_runbooks/RB-PERF-REGRESSION.md."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

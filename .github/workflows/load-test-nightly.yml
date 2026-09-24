@@ -100,7 +100,7 @@ jobs:
     # keeps staging load traffic unreachable from forks, feature refs, and any
     # future trigger accidentally added above.
     if: github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     environment: staging        # binds the staging secrets scope
     timeout-minutes: 45
     strategy:
@@ -288,7 +288,7 @@ jobs:
 
   baseline-regression:
     name: baseline regression check (median ≤ +20% vs stored baseline)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: k6-staging
     # Keep the post-load comparator inside the same canonical protected-main

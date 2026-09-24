@@ -13,9 +13,9 @@ name: runner-fleet health
 #     seven runs queued behind them, one for six hours.
 #   * A queue simply backed up and looked like slow CI.
 #
-# This job runs on the Cloudflare container fabric (`runs-on: corelink`), NOT on
-# the Macs it is watching. A health check that needs the thing it watches to be
-# healthy reports "no problem" precisely when there is one.
+# This job runs on GitHub-hosted Ubuntu, separate from the Macs it is watching.
+# A health check that needs the thing it watches to be healthy reports "no
+# problem" precisely when there is one.
 
 on:
   schedule:
@@ -39,12 +39,14 @@ concurrency:
 jobs:
   fleet:
     name: every expected Mac slot is online and nothing is stuck
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     if: github.repository_id == '1232040291' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.id == github.repository_id)
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       # The slot census needs repository ADMIN. `GITHUB_TOKEN` cannot have it —
       # `administration` is not a grantable workflow permission — so in CI this

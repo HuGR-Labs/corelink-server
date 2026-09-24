@@ -24,10 +24,10 @@ REQUIRED_OBSERVATIONS = {
 
 def _contract(workflow: str, helper: str, manifest: dict[str, object]) -> None:
     assert "workflow_dispatch:" in workflow
-    assert "runs-on: corelink" in workflow
-    assert "runs-on: ubuntu-latest" not in workflow
+    assert "runs-on: ubuntu-24.04" in workflow
+    assert "runs-on: corelink" not in workflow
     assert "self-hosted" not in workflow
-    assert "I1672_FLEET_LABEL: corelink" in workflow
+    assert "I1672_FLEET_LABEL: github-hosted" in workflow
     assert "I1672_RUNNER_NAME: ${{ runner.name }}" in workflow
     assert "I1672_RUNNER_OS: ${{ runner.os }}" in workflow
     assert "I1672_RUNNER_ARCH: ${{ runner.arch }}" in workflow
@@ -84,8 +84,8 @@ def test_i1672_contract() -> None:
 @pytest.mark.parametrize(
     ("name", "mutate"),
     [
-        ("hosted_runner", lambda w, h, m: (w.replace("runs-on: corelink", "runs-on: ubuntu-latest"), h, m)),
-        ("fleet_provenance", lambda w, h, m: (w.replace("I1672_FLEET_LABEL: corelink", "I1672_FLEET_LABEL: hosted"), h, m)),
+        ("corelink_runner", lambda w, h, m: (w.replace("runs-on: ubuntu-24.04", "runs-on: corelink"), h, m)),
+        ("fleet_provenance", lambda w, h, m: (w.replace("I1672_FLEET_LABEL: github-hosted", "I1672_FLEET_LABEL: corelink"), h, m)),
         ("manual_trigger", lambda w, h, m: (w.replace("workflow_dispatch:", "workflow_dispatch_removed:", 1), h, m)),
         ("credential", lambda w, h, m: (w + "\nsecrets.CORELINK_CANARY_PAT\n", h, m)),
         ("backend_seam", lambda w, h, m: (w.replace("if docker info >", "if docker status >", 1), h, m)),
