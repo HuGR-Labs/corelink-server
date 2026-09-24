@@ -58,6 +58,14 @@ def violations(service: str, ingress: str) -> list[str]:
         errors.append("container does not use the repository REAPI proto crate")
     if "pub struct ReapiIngress" not in ingress or "pub async fn authorize" not in ingress:
         errors.append("service is not anchored to the #2177 ingress contract")
+    required_ingress = (
+        "#[cfg(test)]\n    pub(crate) fn test_only()",
+        "#[cfg(test)]\n    #[must_use]\n    pub(crate) fn from_test_components(",
+        ".with_max_bytes(max_bytes)",
+    )
+    for item in required_ingress:
+        if item not in ingress:
+            errors.append(f"CAS ingress is missing bounded test or read seam: {item}")
     return errors
 
 
@@ -80,6 +88,7 @@ def self_test() -> list[str]:
         ),
         (service.replace("Code::NotFound, \"CAS object not found\"", "Code::PermissionDenied, \"CAS object not found\""), ingress, "cross-tenant disclosure"),
         (service + "\nRouter::new();", ingress, "public mount"),
+        (service, ingress.replace(".with_max_bytes(max_bytes)", "", 1), "bounded read bypass"),
     )
     for mutated_service, mutated_ingress, label in mutations:
         if not violations(mutated_service, mutated_ingress):

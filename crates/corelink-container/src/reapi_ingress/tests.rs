@@ -474,25 +474,23 @@ fn cas_ingress_for_test(
 ) {
     let read_calls = Arc::new(std::sync::Mutex::new(Vec::new()));
     let write_calls = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let admission_calls = Arc::new(AtomicUsize::new(0));
-    let ingress = ReapiIngress {
-        authenticator: Arc::new(TestAuth(auth)),
-        admission: Arc::new(TestAdmission {
+    let ingress = ReapiIngress::from_test_components(
+        Arc::new(TestAuth(auth)),
+        Arc::new(TestAdmission {
             result: admission,
-            calls: admission_calls.clone(),
+            calls: Arc::new(AtomicUsize::new(0)),
         }),
-        cas_read: Arc::new(CasReadSpy {
+        Arc::new(TestCapResolver),
+        Arc::new(CasReadSpy {
             outcome: CasReadSpyOutcome::from_result(read_result),
             calls: read_calls.clone(),
         }),
-        cas_write: Arc::new(CasWriteSpy {
+        Arc::new(CasWriteSpy {
             calls: write_calls.clone(),
         }),
-        ac_lookup: Arc::new(UnusedAc),
-        ac_update: Arc::new(UnusedAc),
-        cap_resolver: Arc::new(TestCapResolver),
-        admission_calls,
-    };
+        Arc::new(UnusedAc),
+        Arc::new(UnusedAc),
+    );
     (ingress, read_calls, write_calls)
 }
 
@@ -676,6 +674,11 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
         Code::NotFound as i32
     );
     assert_eq!(reads.lock().unwrap().len(), 1);
+    assert_eq!(
+        reads.lock().unwrap()[0].max_bytes,
+        Some(u64::try_from(digest.size_bytes).unwrap()),
+        "the decorated reader receives the declared digest ceiling"
+    );
 
     let mut missing = tonic::Request::new(FindMissingBlobsRequest {
         instance_name: "tenant-a".into(),
