@@ -26,6 +26,7 @@ class Issue2366ContractTests(unittest.TestCase):
         for path in (
             contract.MIGRATION, contract.SCHEMA_FENCE, contract.SECRET_FENCE,
             contract.SIGNUP_DEPLOY, contract.STAGING_BOOTSTRAP,
+            contract.HOSTED_GATE,
             contract.STAGING_VERIFIER, contract.STAGING_TOPOLOGY,
             contract.SECRETS_INVENTORY,
         ):
@@ -57,6 +58,21 @@ class Issue2366ContractTests(unittest.TestCase):
 
     def test_repository_satisfies_frozen_contract(self) -> None:
         self.assertEqual(contract.verify(ROOT), [])
+
+    def test_migration_ledger_and_each_required_table_are_fail_closed(self) -> None:
+        self.assertIn(
+            "schema-fence:migration-name",
+            self.mutate(contract.SCHEMA_FENCE, "0145_dsr_dlq_redrive_authority.sql", "0146_wrong.sql"),
+        )
+        for table, expected in (
+            ("dsr_dlq_redrive_envelopes", "migration:envelopes-table"),
+            ("dsr_dlq_redrive_audit", "migration:audit-table"),
+        ):
+            with self.subTest(table=table):
+                self.assertIn(
+                    expected,
+                    self.mutate(contract.MIGRATION, f"CREATE TABLE IF NOT EXISTS {table}", "CREATE TABLE removed"),
+                )
 
     def test_each_required_schema_column_is_fail_closed(self) -> None:
         for column in contract.ENVELOPE_COLUMNS:

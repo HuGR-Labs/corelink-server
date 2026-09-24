@@ -15,6 +15,7 @@ SCHEMA_FENCE = Path("scripts/verify-signup-worker-dsr-redrive-schema.sh")
 SECRET_FENCE = Path("scripts/verify-signup-worker-secrets.sh")
 SIGNUP_DEPLOY = Path(".github/workflows/signup-worker-deploy.yml")
 STAGING_BOOTSTRAP = Path(".github/workflows/staging-bootstrap.yml")
+HOSTED_GATE = Path(".github/workflows/d1-migration-validate.yml")
 STAGING_VERIFIER = Path("scripts/verify_staging_topology_contract.py")
 STAGING_TOPOLOGY = Path("infra/staging/topology.json")
 SECRETS_INVENTORY = Path("docs/internal/secrets-checklist.md")
@@ -93,6 +94,10 @@ def verify(root: Path) -> list[str]:
         gaps.append("signup-deploy:schema-before-deploy")
     require(signup_deploy, "bash ../../scripts/verify-signup-worker-dsr-redrive-schema.sh", "signup-deploy:schema-command", gaps)
     require(signup_deploy, "migrations/d1/0145_dsr_dlq_redrive_authority.sql", "signup-deploy:migration-trigger", gaps)
+
+    hosted_gate = read(root, HOSTED_GATE)
+    require(hosted_gate, "python3 -I scripts/verify_issue_2366_dsr_redrive_prereq.py", "hosted-gate:contract", gaps)
+    require(hosted_gate, "python3 -I tests/test_issue_2366_dsr_redrive_prereq.py", "hosted-gate:mutations", gaps)
 
     staging = read(root, STAGING_BOOTSTRAP)
     require(staging, f"DSR_DLQ_REDRIVE_AUTH_KEY: ${{{{ secrets.{STAGING_SECRET} }}}}", "staging:secret-inventory", gaps)
