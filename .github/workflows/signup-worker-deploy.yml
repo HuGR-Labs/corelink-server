@@ -8,8 +8,7 @@ name: signup-worker — CF Worker deploy
 # manual `wrangler deploy`, so a merged change could silently sit undeployed
 # (the handler in prod lagging main). This closes that gap.
 #
-# Runner: `corelink` — the product's own ephemeral fabric (zero GitHub billing),
-# same host signup-worker-vitest.yml already tests on. wrangler-only (no docker).
+# Runner: GitHub-hosted Ubuntu; wrangler-only (no docker).
 #
 # Deploy auth: CF_API_TOKEN + CF_ACCOUNT_ID (GH Actions secrets). The worker's
 # RUNTIME secrets (CLERK_WEBHOOK_SECRET, CLERK_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
@@ -42,7 +41,7 @@ concurrency:
 jobs:
   deploy:
     name: build + deploy to CF Worker
-    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler-only, no docker
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -52,6 +51,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: ./.github/actions/setup-pnpm
@@ -60,8 +60,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-          # No `cache:` — the corelink runner is ephemeral (fresh box each run),
-          # so a GH-cache round-trip is pure cost. Mirrors admin-ui-deploy.
+          # No `cache:`; this deploy lane does not use setup-node's pnpm cache.
 
       # B-090: this lane used to run `npm install --legacy-peer-deps` — an
       # UNPINNED install, resolving the whole tree fresh on every deploy, with
