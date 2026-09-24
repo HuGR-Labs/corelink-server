@@ -5367,6 +5367,7 @@ dependencies: []
 next-action: "For DD-062: remediate the finding titled \"Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 41); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
 acceptance: "Evidence for DD-062: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
 verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-210 --expect done
   python3 scripts/verify_b210_retirement.py --self-test
   python3 scripts/verify_b210_retirement.py
 verify-means: |
