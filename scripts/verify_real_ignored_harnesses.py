@@ -95,6 +95,8 @@ CONTRACT_TRIGGER_INPUTS = (
     "scripts/run-real-ignored-harnesses.sh",
     "scripts/real-ignored-harness-manifest.json",
     "scripts/verify_real_ignored_harnesses.py",
+    "scripts/verify_i1650_real_integration_readiness.py",
+    "docs/handoff/2026-09-22-i1650-real-integration-readiness.json",
     "crates/corelink-pat/tests/emit_e2e_seed.rs",
     *SOURCE_SHA256.keys(),
 )
@@ -581,8 +583,10 @@ def assert_hosted_contract_workflow(workflow: str) -> None:
         fail("credentialless contract permissions must be read-only")
     if "persist-credentials: false" not in active:
         fail("credentialless contract checkout must not persist credentials")
-    if "python3 scripts/verify_real_ignored_harnesses.py" not in active:
+    if "python3 -S scripts/verify_real_ignored_harnesses.py" not in active:
         fail("credentialless contract does not run the static/mutation verifier")
+    if "python3 -S scripts/verify_i1650_real_integration_readiness.py" not in active:
+        fail("credentialless contract does not run the readiness verifier")
     triggered_paths = set(re.findall(r'(?m)^\s{6}- "([^\"]+)"\s*$', active))
     missing = [path for path in CONTRACT_TRIGGER_INPUTS if path not in triggered_paths]
     if missing:
@@ -629,6 +633,12 @@ def mutation_checks(workflow: str, runner: str, contract_workflow: str) -> None:
         pass
     else:
         fail("credentialed hosted contract mutation was accepted")
+    try:
+        assert_hosted_contract_workflow(contract_workflow.replace("python3 -S scripts/verify_i1650_real_integration_readiness.py", "echo '# readiness verifier removed'", 1))
+    except AssertionError:
+        pass
+    else:
+        fail("missing readiness verifier mutation was accepted")
     for path in CONTRACT_TRIGGER_INPUTS:
         path_entry = f'      - "{path}"\n'
         if path_entry not in contract_workflow:
