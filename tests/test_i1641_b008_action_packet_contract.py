@@ -53,6 +53,22 @@ class B008OwnerActionContractTests(unittest.TestCase):
             "MTTA field": lambda item: item["evidence"].__setitem__(
                 "item_schema", item["evidence"]["item_schema"].replace("mtta_ms, ", "", 1)
             ),
+            "immediate delivery mode": lambda item: item["evidence"].__setitem__(
+                "item_schema", item["evidence"]["item_schema"].replace("delivery_mode=immediate, ", "", 1)
+            ),
+            "shared D1 correlation": lambda item: item["evidence"].__setitem__(
+                "item_schema", item["evidence"]["item_schema"].replace(
+                    "d1_receipt records drill_id, correlation_id=drill.correlation_id, delivery_mode=immediate, ",
+                    "d1_receipt records drill_id, delivery_mode=immediate, ",
+                    1,
+                )
+            ),
+            "PagerDuty drill join": lambda item: item["evidence"].__setitem__(
+                "item_schema", item["evidence"]["item_schema"].replace("dedup_key=drill_id, correlation_id=drill.correlation_id, ", "", 1)
+            ),
+            "webhook drill join": lambda item: item["evidence"].__setitem__(
+                "item_schema", item["evidence"]["item_schema"].replace("drill_id, correlation_id=drill.correlation_id, ", "", 1)
+            ),
             "scheduler disabled after one tick": lambda item: item["evidence"].__setitem__(
                 "item_schema", item["evidence"]["item_schema"].replace("scheduled_tick_disabled_at, ", "", 1)
             ),

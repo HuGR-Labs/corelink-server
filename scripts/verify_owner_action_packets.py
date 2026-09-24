@@ -125,12 +125,14 @@ B008_CREDENTIAL_BOUNDARY = (
 B008_EVIDENCE_ITEM_SCHEMA = (
     "admission records read_only_key_scope=read_only, protected_environment=synthetic-drill-staging, "
     "required_approvals, staging_root_worker, service_binding, staging_receiver, d1_schema, "
-    "dedicated_secret_names, and owner_authorized_at; drill records drill_id, correlation_id, scheduled_at, "
-    "scheduled_tick_disabled_at, and scheduler_acceptance; "
-    "pagerduty_timeline records incident_id, created_at, trigger_status, escalation_policy_id, "
-    "acknowledgement_at, escalation_at, and redacted source_url; "
-    "webhook_receipt records event_id, kind, occurred_at, signature_verified, and redacted source_reference; "
-    "d1_receipt records drill_id, triggered_at_ms, delivered_at_ms, outcome, ack_ts_ms, mtta_ms, "
+    "dedicated_secret_names, and owner_authorized_at; drill records drill_id, correlation_id, delivery_mode=immediate, "
+    "scheduled_tick_count=1, scheduled_at, scheduled_tick_disabled_at, and scheduler_acceptance; "
+    "pagerduty_timeline records incident_id, dedup_key=drill_id, correlation_id=drill.correlation_id, "
+    "created_at, trigger_status, escalation_policy_id, acknowledgement_at, escalation_at, and redacted source_url; "
+    "webhook_receipt records event_id, drill_id, correlation_id=drill.correlation_id, kind, occurred_at, "
+    "signature_verified, and redacted source_reference; "
+    "d1_receipt records drill_id, correlation_id=drill.correlation_id, delivery_mode=immediate, "
+    "triggered_at_ms, delivered_at_ms, outcome, ack_ts_ms, mtta_ms, "
     "ack_vector, and redacted source_reference; human_delivery_verdict is delivered, not_delivered, or inconclusive."
 )
 B008_EXPECTED_POSTCONDITION = (
