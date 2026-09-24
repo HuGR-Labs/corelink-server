@@ -1103,9 +1103,9 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
                 try:
                     metrics = json.loads(_read(root / B006_ARTIFACT))
                     provider = json.loads(_read(root / B006_PROVIDER_ARTIFACT))
-                    validate_b006_closure(metrics, provider)
+                    validate_b006_closure(metrics, provider, mode="historical")
                 except (json.JSONDecodeError, B006EvidenceError) as exc:
-                    raise GraduationError(f"B-006: DONE disposition lacks fresh zero metrics plus valid provider binding: {exc}") from exc
+                    raise GraduationError(f"B-006: DONE disposition lacks valid zero metrics plus valid provider binding: {exc}") from exc
         elif disposition == "PARKED":
             if packet.get("verify_means") != "parked":
                 raise GraduationError(f"{item}: parked packet must declare verify_means=parked")
@@ -1135,8 +1135,8 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
                 if forbidden in command:
                     raise GraduationError(f"B-006: reopened command contains forbidden credential form {forbidden!r}")
             try:
-                validate_b006_receipt(json.loads(_read(root / B006_ARTIFACT)))
-                validate_provider_binding(json.loads(_read(root / B006_PROVIDER_ARTIFACT)))
+                validate_b006_receipt(json.loads(_read(root / B006_ARTIFACT)), mode="historical")
+                validate_provider_binding(json.loads(_read(root / B006_PROVIDER_ARTIFACT)), mode="historical")
             except (json.JSONDecodeError, B006EvidenceError, ProviderBindingError) as exc:
                 raise GraduationError(f"B-006: redacted evidence is not fail-closed: {exc}") from exc
     return entries

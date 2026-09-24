@@ -150,12 +150,22 @@ def validate_receipt(receipt: dict[str, Any], *, mode: ReceiptMode = "live") -> 
         raise EvidenceError("zero receipt must remain indeterminate without Wrangler evidence")
 
 
-def validate_closure(metrics: dict[str, Any], provider: dict[str, Any]) -> None:
-    """Require a fresh authenticated zero and its separately authenticated binding."""
+def validate_closure(
+    metrics: dict[str, Any],
+    provider: dict[str, Any],
+    *,
+    mode: ReceiptMode = "live",
+) -> None:
+    """Require an authenticated zero and its separately authenticated binding.
 
-    validate_receipt(metrics)
+    Live/operator validation requires both receipts to be fresh. Historical
+    mode checks committed closure evidence after expiry without weakening the
+    cross-binding observation window or any receipt truth checks.
+    """
+
+    validate_receipt(metrics, mode=mode)
     try:
-        validate_provider_binding(provider)
+        validate_provider_binding(provider, mode=mode)
     except ProviderBindingError as exc:
         raise EvidenceError(f"provider binding is not valid: {exc}") from exc
     if metrics["http_status"] != 200 or metrics["authenticated"] is not True or metrics[COUNTER] != 0:

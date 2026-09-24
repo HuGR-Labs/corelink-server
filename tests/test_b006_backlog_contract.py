@@ -93,6 +93,18 @@ def test_b006_historical_fixture_ignores_age_while_live_receipts_remain_fresh() 
         validate_receipt(future, mode="historical")
 
 
+def test_b006_committed_closure_is_static_but_live_validation_stays_fresh() -> None:
+    metrics = json.loads((ROOT / "artifacts/d03/B006-capability-metrics.json").read_text(encoding="utf-8"))
+    provider = json.loads((ROOT / "artifacts/d03/B006-provider-binding.json").read_text(encoding="utf-8"))
+
+    validate_closure(metrics, provider, mode="historical")
+    with pytest.raises(EvidenceError, match="receipt timestamp is stale or from the future"):
+        validate_closure(metrics, provider)
+
+    # The D03 repository verifier consumes these committed receipts statically.
+    _check_packets(_load_packets(PACKET.read_text(encoding="utf-8")), ROOT)
+
+
 def test_b006_rejects_unauthenticated_zero_and_receipt_boundary_mutations() -> None:
     evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
     mutations = (
