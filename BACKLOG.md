@@ -5364,8 +5364,8 @@ finding-title: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates
 problem: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 41: Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 dependencies: []
-next-action: "Keep B-210 done while B-119 remains done and /admin/ops* remains absent; if a durable, securely bound approval surface is restored, re-open B-119 and B-210 together and re-audit SSR guard ordering before publishing any page."
-acceptance: "B-210 is retired/superseded by done B-119: /admin/ops* is absent, the B-119 census remains done, and the retirement gate fails closed on status regression or surface reintroduction; restore of a durable bound surface reopens both items."
+next-action: "For DD-062: remediate the finding titled \"Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 41); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-062: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
 verify: |
   python3 scripts/verify_b210_retirement.py --self-test
   python3 scripts/verify_b210_retirement.py
