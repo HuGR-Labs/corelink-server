@@ -65,7 +65,7 @@ jobs:
             echo "### B-314 exact-head evidence"
             echo
             echo "- PR: #$PR_NUMBER"
-            echo "- expected head: `$EXPECTED_HEAD`"
-            echo "- checked out head: `$(git rev-parse HEAD)`"
-            echo "- verifier: `python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test`"
+            printf '%s\n' "- expected head: \`$EXPECTED_HEAD\`"
+            printf '%s\n' "- checked out head: \`$(git rev-parse HEAD)\`"
+            printf '%s\n' '- verifier: `python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test`'
           } >> "$GITHUB_STEP_SUMMARY"

@@ -195,6 +195,31 @@ def _fixture(directory: Path) -> Path:
     return path
 
 
+def _lint_negative_fixture(directory: Path) -> Path:
+    """Create invalid permissions and shell logic outside scoped ignore paths."""
+
+    path = directory / "lint-negative-control.yml"
+    path.write_text(
+        "\n".join(
+            [
+                "name: b254-lint-negative-control",
+                "on: push",
+                "permissions:",
+                "  vulnerability-alerts: read",
+                "  not-a-real-permission: read",
+                "jobs:",
+                "  negative:",
+                "    runs-on: ubuntu-latest",
+                "    steps:",
+                "      - run: true && false || echo fallback",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _expect_clean(actionlint: str, config: Path, workflow: Path, label: str) -> None:
     result = _run(actionlint, "-no-color", "-config-file", str(config), str(workflow))
     if result.returncode != 0:
@@ -244,6 +269,35 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="b254-actionlint-") as raw_directory:
         directory = Path(raw_directory)
         fixture = _fixture(directory)
+        lint_negative_fixture = _lint_negative_fixture(directory)
+
+        # The actionlint 1.7.12 compatibility exceptions are path-specific.
+        # The identical vulnerability-alerts diagnostic must fail outside
+        # backlog-verify.yml; unrelated unknown permissions and SC2015 must
+        # also remain active.
+        negative_result = _run(
+            actionlint,
+            "-no-color",
+            "-config-file",
+            str(ROOT_CONFIG),
+            str(lint_negative_fixture),
+        )
+        required_diagnostics = (
+            'unknown permission scope "vulnerability-alerts"',
+            'unknown permission scope "not-a-real-permission"',
+            "shellcheck reported issue in this script: SC2015",
+        )
+        if negative_result.returncode == 0 or any(
+            diagnostic not in negative_result.stdout
+            for diagnostic in required_diagnostics
+        ):
+            print(
+                "REOPENED: actionlint compatibility negative control did not "
+                "reject all out-of-scope diagnostics:\n"
+                + negative_result.stdout.strip(),
+                file=sys.stderr,
+            )
+            return 1
 
         # Both explicit entry points must validate the same complete label set.
         _expect_clean(actionlint, ROOT_CONFIG, fixture, ".actionlint.yaml")
