@@ -34,8 +34,9 @@
 //!
 //! ## Statistical evidence gate
 //!
-//! The middleware's correctness is asserted by `tests/timing_indistinguishability.rs`
-//! using a 3-arm methodology (per ADR-0023 §3 + WI-S02-004 §10.4.1):
+//! The middleware's correctness is asserted by the unit harness
+//! `tests/timing_indistinguishability.rs` using a 3-arm methodology (per
+//! ADR-0023 §3 + WI-S02-004 §10.4.1):
 //!
 //! - 10 000 samples per arm × 3 arms (`NeverExisted` ×
 //!   `Tombstoned` × `R2OrphanRow`).
@@ -153,6 +154,12 @@ pub mod stats;
 mod proptests;
 #[cfg(test)]
 mod tests;
+// Keep the timing acceptance harness inside this module so tests can
+// supply deterministic per-layer secrets without exposing a production
+// seed override. The middleware still generates its secret from OsRng.
+#[cfg(test)]
+#[path = "../../tests/timing_indistinguishability.rs"]
+mod indistinguishability_tests;
 
 // ---------------------------------------------------------------------------
 // Canonical re-exports — preserve the pre-split

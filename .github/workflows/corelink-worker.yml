@@ -106,6 +106,18 @@ jobs:
       - name: cargo test (canonical key vectors — fast smoke)
         run: cargo test --package corelink-worker canonical_keys
 
+      # The regular PR checks above validate GitHub's merge ref. This focused
+      # statistical acceptance also runs on the exact PR head SHA for #2437.
+      - name: Checkout exact PR head for timing acceptance (#2437)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: timing-padding statistical acceptance (#2437)
+        timeout-minutes: 10
+        run: cargo test --package corelink-worker --features tower-middleware --lib three_arm_ -- --nocapture
+
   wasm-build:
     name: WASM target build (CF Workers compile compatibility)
     # Runner: `corelink` (wave 2, 2026-08-03) — see the pr-gate job above for the
