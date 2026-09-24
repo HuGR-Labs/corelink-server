@@ -6685,9 +6685,11 @@ owner: tl
 status: done
 verify: python3 scripts/verify_b028_dependabot.py
 verify-means: |
-  done — the fail-closed verifier requires the authenticated zero-open census
-  captured in `docs/security/b028-dependabot-census-2026-09-06.json`, anchored
-  to delivered `main@cdd6a6714`, and verifies patched `fast-uri`/`qs`, local
+  done — the fail-closed verifier preserves the nine-alert pre-merge census in
+  `docs/security/b028-dependabot-census-2026-09-06.json` and requires the
+  authenticated zero-open census in
+  `docs/security/b028-dependabot-census-2026-09-06-postmerge.json`, anchored to
+  delivered `main@cdd6a6714`. It verifies patched `fast-uri`/`qs`, local
   audited `extract-zip`/`image-size`, no vulnerable published nodes, no
   audit-ignore masking, complete pagination metadata and a non-vacuous
   historical census. Any API, lockfile, marker or classification drift fails

@@ -307,6 +307,21 @@ def test_completed_proposal_backlog_contract_drift_is_red(tmp_path: Path, field:
         guard.verify(root, "B-229")
 
 
+def test_completed_proposal_requires_executable_closure_witness(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    for relative in (
+        Path("scripts/verify_b101_closures.py"),
+        Path("tests/audit/b101/closures/B-229.py"),
+    ):
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+    (root / "tests/audit/b101/closures/B-229.py").unlink()
+
+    with pytest.raises(guard.ProposalVerificationError, match="missing its executable closure witness"):
+        guard.verify(root, "B-229")
+
+
 def test_backlog_owner_mutation_is_red(tmp_path: Path) -> None:
     root = fixture_tree(tmp_path)
     path = root / guard.BACKLOG
