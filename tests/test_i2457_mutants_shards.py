@@ -22,6 +22,7 @@ from scripts.verify_i2457_mutants_shards import (
     make_inventory,
     membership,
     shard_artifact_digest,
+    validate_inventory,
 )
 
 
@@ -91,6 +92,13 @@ class MutantsShardAggregateTests(unittest.TestCase):
         self.assertEqual(receipt["covered_mutants"], SHARD_COUNT * 2)
         self.assertEqual(receipt["attempt_lineage"], [1])
         self.assertEqual(len(receipt["shard_artifact_digests"]), SHARD_COUNT)
+
+    def test_inventory_receipt_uses_redacted_string_identities(self) -> None:
+        self.assertEqual(validate_inventory(self.inventory), self.inventory["mutant_ids"])
+        invalid = copy.deepcopy(self.inventory)
+        invalid["mutant_ids"][0] = {"name": "mutant-0"}
+        with self.assertRaisesRegex(VerificationError, "string identities"):
+            validate_inventory(invalid)
 
     def test_rejects_missing_duplicate_and_unexpected_shards(self) -> None:
         with self.assertRaisesRegex(VerificationError, "missing"):
