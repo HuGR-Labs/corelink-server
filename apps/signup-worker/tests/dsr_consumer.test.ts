@@ -501,21 +501,21 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(m.ack).not.toHaveBeenCalled();
   });
 
-  for (const [name, makeReceipts, receiptBoundary] of [
-    ["is absent", () => undefined, "not_configured"],
+  for (const [name, makeReceipts] of [
+    ["is absent", () => undefined],
     ["cannot write", () => {
       const receipts = new MemoryReceipts();
       receipts.failWrites = true;
       return receipts;
-    }, "storage_error"],
+    }],
     ["is malformed", () => ({
       find: async () => ({ status: "invalid" as DsrDlqReceipt["status"], paging_claimed: 0, requeue_claimed: 0 }),
       record: async () => undefined,
       claimPaging: async () => true,
       claimRequeue: async () => true,
-    } satisfies DsrDlqReceiptStore), "malformed"],
+    } satisfies DsrDlqReceiptStore)],
   ] as const) {
-    it(`emits a privacy-safe terminal alert when the receipt boundary ${name}`, async () => {
+    it(`retries when the receipt boundary ${name}`, async () => {
       const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
       const m = fakeDlq(msg("receipt-terminal"), 3);
       const pagerFetch = vi.fn<typeof fetch>(async () => new Response("accepted", { status: 202 }));
@@ -528,20 +528,14 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
             PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch,
           },
         );
-        const alert = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
-        expect(alert).toMatchObject({
-          action: "receipt_boundary_exhausted", receipt_boundary: receiptBoundary,
-          exhausted: true, requeue_count: 0,
-        });
-        expect(String(alert.event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
-        expect(JSON.stringify(alert)).not.toContain("receipt-terminal");
+        expect(error).not.toHaveBeenCalled();
       } finally {
         error.mockRestore();
       }
       expect(pagerFetch).not.toHaveBeenCalled();
       expect(send).not.toHaveBeenCalled();
-      expect(m.ack).toHaveBeenCalledOnce();
-      expect(m.retry).not.toHaveBeenCalled();
+      expect(m.ack).not.toHaveBeenCalled();
+      expect(m.retry).toHaveBeenCalledOnce();
     });
   }
 
