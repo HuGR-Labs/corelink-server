@@ -163,7 +163,7 @@ def check_smoke(text: str) -> None:
     require_run_on_hosted(text, where)
     if "HOSTED_ACTIONS_AVAILABLE" in text:
         raise ContractError(f"{where}: hosted availability gate would hide the experiment")
-    require("GitHub-hosted", where)
+    require(text, "GitHub-hosted", where)
     if "CoreLink-fleet evidence" in text or "corelink-fleet" in text.lower():
         raise ContractError(f"{where}: a hosted observation cannot claim CoreLink-fleet evidence")
     require_line(text, r"^\s*workflow_dispatch:\s*$", where)
