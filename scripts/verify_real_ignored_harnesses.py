@@ -506,7 +506,7 @@ def assert_contract(workflow: str, runner: str) -> None:
 
     # Environment preconditions are part of correctness: absent credentials
     # must fail before a test can fall back to an in-memory adapter.
-    for name in (
+    expected_blank_env = (
         "CLOUDFLARE_ACCOUNT_ID",
         "CF_API_TOKEN",
         "D1_DATABASE_ID",
@@ -640,9 +640,10 @@ def assert_campaign_i1650_pack(workflow: str) -> None:
         "R2_S3_SECRET_ACCESS_KEY",
         "HUGR_WALLET_TOKEN",
         "NEON_TEST_DSN",
-    ):
-        if job.count(f'{name}: ""') != 1:
-            fail(f"i1650 campaign job does not blank exactly one {name} input")
+    )
+    blank_env = re.findall(r'(?m)^          ([A-Z][A-Z0-9_]*):\s*(.*)$', job)
+    if tuple(name for name, _ in blank_env) != expected_blank_env or any(value != '""' for _, value in blank_env):
+        fail("i1650 campaign job environment is not the reviewed empty input set")
     if re.search(r"\b(?:cargo|pnpm)\b|actions/(?:setup-node|setup-python)|rust-toolchain|setup-protoc", job):
         fail("i1650 campaign job includes unrelated runtime setup")
     steps = re.findall(r"(?m)^      - name: ([^\n]+)$", job)
@@ -847,6 +848,14 @@ def campaign_mutation_checks(workflow: str) -> None:
         workflow.replace(
             "\n  campaign:\n",
             "\n      - name: Unexpected provider step\n        run: curl https://provider.example.invalid\n\n  campaign:\n",
+            1,
+        ),
+    )
+    expect_campaign_rejected(
+        "extra campaign environment input",
+        workflow.replace(
+            '          NEON_TEST_DSN: ""\n',
+            '          NEON_TEST_DSN: ""\n          EXTRA_PROVIDER_TOKEN: ""\n',
             1,
         ),
     )
