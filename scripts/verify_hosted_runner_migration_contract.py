@@ -93,9 +93,11 @@ def validate(root: Path, inventory: str) -> None:
             jobs = job_blocks(path.read_text(encoding="utf-8"), relative)
         except OSError as error:
             fail(f"{relative}: unreadable: {error}")
-        missing = expected_jobs - jobs.keys()
-        if missing:
-            fail(f"{relative}: missing inventoried jobs {sorted(missing)}")
+        if jobs.keys() != expected_jobs:
+            fail(
+                f"{relative}: closed job inventory drifted; "
+                f"expected {sorted(expected_jobs)}, got {sorted(jobs)}"
+            )
         for job, lines in jobs.items():
             runner_lines = [match.group(1).strip() for line in lines if (match := RUNNER.match(line))]
             if len(runner_lines) != 1:
@@ -152,6 +154,19 @@ def self_test() -> None:
             expect_rejected(root, inventory, "runs-on: ubuntu-24.04", "runs-on: corelink")
             expect_rejected(root, inventory, "runs-on: ubuntu-24.04", "runs-on: self-hosted")
             expect_rejected(root, inventory, "persist-credentials: false", "persist-credentials: true")
+            target = root / next(iter(INVENTORIES[inventory]))
+            original = target.read_text(encoding="utf-8")
+            target.write_text(
+                original + "  uncontracted-job:\n    runs-on: ubuntu-24.04\n    steps: []\n",
+                encoding="utf-8",
+            )
+            try:
+                validate(root, inventory)
+            except ContractError:
+                pass
+            else:
+                fail("uncontracted hosted job escaped the closed inventory")
+            target.write_text(original, encoding="utf-8")
 
 
 def main() -> int:

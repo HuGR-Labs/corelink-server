@@ -30,6 +30,8 @@ on:
       # Future #2176 admission-gate and contract surfaces.
       - "worker/src/grpc_transport_gate.ts"
       - "specs/03_architecture/issue-2176-grpc-transport-contract.md"
+      - "scripts/verify_i2176_grpc_deny_gate.py"
+      - "tests/test_verify_i2176_grpc_deny_gate.py"
       - ".github/workflows/issue-2176-grpc-deny-gate.yml"
 
 permissions:
