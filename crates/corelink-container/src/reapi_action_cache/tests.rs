@@ -323,7 +323,7 @@ async fn rejected_authorization_tenant_and_malformed_result_never_touch_action_c
             }],
             ..Default::default()
         }),
-        ..request
+        ..request.clone()
     };
     assert_eq!(
         missing
@@ -347,7 +347,7 @@ async fn rejected_authorization_tenant_and_malformed_result_never_touch_action_c
             }],
             ..Default::default()
         }),
-        ..request
+        ..request.clone()
     };
     assert_eq!(
         missing
@@ -366,7 +366,7 @@ async fn rejected_authorization_tenant_and_malformed_result_never_touch_action_c
             }],
             ..Default::default()
         }),
-        ..request
+        ..request.clone()
     };
     assert_eq!(
         missing
@@ -397,7 +397,7 @@ async fn rejected_authorization_tenant_and_malformed_result_never_touch_action_c
             hash: "not-a-sha256".into(),
             size_bytes: 17,
         }),
-        ..request
+        ..request.clone()
     };
     assert_eq!(
         missing
@@ -412,7 +412,7 @@ async fn rejected_authorization_tenant_and_malformed_result_never_touch_action_c
             stdout_raw: vec![0; REAPI_ACTION_RESULT_MAX_SERIALIZED_BYTES + 1],
             ..Default::default()
         }),
-        ..request
+        ..request.clone()
     };
     assert_eq!(
         missing

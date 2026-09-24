@@ -9,6 +9,7 @@ on:
       - "crates/corelink-container/src/reapi_action_cache/**"
       - "crates/corelink-reapi/proto/build/bazel/remote/execution/v2/remote_execution.proto"
       - "scripts/verify_i2182_reapi_action_cache.py"
+      - "apps/docs/docs/reference/reapi/_generated/**"
 permissions:
   contents: read
 
