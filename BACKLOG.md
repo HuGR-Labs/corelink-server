@@ -9086,8 +9086,10 @@ fora desta população porque é ownership de B-111.
 
 - **B-113/nightly hosted mutants receipt:** the legacy `nightly.yml`
   `mutants-workspace` job stays disabled. `.github/workflows/issue-1863-mutants-hosted.yml`
-  is the only dispatch-only GitHub-hosted scheduled-equivalent evidence path;
-  its pinned prebuilt command and protected-main guards are checked statically.
+  is the only dispatch-only GitHub-hosted scheduled-equivalent evidence path.
+  It freezes one full inventory, requires an unmutated baseline, and accepts a
+  retained aggregate only after all 27 deterministic hosted shards cover the
+  inventory exactly once; its protected-main guards are checked statically.
   This repository contract does not prove that any dispatched run succeeded.
 - **`terraform-drift.yml`**: explicitamente excluída desta população; é coberta
   por [B-111] e não é uma lane de B-113.
@@ -9127,8 +9129,8 @@ verify-means: |
   que impede este item de virar gaveta. For B-113/nightly, the dispatch-only
   GitHub-hosted scheduled-equivalent evidence path is
   `.github/workflows/issue-1863-mutants-hosted.yml`; the legacy nightly job is
-  disabled. A successful retained receipt remains external evidence and is not
-  inferred from this verifier.
+  disabled. A successful retained aggregate receipt for all 27 shards remains
+  external evidence and is not inferred from this verifier.
 last-verified: 2026-09-05
 ```
 

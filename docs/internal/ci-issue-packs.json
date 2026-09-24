@@ -198,6 +198,78 @@
       ]
     },
     {
+      "pack_id": "issue-2457-mutants-shards",
+      "issue": 2457,
+      "changed_surfaces": [
+        ".github/workflows/issue-1863-mutants-hosted.yml",
+        ".github/workflows/issue-1863-mutants-contract.yml",
+        ".github/workflows/issue-1666-mutants-evidence-contract.yml",
+        ".github/workflows/issue-ci-pack.yml",
+        "scripts/verify_i1666_mutants_evidence.py",
+        "scripts/verify_i1863_mutants_hosted.py",
+        "scripts/verify_i2457_mutants_shards.py",
+        "scripts/verify_ci_issue_packs.py",
+        "tests/test_verify_i1666_mutants_evidence.py",
+        "tests/test_i1863_mutants_hosted_receipt.py",
+        "tests/test_i2457_mutants_shards.py",
+        "BACKLOG.md",
+        "docs/internal/b113-six-lanes-owner-actions.md",
+        "docs/internal/ci-issue-packs.json"
+      ],
+      "workflow_files_to_lint": [
+        ".github/workflows/issue-1863-mutants-hosted.yml",
+        ".github/workflows/issue-1863-mutants-contract.yml",
+        ".github/workflows/issue-1666-mutants-evidence-contract.yml",
+        ".github/workflows/issue-ci-pack.yml"
+      ],
+      "required_focused_jobs": ["issue-pack"],
+      "focused_checks": ["actionlint", "ci-pack-contract", "python-mutants-shards"],
+      "admission_checks": [
+        "DCO check on the exact pull request head",
+        "credentialless checkout",
+        "changed-file boundary"
+      ],
+      "negative_controls": [
+        "reject missing, duplicate, unexpected, failed, cancelled, timed-out, and nonterminal shards",
+        "reject mixed SHA, tool, configuration, baseline, or run identity",
+        "reject artifact absence, corrupt digest, baseline failure, and invalid attempt lineage",
+        "no cargo-mutants dispatch or workspace-wide test dispatch in the focused pack"
+      ],
+      "exact_sha": {
+        "source": "required workflow_dispatch input candidate_sha",
+        "binding": "must equal HEAD of the isolated candidate checkout, controlled by the protected-main workflow",
+        "target_base_source": "required workflow_dispatch input target_base_sha",
+        "target_base_sha": "required workflow_dispatch input target_base_sha; must equal merge-base(candidate_sha, trusted_main_sha) and differ from candidate_sha; bootstrap when candidate_sha equals trusted_main_sha uses candidate first parent"
+      },
+      "budget": {
+        "runner": "ubuntu-24.04",
+        "job_timeout_minutes": 15,
+        "step_timeout_minutes": 10,
+        "max_billable_minutes_per_dispatch": 15,
+        "matrix_limit": 1,
+        "max_concurrent_dispatches_per_pack_and_sha": 1
+      },
+      "escalation_policy": {
+        "critical_surfaces": ["workflow", "security", "release", "core"],
+        "required_jobs_for_this_pack": ["issue-pack"],
+        "protected_main_full_suite_required_after_merge": true
+      },
+      "global_suite_escalation_triggers": [
+        "shared dependency manifests, workspace configuration, or central test infrastructure changes",
+        "authentication, authorization, cryptographic, or protocol boundary changes",
+        "cross-service migrations or shared data contracts",
+        "release, signing, deployment, secrets, or provider mutation controls change",
+        "the pack cannot bound affected consumers"
+      ],
+      "merge_evidence": [
+        "exact pack run URL/ID, candidate SHA, target base SHA, and conclusion",
+        "actionlint plus static workflow, receipt, and adversarial aggregate checks on ubuntu-24.04",
+        "admission DCO on the exact pull request head",
+        "cold-review verdict and disposition of findings",
+        "the expensive 27-shard cargo-mutants campaign remains undispatched until central approval"
+      ]
+    },
+    {
       "pack_id": "issue-1677-b170-owner-actions",
       "issue": 1677,
       "changed_surfaces": [
