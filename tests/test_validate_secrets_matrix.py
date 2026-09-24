@@ -87,6 +87,8 @@ I2193_MATRIX_BOUND_NAMES = {
     "STAGING_R2_S3_ACCESS_KEY_ID",
     "STAGING_R2_S3_ENDPOINT",
     "STAGING_R2_S3_SECRET_ACCESS_KEY",
+    "STAGING_TF_BACKEND_ACCESS_KEY_ID",
+    "STAGING_TF_BACKEND_SECRET_ACCESS_KEY",
     "TF_BACKEND_ACCESS_KEY_ID",
     "TF_BACKEND_SECRET_ACCESS_KEY",
 }
@@ -193,6 +195,11 @@ def test_b245_gc_contract_rejects_a_broad_allowlist_mutation() -> None:
     except AssertionError:
         return
     raise AssertionError("broad GC_* allowlist mutation was accepted")
+
+
+def test_b245_closed_scope_and_mutations() -> None:
+    """Run B-245's exact fixture annotation and fail-closed mutation checks."""
+    assert b245.main() == 0
 
 
 def test_bash_repo_root_override_requires_canonical_sentinels(tmp_path: Path) -> None:
