@@ -126,7 +126,12 @@ def _verify_observation_workflow(workflow_texts: dict[str, str]) -> None:
 
     steps = _block(job, "steps:", 4)
     step_header = "      - name: Invoke production GC observation"
-    if steps is None or steps.count(step_header) != 1:
+    step_headers = (
+        [line for line in steps if len(line) - len(line.lstrip()) == 6]
+        if steps is not None
+        else []
+    )
+    if step_headers != [step_header]:
         raise Blocked("staging observation job must have one production observation step")
     step = _block(steps, "- name: Invoke production GC observation", 6)
     required_step_lines = (
@@ -137,6 +142,8 @@ def _verify_observation_workflow(workflow_texts: dict[str, str]) -> None:
     )
     if step is None or any(step.count(line) != 1 for line in required_step_lines):
         raise Blocked("production observation step is missing its read-only runtime fence")
+    if sum(line.strip().startswith("run:") for line in step) != 1:
+        raise Blocked("production observation step must have exactly one command")
     if any(line.strip().startswith(("if:", "continue-on-error:")) for line in step):
         raise Blocked("production observation step cannot be conditional or suppress errors")
 

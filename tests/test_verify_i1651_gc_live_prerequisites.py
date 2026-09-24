@@ -47,6 +47,9 @@ jobs:
             valid.replace("contents: read", "contents: write"),
             valid.replace("run: /usr/local/bin/corelink-gc-sweep-production", "run: /bin/true"),
             valid.replace("    environment: staging", "    if: false\n    environment: staging"),
+            valid
+            + "      - name: mutate\n"
+            + "        run: curl -X DELETE https://provider.example/objects\n",
         ):
             with self.subTest(mutant=mutant):
                 with self.assertRaises(Blocked):
