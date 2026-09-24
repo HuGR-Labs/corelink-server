@@ -11,25 +11,28 @@
       "id": "B-008",
       "owner": "owner",
       "status": "open",
-      "action_type": "external_read_credential_and_delivery_review",
+      "action_type": "external_read_credential_and_single_staging_drill",
       "procedure": [
-        "UI: In the PagerDuty account, create a read-only API key named corelink-incident-review-UTC; do not reuse or rotate PAGERDUTY_ROUTING_KEY.",
-        "RUN: With the key supplied through a password manager or stdin (never argv/logs), query the PagerDuty incident/escalation history for the CoreLink service and export the response to the canonical evidence path.",
-        "UI: Compare the exported incidents with the escalation policy and record whether a human acknowledgement/escalation occurred; do not infer delivery from HTTP 202 alone."
+        "UI: In PagerDuty, create a separate read-only API key named corelink-incident-review-UTC; do not reuse or rotate PAGERDUTY_ROUTING_KEY.",
+        "UI: With a repository administrator, establish required approval protection for synthetic-drill-staging and provision the staging root worker with SCHEDULED_DRILL_DELIVERY bound to corelink-synthetic-pager-staging; verify the receiver, migrated D1 schema, and dedicated synthetic-service routing/webhook secrets, leaving activation false.",
+        "UI: After those prerequisites are verified, the SRE Lead explicitly authorizes one non-production root-worker scheduled tick in immediate-delivery mode; remove/disable the staging trigger after that tick and never activate the production receiver.",
+        "RUN: Capture that single scheduler acceptance, receiver D1 triggered row, PagerDuty incident ID/timestamp, and signed acknowledgement or escalation webhook; do not retry or dispatch a duplicate.",
+        "RUN: With the read-only key supplied through a password manager or stdin (never argv/logs), export the PagerDuty incident timeline and correlate it to the staging D1 row and webhook receipt at the canonical evidence path.",
+        "UI: Record the human-delivery verdict and D1 outcome/mtta_ms, then disable staging activation and revoke the read-only review key; if any receipt is missing or ambiguous, keep B-008 open and escalate."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["PagerDuty account/service identifier", "review interval beginning 2026-07-17", "read-only API key"],
-        "credentials": "Owner creates and holds the read-only PagerDuty key; PAGERDUTY_ROUTING_KEY remains write-only and must not be used for reads. Never commit or paste the key into evidence."
+        "inputs": ["PagerDuty account/service identifier", "read-only review interval", "repository-admin-protected synthetic-drill-staging environment", "staging root worker and SCHEDULED_DRILL_DELIVERY binding", "staging receiver and migrated D1 schema", "dedicated synthetic-drill routing/webhook secrets", "explicit SRE Lead authorization for one immediate-mode scheduled tick"],
+        "credentials": "The owner creates and holds a separate read-only PagerDuty API key for incident review. The synthetic-drill routing key and webhook secret are staging-only platform secrets; never reuse PAGERDUTY_ROUTING_KEY, commit credentials, or include them in evidence."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-008/pagerduty-incident-review.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "account", "service_id", "interval", "incidents", "human_delivery_verdict", "reviewer"],
-        "item_schema": "incidents[] entries contain incident_id, created_at, trigger_status, escalation_policy_id, acknowledgement_at (nullable), escalation_at (nullable), and source_url; human_delivery_verdict is delivered, not_delivered, or inconclusive."
+        "required_fields": ["schema_version", "captured_at", "admission", "drill", "pagerduty_timeline", "webhook_receipt", "d1_receipt", "human_delivery_verdict", "reviewer"],
+        "item_schema": "admission records read_only_key_scope=read_only, protected_environment=synthetic-drill-staging, required_approvals, staging_root_worker, service_binding, staging_receiver, d1_schema, dedicated_secret_names, and owner_authorized_at; drill records drill_id, correlation_id, delivery_mode=immediate, scheduled_tick_count=1, scheduled_at, scheduled_tick_disabled_at, and scheduler_acceptance; pagerduty_timeline records incident_id, dedup_key=drill_id, correlation_id=drill.correlation_id, created_at, trigger_status, escalation_policy_id, acknowledgement_at, escalation_at, and redacted source_url; webhook_receipt records event_id, drill_id, correlation_id=drill.correlation_id, kind, occurred_at, signature_verified, and redacted source_reference; d1_receipt records drill_id, correlation_id=drill.correlation_id, delivery_mode=immediate, triggered_at_ms, delivered_at_ms, outcome, ack_ts_ms, mtta_ms, ack_vector, and redacted source_reference; human_delivery_verdict is delivered, not_delivered, or inconclusive."
       },
-      "expected_postcondition": "The evidence records a human-delivery verdict grounded in PagerDuty incident/escalation records; B-008 remains open until the owner updates its status.",
-      "retry_and_rollback": "Retry by re-running the read-only export with the same interval and key; deduplicate by incident_id. Revoke the newly created read-only key after review. Do not revoke PAGERDUTY_ROUTING_KEY and do not delete evidence.",
-      "references": ["BACKLOG.md#B-008", "docs/internal/2026-08-24-owner-decision-brief.md"]
+      "expected_postcondition": "The redacted receipt correlates one explicitly authorized protected staging drill through scheduler, D1, PagerDuty, and signed human acknowledgement/escalation. B-008 remains open unless the evidence proves human delivery and all issue closure gates are met.",
+      "retry_and_rollback": "Before prerequisites and explicit SRE Lead authorization, dispatch nothing. After authorization, permit one staging drill only; do not retry or duplicate. If any receipt is missing/ambiguous or delivery is not proven, disable staging activation, retain the evidence, escalate, and keep B-008 open. Revoke only the new read-only review key; never revoke or repurpose PAGERDUTY_ROUTING_KEY.",
+      "references": ["BACKLOG.md#B-008", "BACKLOG.md#B-072", "docs/internal/2026-08-24-owner-decision-brief.md", "evidence/i1641/pagerduty-contract-manifest.json"]
     },
     {
       "id": "B-012",
@@ -444,26 +447,65 @@
       "id": "B-071",
       "owner": "tl",
       "status": "open",
-      "action_type": "gc_production_dry_run_authorization",
+      "action_type": "owner_authorized_bounded_gc_observation_evidence",
       "procedure": [
-        "RUN: Verify the deployed image contains an executable gc_sweep and confirm GC_LIVE_DELETE=false, credential removal, timeout, tenant/run binding, and region guard before touching customer data.",
-        "RUN: In the owner-approved production observation window, use scripts/collect_b071_gc_observation.py with the immutable deployed image digest and an explicit manifest of tenant, region, run, and bucket scopes; it invokes /usr/local/bin/corelink-gc-sweep-production with GC_OBSERVATION_ONLY=true and GC_LIVE_DELETE=false and captures bounded zero-delete measurements.",
-        "RUN: Validate evidence/owner-actions/B-071/gc-production-dry-run.json with scripts/collect_b071_gc_observation.py verify; every requested scope must have balanced candidates_scanned, reclaimable_count, reclaimable_bytes, phase budget, PASS verdict, and zero deletes.",
-        "UI: Review the per-tenant evidence and record APPROVED or REJECTED with reviewer and decision time. This package never authorizes a future first live delete and must not enable GC_LIVE_DELETE."
+        "UI: Owner records a source-backed retention and eviction decision for one exact proposed tenant, region, and already-running production physical_delete run, then references that decision from #2167. Cover workspace pins, active references, legal and audit holds, grace period, and stop/rollback condition. This authorizes observation only and never live deletion.",
+        "UI: SRE/provider provisions and verifies isolated staging, its D1 binding, the region-matched R2 bucket, DNS, and resource access. Commit redacted evidence/staging/readiness.json with deployment_state=ready, canonical host, provider readback, and protected secret names only; never include secret values.",
+        "UI: Environment owner verifies the seven required staging names are protected and reviewer-gated: K6_STAGING_BYOK_CMK_ID, K6_STAGING_MFA_STUB, K6_STAGING_PAT, K6_STAGING_STRIPE_WHSEC, K6_STAGING_TEARDOWN_TOKEN, K6_TARGET_IDENTITY_RECEIPT, and K6_TARGET_HOST. Record names only.",
+        "UI: Release/SRE deploys the observation-capable image to the verified staging target and records its immutable image@sha256 digest in the readiness/deployment receipt. A tag or build result does not identify the deployed artifact.",
+        "UI: Observation operator and SRE/provider source the immutable digest of the exact production container or extracted image that will perform the observation, then record whether it is the same digest as the staging deployment or provide source-backed artifact equivalence. This production-runtime identity is required by the collector; staging readiness alone does not prove it.",
+        "RUN: Only after the owner, staging/provider, protected-input, staging-image, and production-runtime identity/equivalence receipts exist, the authorized operator supplies CLOUDFLARE_ACCOUNT_ID, D1_DATABASE_ID, CF_API_TOKEN, and R2_TDK_HEX through secured runtime configuration; scopes one already-running production physical_delete run to its approved tenant, region, and bucket; then runs scripts/collect_b071_gc_observation.py from the deployed production container or exact extracted image using that production artifact digest.",
+        "RUN: Verify evidence/owner-actions/B-071/gc-production-dry-run.json with scripts/collect_b071_gc_observation.py verify --expect-approval pending. Require balanced classifications, at most 250 candidates per run, phase duration within budget, PASS verdict, delete_count=0, deleted_bytes=0, live_delete_flag=false, approval.status=PENDING_OWNER_REVIEW, reviewer and decision time unset, and live_delete_authorized=false.",
+        "UI: Owner reviews the measured receipt and records any human decision in a separate source-backed owner record referenced from #2167. Keep the observation JSON unchanged at PENDING_OWNER_REVIEW with reviewer/time unset; package approval is not needed to verify the observation and never authorizes a first destructive run. The owner must link accepted evidence from #1651 and keep #1651 open until its canonical contract is satisfied."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["deployed image digest", "tenant and region allow-list", "gc_sweep run identifier", "dry-run budget"],
-        "credentials": "Owner supplies a D1 read-only Cloudflare API token and approved runtime access for the real observation. The fixture-only scheduled lane remains credentialless; the real collector strips R2 credentials and live-delete confirmation, and no delete authority is granted here."
+        "inputs": [
+          "owner-approved tenant, region, retention/eviction terms, stop/rollback condition, and already-running production physical_delete run identifier",
+          "verified staging target, D1 binding, region-matched R2 bucket, current provider readback, and readiness receipt",
+          "provider-verified protected and reviewer-gated names: K6_STAGING_BYOK_CMK_ID, K6_STAGING_MFA_STUB, K6_STAGING_PAT, K6_STAGING_STRIPE_WHSEC, K6_STAGING_TEARDOWN_TOKEN, K6_TARGET_IDENTITY_RECEIPT, and K6_TARGET_HOST",
+          "immutable digest of the observation-capable image deployed to the verified staging target",
+          "source-backed resolution of the production observation runtime relationship to staging readiness",
+          "explicit tenant, region, already-running run, and bucket scope plus bounded phase budget"
+        ],
+        "credentials": "Only the authorized observation operator supplies CLOUDFLARE_ACCOUNT_ID, D1_DATABASE_ID, CF_API_TOKEN, and R2_TDK_HEX through secured runtime configuration; CF_API_TOKEN must be a D1 read-only Cloudflare token. Never place secret values in the packet, repository, logs, evidence, or issue comments. The collector forces GC_OBSERVATION_ONLY=true and GC_LIVE_DELETE=false and strips live-delete confirmation and R2 write credentials."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-071/gc-production-dry-run.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "image_digest", "runs", "tenant_region_population", "candidates_scanned", "reclaimable_count", "reclaimable_bytes", "delete_count", "live_delete_flag", "approval", "operator"],
-        "item_schema": "runs[] contains run_id, tenant_id, region, started_at, completed_at, candidates_scanned, reclaimable_count, reclaimable_bytes, phase_budget, and verdict; delete_count must be zero for dry-run evidence."
+        "required_fields": [
+          "schema_version",
+          "captured_at",
+          "image_digest",
+          "runs",
+          "tenant_region_population",
+          "candidates_scanned",
+          "reclaimable_count",
+          "reclaimable_bytes",
+          "delete_count",
+          "deleted_bytes",
+          "live_delete_flag",
+          "approval",
+          "operator"
+        ],
+        "item_schema": "Each runs[] record contains run_id, tenant_id, region, started_at, completed_at, candidates_scanned, reclaimable_count, reclaimable_bytes, delete_count, deleted_bytes, skipped_grace_pending, skipped_refcount_non_zero, already_resolved, phase_budget:{budget_ms,duration_ms}, max_candidates, and verdict. Verification requires balanced classifications, max_candidates is at most 250, duration_ms does not exceed budget_ms, verdict=PASS, and zero delete totals. approval.status remains PENDING_OWNER_REVIEW with reviewer and decision time unset and live_delete_authorized=false. Legal-hold and accounting outcomes are not fields in this strict package schema; record any required outcome in separate source-backed owner/provider evidence without adding unsupported package fields."
       },
-      "expected_postcondition": "The shipped binary produces bounded, tenant/region-scoped dry-run evidence with zero deletes before any owner decision to arm live GC; B-071 remains open.",
-      "retry_and_rollback": "Retry a read-only dry-run with a new run identifier after a transient failure. If any guard is missing or a delete is observed, stop and disable the feature through the deployment control; preserve all reports and do not re-run against a broader population.",
-      "references": ["BACKLOG.md#B-071", "crates/corelink-container/src/bin/gc_sweep.rs", "crates/corelink-container/src/gc_sweep.rs", "scripts/collect_b071_gc_observation.py", "docs/operator/gc-production-observation.md", ".github/workflows/gc-sweep-dry-run.yml", "Dockerfile"]
+      "expected_postcondition": "Current source-backed owner retention/stop decision, verified staging/provider readiness, reviewer-gated protected-name readback, staging image digest, production observation image identity/equivalence, and a bounded zero-delete receipt are recorded. The GC receipt remains PENDING_OWNER_REVIEW with reviewer and decision time unset and live deletion unauthorized; B-071 stays open, and no step authorizes live deletion.",
+      "retry_and_rollback": "Stop on missing or contradictory authority, provider readback, protected inputs, digest, scope, production/runtime relationship, budget, or any nonzero deletion. Do not broaden scope; do not create or advance a run through this collector; do not retry against a different run without fresh owner/provider authorization; do not attempt cleanup or destructive compensation. Preserve the receipts and leave B-071 open.",
+      "references": [
+        "BACKLOG.md#B-071",
+        "#2167",
+        "#1651",
+        "infra/staging/topology.json",
+        "evidence/staging/readiness.json",
+        "scripts/verify_staging_target.py",
+        "scripts/collect_b071_gc_observation.py",
+        "docs/operator/gc-production-observation.md",
+        "crates/corelink-container/src/bin/gc_sweep.rs",
+        "crates/corelink-container/src/gc_sweep.rs",
+        ".github/workflows/gc-sweep-dry-run.yml",
+        ".github/workflows/issue-1651-gc-live-readiness.yml",
+        "Dockerfile"
+      ]
     },
     {
       "id": "B-072",
@@ -493,15 +535,19 @@
       "id": "B-083",
       "owner": "tl",
       "status": "open",
-      "action_type": "real_kms_byok_activation_and_revocation_proof",
+      "action_type": "owner_authorized_real_kms_lifecycle_evidence",
       "procedure": [
-        "UI: Provision one test tenant CMK and the least-privilege AWS KMS role, endpoint, and region required by the byok-aws-real image; keep plaintext key material outside the repository.",
-        "RUN: In the protected runtime, call the existing POST /v1/admin/byok/activate path with the operator internal credential and CMK-wrapped Tcs, then verify check_access, encrypted CAS/AC round-trip, and fail-closed behavior without logging secrets.",
-        "RUN: Invoke the existing POST /v1/admin/byok/deactivate path and capture the revocation run_loop transition, audit receipt, and bounded timing; retain the run references and leave production tenants unchanged."
+        "UI: Authorize and provision one protected, isolated nonproduction AWS runtime for the exact shipped byok-aws-real image. Pin the execution region and retain the sha256 image digest in the protected operator record; do not use a production tenant or expose identifiers in repository evidence.",
+        "UI: Provision one disposable protected test tenant and a distinct isolated test tenant for cross-tenant rejection. Provision a customer-controlled CMK and retain customer control of create/import, rotation authorization, and deletion scheduling.",
+        "UI: Bind a least-privilege runtime identity limited to wrap, unwrap, and check_access. Protect operator authorization and configure the durable audit receipt sink before activating either test tenant; keep credentials, plaintext TCS, ciphertext, CMK/account/tenant identifiers, and provider response bodies outside git and issue comments.",
+        "RUN: From the protected runtime, capture authenticated receipts for customer create/import; provider check_access and activation before the first D1 mutation; envelope/CAS wrap and unwrap; production-binary run_loop revoke/restore; CMK rotation; customer-authorized deletion scheduling; durable audit delivery; cross-tenant rejection; provider failure with bounded retry; and residency in the pinned region.",
+        "RUN: For revoke/restore, measure the production binary's run_loop p99 and retain its authenticated source record. The measured result must satisfy the Enterprise boundary of no more than five minutes; a mock, source-only check, synthetic delay, scheduler flag, or AWS CLI-only result is insufficient.",
+        "RUN: Reconcile evidence/owner-actions/B-083/byok-real-kms-lifecycle.json on the exact candidate tree: set evidence_state to VERIFIED, mark all five external prerequisites PROVISIONED, retain the customer-controlled custody policy, bind the runtime digest and region, and give each of the ten lifecycle keys one distinct redacted receipt reference in the verifier's audit://step/redacted-reference form plus a UTC completion timestamp. Keep the p99 source record in the protected boundary and publish only the redacted receipt reference and outcome metadata.",
+        "RUN: Have the repository owner run scripts/verify_b083_kms_lifecycle_evidence.py through the exact-head GitHub Actions contract. Link accepted redacted evidence from #2165, #1653, and the canonical B-083 BACKLOG.md row; keep #1653 open until its full acceptance contract is met."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["test tenant identifier", "AWS KMS CMK identity", "byok-aws-real image digest", "wrapped Tcs and operator routes"],
-        "credentials": "Owner provisions AWS role credentials, KMS endpoint, CMK access, and the internal operator credential in protected runtime storage; plaintext Tcs, key material, and tokens never enter evidence."
+        "inputs": ["owner authorization for the protected isolated nonproduction AWS boundary", "exact shipped byok-aws-real image digest and pinned execution region", "two disposable isolated test tenants and a customer-controlled CMK", "least-privilege runtime identity, protected operator route, and durable audit receipt sink", "authenticated lifecycle receipts for all ten B-083 steps, including the production run_loop p99 source record"],
+        "credentials": "The owner provisions AWS role credentials, KMS endpoint, customer-controlled CMK access, and the internal operator credential only in protected runtime storage. The repository action never creates, imports, rotates, disables, schedules deletion for, or cleans up a provider resource. Plaintext TCS, key material, credentials, account/tenant/CMK identifiers, provider response bodies, ciphertext, and tokens never enter git, logs, or issue comments."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json",
@@ -509,9 +555,9 @@
         "required_fields": ["schema_version", "captured_at", "evidence_state", "tenant_redacted", "runtime", "external_prerequisites", "custody_policy", "lifecycle", "operator", "repository_checks"],
         "item_schema": "runtime contains provider, image_digest, and execution_region. external_prerequisites exactly names isolated_test_tenant, customer_controlled_cmk, least_privilege_runtime_identity, protected_operator_authorization, and durable_audit_receipt_sink. custody_policy fixes CMK create/import and deletion scheduling as customer controlled and service permissions as wrap_unwrap_check_access_only. lifecycle exactly records customer_create_or_import, provider_access, wrap_unwrap, revoke_restore, rotate, deletion_schedule, audit_receipts, tenant_isolation, failure_retry, and residency with status, receipt_reference, completed_at, and blocker. BLOCKED records require every prerequisite MISSING and every lifecycle step NOT_EXECUTED; VERIFIED records require all PROVISIONED, the shipped image digest, and one operation-bound redacted audit receipt per step. No key identifier, key material, plaintext TCS, ciphertext, credential, or token is stored. repository_checks is the exact focused command list and PASS details."
       },
-      "expected_postcondition": "A test tenant proves real KMS access, encrypted CAS/AC behavior, and bounded revocation through the shipped image; B-083 remains open until owner evidence exists and no production claim is inferred.",
-      "retry_and_rollback": "Retry only after checking CMK grants and preserving the first run. Deactivate the test tenant through the same route on cleanup; if activation is ambiguous, fail closed, do not retry with plaintext, and retain the audit record for investigation.",
-      "references": ["BACKLOG.md#B-083", "Dockerfile", "crates/corelink-container/src/routes/byok_admin.rs", "crates/corelink-container/src/byok_orchestrator.rs", "crates/corelink-byok/src/byok_aws/real.rs"]
+      "expected_postcondition": "The protected owner boundary supplies the five prerequisites and authenticated, redacted receipts for all ten lifecycle steps, bound to the exact image, pinned region, and tenant boundary. The production run_loop revoke/restore p99 is at most five minutes. B-083 and #1653 remain open until this evidence is accepted; the packet does not infer a production claim or authorize a provider operation.",
+      "retry_and_rollback": "Before any retry, preserve the first protected receipt set and re-check the CMK grants, tenant isolation, operator authorization, and audit sink. If activation or revocation is ambiguous, fail closed and retain the protected audit record for investigation. Any provider mutation, rollback, or cleanup is separately authorized and performed by the customer/owner; do not retry with plaintext or publish protected material.",
+      "references": ["BACKLOG.md#B-083", "#2165", "#1653", "Dockerfile", "crates/corelink-container/src/routes/byok_admin.rs", "crates/corelink-container/src/byok_orchestrator.rs", "crates/corelink-byok/src/byok_aws/real.rs", "scripts/verify_b083_kms_lifecycle_evidence.py", ".github/workflows/issue-1653-byok-kms-contract.yml", "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"]
     },
     {
       "id": "B-102",

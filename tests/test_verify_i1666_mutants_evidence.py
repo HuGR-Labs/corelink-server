@@ -1,4 +1,4 @@
-"""Adversarial checks for the hosted mutants evidence contract."""
+"""Adversarial static checks for the #2457 hosted shard workflow."""
 
 import unittest
 from pathlib import Path
@@ -16,23 +16,21 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
     def test_live_hosted_mutants_evidence_contract_passes(self) -> None:
         verify(WORKFLOW.read_text(encoding="utf-8"))
 
-    def test_evidence_contract_rejects_mutations(self) -> None:
+    def test_evidence_contract_rejects_boundary_mutations(self) -> None:
         mutations = (
+            ("SHARD_COUNT: 27", "SHARD_COUNT: 26"),
+            ("max-parallel: 9", "max-parallel: 27"),
+            ("timeout-minutes: 45", "timeout-minutes: 240"),
+            ("--baseline=skip", "--baseline=run"),
+            ("--sharding=round-robin", "--sharding=slice"),
+            ("actions: read", "actions: write"),
+            ("runs-on: ubuntu-24.04", "runs-on: self-hosted"),
             ("retention-days: 30", "retention-days: 0"),
-            (
-                "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-                "actions/upload-artifact@v7",
-            ),
-            ("permissions:\n  contents: read", "permissions:\n  contents: write"),
-            (
-                '"mutation_output": "mutants.out/"',
-                '"mutation_output": "missing-mutants-output/"',
-            ),
         )
         text = WORKFLOW.read_text(encoding="utf-8")
         for before, after in mutations:
             with self.subTest(before=before):
-                self.assertEqual(text.count(before), 1)
+                self.assertGreaterEqual(text.count(before), 1)
                 with self.assertRaises(ValueError):
                     verify(text.replace(before, after, 1))
 

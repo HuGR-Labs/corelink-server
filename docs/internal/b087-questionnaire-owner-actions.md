@@ -33,6 +33,7 @@ received it, accepted it, or was notified of a later change.
 | Surface | Repository record | Status proved here | What remains external |
 |---|---|---|---|
 | DPA | [`legal/dpa/v1.0.0.en-US.md`](../../legal/dpa/v1.0.0.en-US.md) (`notice_version: 1.0.0`, effective `2026-05-14`) | Approved repository template; contains the historical Object Lock and BYOK language named above | Legal must reconcile any executed customer copy and record the disposition; no amendment is inferred |
+| Customer DPA reference claim | [`docs/customer/dpa-onboarding.md`](../customer/dpa-onboarding.md) (version `1.1.0`, distribution `post-NDA enterprise customers`) | The FAQ says CoreLink “has executed its DPA with a lighthouse enterprise customer”; this page does not identify the executed copy or cite an execution receipt | Legal/owner must reconcile the statement against an authoritative executed-copy reference and confirm the wording for its stated distribution; this packet does not verify a customer, signature, execution, or receipt |
 | SLA | [`legal/sla/v1.0.0.md`](../../legal/sla/v1.0.0.md) (`sla_version: 1.0.0`, effective `2026-05-14`) | Approved repository version; contains the historical Enterprise BYOK and credit language named above | Legal/Finance must decide treatment of executed instruments and record the disposition |
 | Residency amendment | [`legal/dpa-residency-amendment.md`](../../legal/dpa-residency-amendment.md) (`version: 1.0.0`) | `PENDING_LEGAL_REVIEW`; not an effective amendment | Legal must approve, version, execute, and identify affected customers if applicable |
 | Correction drafts | [`docs/internal/legal-drafts/2026-09-08-dpa-v1.0.1-draft.md`](legal-drafts/2026-09-08-dpa-v1.0.1-draft.md), [`docs/internal/legal-drafts/2026-09-08-sla-v1.0.1-draft.md`](legal-drafts/2026-09-08-sla-v1.0.1-draft.md) | `DRAFT — NOT EFFECTIVE`; `effective_date: null`; `supersedes: null` | Counsel/Finance approval, final identifier, effective date, signed artifact, and notice decision |
@@ -43,6 +44,11 @@ received it, accepted it, or was notified of a later change.
 No recipient or supersession ledger is present in this repository. The absence
 of that ledger is a blocker to claiming that a prior copy was superseded for a
 particular recipient, or that any notification was sent or received.
+
+The customer DPA reference claim above is a repository statement requiring
+Legal/owner reconciliation; it is not an executed instrument or evidence of a
+customer identity, signature, or receipt. The recipient population for any
+questionnaire copies remains external to this repository.
 
 ## Evidence handoff locations
 

@@ -757,6 +757,13 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test\n"
         "python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py\n"
     )
+    expected_b314_dependencies = (
+        "set -euo pipefail\n"
+        "python3 -m venv .venv\n"
+        ".venv/bin/python3 -m pip install --disable-pip-version-check --no-input -r requirements-ci.txt\n"
+        ".venv/bin/python3 -m pytest --version\n"
+        'echo "$GITHUB_WORKSPACE/_base/.venv/bin" >> "$GITHUB_PATH"\n'
+    )
     expected_b046_gate = (
         "python3 scripts/verify_b046_object_lock_probe.py\n"
         "python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py\n"
@@ -775,6 +782,8 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
                      "TRUSTED_ROOT": "${{ github.workspace }}/_base"}, "run": expected_gate},
             {"name": "Prove BASE checker mutation teeth", "working-directory": "_base",
              "run": "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"},
+            {"name": "Install CI Python dependencies for B-314 tests", "working-directory": "_base",
+             "run": expected_b314_dependencies},
             {"name": "Prove BASE B-314 owner-gate mutation teeth", "working-directory": "_base",
              "run": expected_b314_gate},
         ],

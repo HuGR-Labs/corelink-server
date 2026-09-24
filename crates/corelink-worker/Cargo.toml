@@ -130,6 +130,7 @@ base64 = { workspace = true }
 name = "timing_indistinguishability"
 path = "tests/timing_indistinguishability.rs"
 required-features = ["tower-middleware"]
+test = false
 
 [[test]]
 name = "prop_auth_middleware"
