@@ -631,7 +631,7 @@ def assert_campaign_i1650_pack(workflow: str) -> None:
             fail(f"i1650 campaign job is missing safety marker: {marker}")
     if re.search(r"(?im)^\s*environment\s*:", job) or re.search(r"\b(?:secrets|vars)\.", job):
         fail("i1650 campaign job references a protected environment or credential")
-    for name in (
+    expected_blank_env = (
         "CLOUDFLARE_ACCOUNT_ID",
         "CF_API_TOKEN",
         "D1_DATABASE_ID",
