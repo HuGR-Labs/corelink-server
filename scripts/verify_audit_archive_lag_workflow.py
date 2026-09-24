@@ -15,6 +15,10 @@ ARCHIVE_JOB_GATE = (
     "(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')"
 )
 PAGERDUTY_URL = "https://events.pagerduty.com/v2/enqueue"
+HOSTED_RUNNER = "runs-on: ubuntu-24.04"
+PYTHON_SETUP = "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97"
+PYTHON_VERSION = "python-version: '3.12'"
+REQUESTS_PIN = "requests==2.32.5"
 
 
 def _normalized(source: str) -> str:
@@ -42,13 +46,21 @@ def verify(source: str) -> None:
         PAGERDUTY_GATE,
         ARCHIVE_JOB_GATE,
         PAGERDUTY_URL,
+        HOSTED_RUNNER,
+        PYTHON_SETUP,
+        PYTHON_VERSION,
+        REQUESTS_PIN,
     )
     for marker in required:
         if marker not in normalized:
             raise AssertionError(f"missing B-063 monitor invariant: {marker}")
 
-    if "runs-on: corelink" not in archive_job:
-        raise AssertionError("the archive detector must remain on the corelink self-hosted runner")
+    runner_values = re.findall(
+        r"(?m)^    runs-on:[ \t]*(?P<value>[^\r\n#]*)(?:[ \t]*#.*)?$",
+        archive_job,
+    )
+    if len(runner_values) != 1 or runner_values[0].strip() != "ubuntu-24.04":
+        raise AssertionError("the archive detector must use the ubuntu-24.04 GitHub-hosted runner")
     if re.search(r"(?im)^\s*continue-on-error\s*:", archive_job):
         raise AssertionError("the archive detector must not suppress job or D1-read failures")
     if _normalized(ARCHIVE_JOB_GATE) not in _normalized(archive_job):
@@ -84,6 +96,20 @@ def verify_adversarial_mutations(source: str) -> None:
         (source.replace(PAGERDUTY_GATE, "if: steps.measure.outputs.page == '1'", 1), "page without notify gate"),
         (source.replace('default: "read-only"', 'default: "page"', 1), "unsafe manual default"),
         (source.replace("github.ref_protected == true", "github.ref_protected == false", 1), "unprotected run"),
+        (source.replace(HOSTED_RUNNER, "runs-on: corelink", 1), "corelink self-hosted runner"),
+        (
+            source.replace(HOSTED_RUNNER, "runs-on: [self-hosted, corelink]", 1),
+            "self-hosted runner label",
+        ),
+        (source.replace(HOSTED_RUNNER, "runs-on: [corelink]", 1), "corelink runner label"),
+        (
+            source.replace(HOSTED_RUNNER, "runs-on:\n      - self-hosted\n      - corelink", 1),
+            "multiline self-hosted runner labels",
+        ),
+        (
+            source.replace(HOSTED_RUNNER, f"{HOSTED_RUNNER}\n    runs-on: corelink", 1),
+            "duplicate runner declaration",
+        ),
         (
             source.replace("        id: measure\n", "        id: measure\n        continue-on-error: true\n", 1),
             "inconclusive D1 read ignored",
