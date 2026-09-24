@@ -129,8 +129,12 @@ fn respond(
 }
 
 fn record(qty: u64, key: &str) -> StagedUsageRecord {
+    record_for(&tenant_a(), qty, key)
+}
+
+fn record_for(tenant: &str, qty: u64, key: &str) -> StagedUsageRecord {
     let mut record = validate_record(
-        serde_json::from_value(record_json(&tenant_a(), key)).expect("wire record"),
+        serde_json::from_value(record_json(tenant, key)).expect("wire record"),
     )
     .expect("valid record");
     record.qty = qty;
@@ -145,6 +149,50 @@ async fn durable_classification_matrix() {
     let same = record(7200, &hex64(0x31));
     assert_eq!(store.stage(&same).await, Ok(StageOutcome::Inserted));
     assert_eq!(store.stage(&same).await, Ok(StageOutcome::Deduped));
+
+    let tenant_coordinate = Fixture::new();
+    let store = tenant_coordinate.store();
+    let key = hex64(0x36);
+    assert_eq!(store.stage(&record(7200, &key)).await, Ok(StageOutcome::Inserted));
+    assert_eq!(
+        store
+            .stage(&record_for("22222222-2222-4222-8222-222222222222", 7200, &key))
+            .await,
+        Ok(StageOutcome::Inserted),
+        "same key under another tenant is a distinct durable coordinate"
+    );
+    let tenant_rows: i64 = tenant_coordinate
+        .db
+        .lock()
+        .expect("sqlite lock")
+        .query_row(
+            "SELECT COUNT(*) FROM usage_event_staging WHERE request_id = ?1",
+            [&key],
+            |row| row.get(0),
+        )
+        .expect("tenant-isolated rows");
+    assert_eq!(tenant_rows, 2);
+
+    let canonical = Fixture::new();
+    let store = canonical.store();
+    let key = hex64(0x37);
+    assert_eq!(store.stage(&record(7200, &key)).await, Ok(StageOutcome::Inserted));
+    let mut wire = record_json(&tenant_a(), &key.to_ascii_uppercase());
+    wire["region"] = serde_json::json!("IAD");
+    let upper_case = validate_record(serde_json::from_value(wire).expect("wire record"))
+        .expect("case canonicalization");
+    assert_eq!(store.stage(&upper_case).await, Ok(StageOutcome::Deduped));
+    let canonical_winner: (String, String) = canonical
+        .db
+        .lock()
+        .expect("sqlite lock")
+        .query_row(
+            "SELECT region, request_id FROM usage_event_staging WHERE tenant_id = ?1 AND request_id = ?2",
+            [tenant_a(), key.clone()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("canonical durable winner");
+    assert_eq!(canonical_winner, ("iad".to_owned(), key));
 
     let lost_ack = Fixture::new();
     let store = lost_ack.store();
