@@ -30,7 +30,7 @@ def violations(service: str, tests: str, proto: str, routes: str) -> list[str]:
         "REAPI_ACTION_RESULT_MAX_SERIALIZED_BYTES",
         "Code::AlreadyExists",
         "execution_capabilities: None",
-        "DigestFunction::Sha256 as i32",
+        "digest_function::Value::Sha256 as i32",
         "update_enabled: true",
     )
     for item in required_service:
