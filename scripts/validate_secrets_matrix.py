@@ -313,6 +313,9 @@ B245_SCOPE_METADATA_FILES = frozenset(
     {
         "scripts/validate_secrets_matrix.py",
         "scripts/verify_b245_secrets_matrix.py",
+        # This isolated-lane unit test injects a dummy token string into a
+        # mocked environment; it never consumes the owner-provisioned secret.
+        "tests/test_b105_isolated_lane_behavior.py",
     }
 )
 
