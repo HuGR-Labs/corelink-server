@@ -390,6 +390,36 @@ class OwnerActionPacketTests(unittest.TestCase):
                 with self.assertRaises(MODULE.PacketError):
                     MODULE.check_data(self.data, "B-083")
 
+    def test_b083_owner_packet_lifecycle_contract_rejects_omissions(self) -> None:
+        self.assertEqual(MODULE.check_data(self.data, "B-083"), {"items": 29, "population": 29})
+        mutations = (
+            ("procedure", 0, "sha256 image digest", "image digest"),
+            ("procedure", 1, "distinct isolated test tenant", "one test tenant"),
+            ("procedure", 2, "durable audit receipt sink", "audit record"),
+            ("procedure", 3, "provider failure with bounded retry", "provider retry"),
+            ("procedure", 4, "no more than five minutes", "bounded timing"),
+            ("procedure", 5, "ten lifecycle keys", "lifecycle keys"),
+            ("procedure", 6, "keep #1653 open", "#1653 complete"),
+            ("credentials", None, "repository action never creates, imports, rotates, disables, schedules deletion for, or cleans up a provider resource", "repository action is bounded"),
+            ("postcondition", None, "run_loop revoke/restore p99 is at most five minutes", "revoke/restore p99 is bounded"),
+            ("retry", None, "provider mutation, rollback, or cleanup is separately authorized", "provider work is authorized"),
+        )
+        for field, index, before, after in mutations:
+            with self.subTest(field=field, index=index, before=before):
+                mutated = copy.deepcopy(self.data)
+                item = next(entry for entry in mutated["items"] if entry["id"] == "B-083")
+                if field == "procedure":
+                    item[field][index] = item[field][index].replace(before, after, 1)
+                elif field == "credentials":
+                    boundary = item["inputs_and_credentials_boundary"]
+                    boundary["credentials"] = boundary["credentials"].replace(before, after, 1)
+                elif field == "postcondition":
+                    item["expected_postcondition"] = item["expected_postcondition"].replace(before, after, 1)
+                else:
+                    item["retry_and_rollback"] = item["retry_and_rollback"].replace(before, after, 1)
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(mutated, "B-083")
+
     def test_b097_read_only_capture_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence
         record = copy.deepcopy(original(MODULE.B097_EVIDENCE_PATH, MODULE.B097_EVIDENCE_REQUIRED_FIELDS, "B-097"))
