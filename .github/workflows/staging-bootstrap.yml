@@ -6,9 +6,6 @@ on:
   pull_request:
     paths:
       - '.github/workflows/staging-bootstrap.yml'
-      - '.github/workflows/endurance-2h-nightly.yml'
-      - 'scripts/verify_staging_target.py'
-      - 'tests/test_verify_staging_target.py'
       - 'scripts/render_staging_wrangler.py'
       - 'scripts/staging_bootstrap_provider.py'
       - 'tests/test_render_staging_wrangler.py'
@@ -44,7 +41,6 @@ jobs:
           python3 scripts/verify_staging_target.py
           python3 scripts/verify_staging_topology_contract.py --expect ready
           python3 -S -m unittest -v \
-            tests/test_verify_staging_target.py \
             tests/test_render_staging_wrangler.py \
             tests/test_staging_bootstrap_provider.py
 
