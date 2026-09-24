@@ -10675,7 +10675,8 @@ o Dockerfile embarca explicitamente `byok-aws-real`, e a ativação consulta o K
 (incluindo `check_access`) antes de qualquer escrita D1. Não há sucesso simulado, nem
 fallback plaintext/XOR. Credenciais AWS, endpoint e evidência de execução contra o KMS
 do owner continuam requisitos operacionais separados; por isso o item permanece `open`
-até o owner fornecer essa evidência e o binário ligar o `run_loop` de revogação.
+até o owner fornecer recibos do ciclo de vida, incluindo a medição de revogação do
+`run_loop` no binário de produção.
 
 Registro histórico do estado pré-D03 (verificado no código de 2026-08-30; não descreve
 os bytes atuais):
@@ -10891,8 +10892,9 @@ verify-means: |
   `tests/test_verify_b083_byok.py` executes this exact verifier in a temporary tree
   and requires the feature-removal Dockerfile mutant to fail with the named
   provider-selection error.
-  This gate intentionally does not claim owner credentials, live KMS execution, or
-  revocation-loop wiring; those remain separate closure evidence.
+  This gate intentionally does not claim owner credentials, live KMS execution, or a
+  measured production revocation p99; those remain separate closure evidence. Production
+  `run_loop` wiring is verified independently by `scripts/verify_b083_revocation_wiring.py`.
 
   The remainder of this block is retained as historical pre-D03 mutation evidence.
 
