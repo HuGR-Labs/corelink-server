@@ -93,6 +93,14 @@ pub(super) const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "dsr_erasure_log",
     "dsr_requested",
     "dsr_tickets",
+    // Migration 0145's redrive envelope is short-lived recovery authority,
+    // not ordinary tenant operational state: preserving it through the DSR
+    // lets the bounded one-time retry complete and keeps its operator/approval
+    // references associated with the transition audit. The worker removes
+    // the envelope and linked audit rows together at the frozen seven-day TTL
+    // (issue #2166); this is a bounded accountability exception under
+    // ADR-S11-013, not indefinite subject-data retention.
+    "dsr_dlq_redrive_envelopes",
     "dpa_acceptances",
     "erasure_attestations",
     "audit_outbox",
