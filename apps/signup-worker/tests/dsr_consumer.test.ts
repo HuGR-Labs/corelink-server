@@ -626,3 +626,104 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(alreadyCapped.ack).toHaveBeenCalledOnce();
   });
 });
+
+describe("handleDsrDlqRedrive (receipt-bound authority)", () => {
+  const eventId = `dsr-erasure-dlq:${"a".repeat(64)}`;
+  const secret = "r".repeat(32);
+  const envelope = {
+    dsr_id: "00000000-0000-7000-8000-000000000001",
+    tenant_id: "00000000-0000-7000-8000-000000000002",
+    queued_at_ms: 1,
+    legal_hold: 1,
+    requeue_count: 0,
+  };
+  class Recovery implements RedriveStore {
+    state: "ready" | "claimed" | "ambiguous" | "submitted" | "expired" = "ready";
+    readonly audit: string[] = [];
+    cleanupCalls = 0;
+    allowFence = true;
+    async capture(): Promise<boolean> { return true; }
+    async claim(): Promise<"claimed" | "expired" | "denied"> {
+      if (this.state === "expired") return "expired";
+      if (this.state !== "ready") return "denied";
+      this.state = "claimed";
+      this.audit.push("claimed");
+      return "claimed";
+    }
+    async envelope() { return this.state === "claimed" ? envelope : null; }
+    async fence(): Promise<boolean> {
+      if (!this.allowFence || this.state !== "claimed") return false;
+      this.state = "ambiguous";
+      this.audit.push("ambiguous");
+      return true;
+    }
+    async submitted(): Promise<void> {
+      if (this.state !== "ambiguous") throw new Error("submit_without_fence");
+      this.state = "submitted";
+      this.audit.push("submitted");
+    }
+    async ambiguous(): Promise<void> { this.state = "ambiguous"; }
+    async cleanup(): Promise<void> { this.cleanupCalls += 1; }
+  }
+  function request(body: unknown = { event_id: eventId }, auth = secret): Request {
+    return new Request("https://signup/internal/dsr/dlq/redrive", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${auth}`,
+        "x-corelink-operator-ref": "op_2166",
+        "x-corelink-approval-ref": "apr_2166",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+  function env(store: Recovery, send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined)) {
+    return {
+      DSR_DLQ_REDRIVE_AUTH_KEY: secret,
+      ERASURE_SALT_KEY: secret,
+      ENVIRONMENT: "prod",
+      DSR_DLQ_REDRIVE: store,
+      DSR_QUEUE: { send },
+    };
+  }
+
+  it("rejects substitute credential, tenant body, expired, claimed, and no-envelope receipts", async () => {
+    const store = new Recovery();
+    const e = env(store);
+    expect((await handleDsrDlqRedrive(request({ event_id: eventId, tenant_id: envelope.tenant_id }), e)).status).toBe(400);
+    expect((await handleDsrDlqRedrive(request(undefined, "shared-key"), e)).status).toBe(401);
+    store.state = "expired";
+    expect((await handleDsrDlqRedrive(request(), e)).status).toBe(410);
+    store.state = "claimed";
+    expect((await handleDsrDlqRedrive(request(), e)).status).toBe(409);
+    store.state = "ready";
+    vi.spyOn(store, "envelope").mockResolvedValueOnce(null);
+    expect((await handleDsrDlqRedrive(request(), e)).status).toBe(409);
+  });
+
+  it("uses stored tenant, fences before one send, audits transitions, and invokes cleanup", async () => {
+    const store = new Recovery();
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const e = env(store, send);
+    expect((await handleDsrDlqRedrive(request(), e)).status).toBe(202);
+    expect((await handleDsrDlqRedrive(request(), e)).status).toBe(409);
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ tenant_id: envelope.tenant_id, subject_id: envelope.tenant_id, legal_hold: true, _dlq_requeue: 1 });
+    expect(store.audit).toEqual(["claimed", "ambiguous", "submitted"]);
+    expect(store.cleanupCalls).toBeGreaterThan(0);
+    expect(JSON.stringify(store)).not.toContain("erasure_salt_hex");
+  });
+
+  it("denies absent fence and retains ambiguous send without a duplicate", async () => {
+    const denied = new Recovery();
+    denied.allowFence = false;
+    const deniedSend = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    expect((await handleDsrDlqRedrive(request(), env(denied, deniedSend))).status).toBe(409);
+    expect(deniedSend).not.toHaveBeenCalled();
+    const ambiguous = new Recovery();
+    const failedSend = vi.fn<(message: unknown) => Promise<void>>(async () => { throw new Error("provider response"); });
+    expect((await handleDsrDlqRedrive(request(), env(ambiguous, failedSend))).status).toBe(502);
+    expect((await handleDsrDlqRedrive(request(), env(ambiguous, failedSend))).status).toBe(409);
+    expect(failedSend).toHaveBeenCalledOnce();
+    expect(ambiguous.state).toBe("ambiguous");
+  });
+});

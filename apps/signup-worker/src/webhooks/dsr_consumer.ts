@@ -679,8 +679,8 @@ export async function handleDsrDlqRedrive(request: Request, env: DsrDlqEnv): Pro
   try { parsed = await request.json(); } catch { return redriveResponse(400, "invalid_receipt"); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || Object.keys(parsed).length !== 1) return redriveResponse(400, "invalid_receipt");
   const eventId = (parsed as { event_id?: unknown }).event_id;
-  if (typeof eventId !== "string" || !EVENT_ID_RE.test(eventId) || !env.CONFIG_DB || !env.DSR_QUEUE) return redriveResponse(400, "invalid_receipt");
-  const store = env.DSR_DLQ_REDRIVE ?? new D1RedriveStore(env.CONFIG_DB);
+  if (typeof eventId !== "string" || !EVENT_ID_RE.test(eventId) || (!env.CONFIG_DB && !env.DSR_DLQ_REDRIVE) || !env.DSR_QUEUE) return redriveResponse(400, "invalid_receipt");
+  const store = env.DSR_DLQ_REDRIVE ?? new D1RedriveStore(env.CONFIG_DB!);
   const nowMs = Date.now();
   try { await store.cleanup(nowMs); } catch { return redriveResponse(503, "unavailable"); }
   let claimed: "claimed" | "expired" | "denied";
