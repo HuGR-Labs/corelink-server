@@ -148,7 +148,7 @@ jobs:
           query_id="$(aws cloudtrail start-query --query-statement "$query" --query QueryId --output text)"
           trail_event=''
           delete_event=''
-          for attempt in $(seq 1 20); do
+          for _ in $(seq 1 20); do
             aws cloudtrail get-query-results --query-id "$query_id" > "$RUNNER_TEMP/cloudtrail-data-events.json"
             query_status="$(jq -r '.QueryStatus' "$RUNNER_TEMP/cloudtrail-data-events.json")"
             test "$query_status" != FAILED -a "$query_status" != CANCELLED -a "$query_status" != TIMED_OUT

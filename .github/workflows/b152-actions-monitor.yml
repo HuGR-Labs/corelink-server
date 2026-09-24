@@ -64,6 +64,7 @@ jobs:
               "status": report.get("causal_classification", {}).get("status", report.get("status", "indeterminate")),
               "run_count": report.get("run_count"),
               "failed_run_count": report.get("failed_run_count"),
+              "run_classification_counts": report.get("run_classification_counts", {}),
               "window_job_count": len(report.get("window_jobs", [])),
               "non_success_run_count": report.get("non_success_run_count"),
           }, sort_keys=True))
