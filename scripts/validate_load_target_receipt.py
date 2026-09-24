@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -118,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True)
     parser.add_argument("--receipt-env", default="K6_TARGET_IDENTITY_RECEIPT")
+    parser.add_argument("--tenant-env")
+    parser.add_argument("--redact-tenant", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args(argv)
@@ -127,10 +130,25 @@ def main(argv: list[str] | None = None) -> int:
     except (json.JSONDecodeError, ReceiptError) as exc:
         print(f"::error::target identity receipt rejected: {exc}")
         return 1
-    args.output.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+    tenant_id = receipt["tenant_id"]
+    if args.tenant_env:
+        configured_tenant = os.environ.get(args.tenant_env, "")
+        if not isinstance(tenant_id, str) or configured_tenant != tenant_id:
+            print("::error::target identity receipt rejected: configured tenant does not match receipt")
+            return 1
+
+    tenant_sha256 = "sha256:" + hashlib.sha256(str(tenant_id).encode("ascii")).hexdigest()
+    artifact_receipt = dict(receipt)
+    if args.redact_tenant:
+        artifact_receipt.pop("tenant_id", None)
+        artifact_receipt["tenant_sha256"] = tenant_sha256
+    args.output.write_text(json.dumps(artifact_receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     if args.github_output:
         with args.github_output.open("a", encoding="utf-8") as output:
             output.write(f"deployment_sha={receipt['deployment_sha']}\n")
+            if args.redact_tenant:
+                output.write(f"tenant_sha256={tenant_sha256}\n")
     print(f"target receipt accepted: target={CANONICAL_TARGET} deployment_sha={receipt['deployment_sha']}")
     return 0
 
