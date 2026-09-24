@@ -1,0 +1,82 @@
+{
+  "SKILL": {
+    "kind": "skill",
+    "profile": "S",
+    "template_mode": true,
+    "metrics": {
+      "lines": 80,
+      "words": 336,
+      "bytes": 3008
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "full YAML syntax",
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility"
+    ]
+  },
+  "REFERENCE": {
+    "kind": "reference",
+    "profile": "S",
+    "template_mode": true,
+    "metrics": {
+      "lines": 119,
+      "words": 425,
+      "bytes": 4128
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "full YAML syntax",
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility"
+    ]
+  },
+  "BLAST_RADIUS": {
+    "kind": "blast_radius",
+    "profile": "S",
+    "template_mode": true,
+    "metrics": {
+      "lines": 87,
+      "words": 371,
+      "bytes": 3724
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "full YAML syntax",
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility"
+    ]
+  },
+  "MAINTENANCE": {
+    "kind": "maintenance",
+    "profile": "S",
+    "template_mode": true,
+    "metrics": {
+      "lines": 85,
+      "words": 331,
+      "bytes": 3427
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "full YAML syntax",
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility"
+    ]
+  }
+}

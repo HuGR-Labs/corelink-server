@@ -1,6 +1,16 @@
 {
   "schema_version": 1,
   "captured_at": "2026-09-22T15:00:00Z",
+  "evidence_mode": "FIXTURE_READINESS_ONLY",
+  "authority_roles": [
+    "SRE executor",
+    "Security approver"
+  ],
+  "non_material_references": [
+    "docs/internal/secrets-checklist.md#245-audit-chain-link-key-keyring",
+    "docs/internal/secrets-checklist.md#257-audit-chain-signing-trust-root-public-keys",
+    "specs/04_sprints/S09/work_items/WI-S09-007-keyed-audit-chain-epoch.md#required-implementation-proof-and-residual-blockers"
+  ],
   "legacy_epoch": {
     "algorithm_version": "E0/unkeyed",
     "row_count": null,
@@ -55,6 +65,21 @@
     "status": "BLOCKED",
     "reference": null,
     "blocker": "Signing-key custody and write-only rotation are owner-controlled operations and were not authorized or attempted."
+  },
+  "revocation_recovery": {
+    "status": "NOT_EXECUTED",
+    "reference": null,
+    "blocker": "No protected ceremony exercised historic-key revocation, recovery, or fail-closed restoration."
+  },
+  "retention": {
+    "status": "NOT_EXECUTED",
+    "reference": null,
+    "blocker": "No immutable retention readback or deletion probe established the full audit-retention lifetime."
+  },
+  "audit_linkage": {
+    "status": "NOT_EXECUTED",
+    "reference": null,
+    "blocker": "No executed ceremony receipt links key ids and commitments to the retained audit record."
   },
   "rollback_plan": {
     "status": "NOT_EXECUTED",

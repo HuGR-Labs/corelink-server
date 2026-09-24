@@ -163,9 +163,11 @@ B110_PROCEDURE = [
 # cannot be mistaken for a production success.
 B054_EVIDENCE_PATH = "evidence/owner-actions/B-054/keyed-audit-epoch-rollout.json"
 B054_EVIDENCE_REQUIRED_FIELDS = [
-    "schema_version", "captured_at", "legacy_epoch", "keyed_epoch",
+    "schema_version", "captured_at", "evidence_mode", "authority_roles",
+    "non_material_references", "legacy_epoch", "keyed_epoch",
     "two_person_administration", "migration_receipts", "witness_receipt", "archive_verification",
-    "rotation_receipt", "rollback_plan", "operator", "repository_checks",
+    "rotation_receipt", "revocation_recovery", "retention", "audit_linkage",
+    "rollback_plan", "operator", "repository_checks",
 ]
 B083_EVIDENCE_PATH = "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"
 B083_EVIDENCE_REQUIRED_FIELDS = [
@@ -690,6 +692,16 @@ def _check_b054_evidence(item: dict[str, object]) -> None:
     record = _read_json_evidence(B054_EVIDENCE_PATH, B054_EVIDENCE_REQUIRED_FIELDS, "B-054")
     if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
         raise PacketError("B-054 evidence capture metadata drifted")
+    if record["evidence_mode"] != "FIXTURE_READINESS_ONLY":
+        raise PacketError("B-054 evidence must identify fixture/readiness scope")
+    if record["authority_roles"] != ["SRE executor", "Security approver"]:
+        raise PacketError("B-054 authority roles drifted")
+    if record["non_material_references"] != [
+        "docs/internal/secrets-checklist.md#245-audit-chain-link-key-keyring",
+        "docs/internal/secrets-checklist.md#257-audit-chain-signing-trust-root-public-keys",
+        "specs/04_sprints/S09/work_items/WI-S09-007-keyed-audit-chain-epoch.md#required-implementation-proof-and-residual-blockers",
+    ]:
+        raise PacketError("B-054 non-material references drifted")
     expected_epochs = {
         "legacy_epoch": ("E0/unkeyed", "NOT_EXECUTED"),
         "keyed_epoch": ("E1/keyed", "BLOCKED"),
@@ -749,11 +761,17 @@ def _check_b054_evidence(item: dict[str, object]) -> None:
         "witness_receipt": "BLOCKED",
         "archive_verification": "NOT_EXECUTED",
         "rotation_receipt": "BLOCKED",
+        "revocation_recovery": "NOT_EXECUTED",
+        "retention": "NOT_EXECUTED",
+        "audit_linkage": "NOT_EXECUTED",
     }
     for name, fields in {
         "witness_receipt": {"status", "reference", "blocker"},
         "archive_verification": {"status", "proof_reference", "blocker"},
         "rotation_receipt": {"status", "reference", "blocker"},
+        "revocation_recovery": {"status", "reference", "blocker"},
+        "retention": {"status", "reference", "blocker"},
+        "audit_linkage": {"status", "reference", "blocker"},
     }.items():
         nested = _exact_keys(record[name], fields, f"B-054 {name}")
         status = _receipt_status(nested["status"], f"B-054 {name}")
@@ -1375,6 +1393,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     suffix = f", {mutations} mutation(s) rejected" if args.self_test else ""
     print(f"owner-action packet: PASS: {result['items']} item(s), closed population verified{suffix}")
+    if args.id == "B-054":
+        evidence = _read_json_evidence(B054_EVIDENCE_PATH, B054_EVIDENCE_REQUIRED_FIELDS, "B-054")
+        print(
+            "B-054 evidence: "
+            f"{evidence['evidence_mode']}; "
+            f"rotation={evidence['rotation_receipt']['status']}; "
+            f"revocation_recovery={evidence['revocation_recovery']['status']}; "
+            f"retention={evidence['retention']['status']}; "
+            f"audit_linkage={evidence['audit_linkage']['status']}"
+        )
     return 0
 
 

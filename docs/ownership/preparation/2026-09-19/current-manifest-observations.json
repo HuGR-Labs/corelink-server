@@ -1,0 +1,38 @@
+{
+  "schema": "corelink-ownership-current-manifest-observations/1.0",
+  "observations": [
+    {
+      "package": "corelink-audit-chain",
+      "manifest": "crates/corelink-audit-chain/Cargo.toml",
+      "historical_source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5",
+      "historical_manifest_blob": "c0bae127d8b9108670418c7387c7f7db29a5d49a",
+      "historical_manifest_sha256": "7739827389673eeacd4154b77b06b091931f79a6e47e6c351942bd7913560c85",
+      "observed_main_commit": "a577032ab816c1ae5debb2f6ddf29494162f1336",
+      "observed_manifest_blob": "5e10fa204d738dac9a2173eeff365223b938993b",
+      "observed_manifest_sha256": "b82b334d42aeaa4b56ade3be481b350cf0596b464754cace70cc16335b5c67f0",
+      "introduced_by_pull_request": 2347,
+      "introducing_merge_commit": "b9481e08c383532336b8ebfadf44b0e43dc42e36",
+      "manifest_delta": {
+        "added_feature": {
+          "aws-s3-object-lock": [
+            "dep:aws-sdk-s3",
+            "dep:aws-sdk-sts",
+            "dep:aws-types",
+            "dep:tokio"
+          ]
+        },
+        "added_optional_dependencies": [
+          "aws-sdk-s3",
+          "aws-sdk-sts",
+          "aws-types"
+        ]
+      },
+      "evidence_scope": "Manifest declaration only. Does not establish feature selection, build, provider activation or operation, runtime reachability, publication, approval, or deployment.",
+      "feature_activation_proven": false,
+      "runtime_verified": false,
+      "provider_operation_proven": false,
+      "publication_approved": false,
+      "approval_state": "UNASSIGNED"
+    }
+  ]
+}

@@ -1,0 +1,1131 @@
+{
+  "schema": "ownership-manifest-context/1",
+  "scope": "Only listed inspected manifest facts; not complete semantic packets.",
+  "contexts": {
+    "crates/tenant-path/fuzz/Cargo.toml": {
+      "package": "corelink-tenant-path-fuzz",
+      "manifest": "crates/tenant-path/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "aaeeb71ed797939dfa745450b5a4640ef344e579",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/tenant-path/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "derive_prefix",
+          "path": "fuzz_targets/derive_prefix.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "derive_prefix_extended",
+          "path": "fuzz_targets/derive_prefix_extended.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-tenant-path",
+        "libfuzzer-sys",
+        "uuid",
+        "zeroize"
+      ],
+      "risks_to_investigate": [
+        "O manifesto descreve determinismo de prefixos e entradas arbitrárias de paths.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.0.0",
+      "local_dependencies": [
+        {
+          "key": "corelink-tenant-path",
+          "path": "..",
+          "features": []
+        }
+      ],
+      "unsafe_code_declared": "forbid",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/tenant-path/fuzz/Cargo.toml"
+      ]
+    },
+    "crates/corelink-hash/fuzz/Cargo.toml": {
+      "package": "corelink-hash-fuzz",
+      "manifest": "crates/corelink-hash/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "b9f559c2b44629cb7c1d9a18ddc95b2aa38ecbb2",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "digest_parse",
+          "path": "fuzz_targets/digest_parse.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "verify_body",
+          "path": "fuzz_targets/verify_body.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-hash",
+        "libfuzzer-sys",
+        "bytes"
+      ],
+      "risks_to_investigate": [
+        "O manifesto descreve parser de digest e verificação de corpo; o corpus e as asserções ainda precisam de inspeção.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.0.0",
+      "local_dependencies": [
+        {
+          "key": "corelink-hash",
+          "path": "..",
+          "features": []
+        }
+      ],
+      "unsafe_code_declared": "forbid",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-hash/fuzz/Cargo.toml"
+      ]
+    },
+    "crates/corelink-worker/fuzz/Cargo.toml": {
+      "package": "corelink-worker-fuzz",
+      "manifest": "crates/corelink-worker/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "2d3c6cac3b69e9ecb6d29588bfc25028e2a6fcb2",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-worker/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "r2_path",
+          "path": "fuzz_targets/r2_path.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "r2_put_get_roundtrip",
+          "path": "fuzz_targets/r2_put_get_roundtrip.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-worker",
+        "corelink-hash",
+        "corelink-tenant-path",
+        "libfuzzer-sys",
+        "bytes",
+        "uuid",
+        "zeroize",
+        "futures-executor"
+      ],
+      "risks_to_investigate": [
+        "Há três dependências locais explícitas: o escopo não termina apenas na crate-mãe.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.0.0",
+      "local_dependencies": [
+        {
+          "key": "corelink-worker",
+          "path": "..",
+          "features": []
+        },
+        {
+          "key": "corelink-hash",
+          "path": "../../corelink-hash",
+          "features": []
+        },
+        {
+          "key": "corelink-tenant-path",
+          "path": "../../tenant-path",
+          "features": []
+        }
+      ],
+      "unsafe_code_declared": "forbid",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-worker/fuzz/Cargo.toml"
+      ]
+    },
+    "crates/corelink-meta/fuzz/Cargo.toml": {
+      "package": "corelink-meta-fuzz",
+      "manifest": "crates/corelink-meta/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "67d11bdb8fb8751e143301e2da9b8eb79f0165ab",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-meta/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "commit_put_roundtrip",
+          "path": "fuzz_targets/commit_put_roundtrip.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "audit_idempotency",
+          "path": "fuzz_targets/audit_idempotency.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-meta",
+        "corelink-hash",
+        "libfuzzer-sys",
+        "uuid",
+        "futures-executor"
+      ],
+      "risks_to_investigate": [
+        "O manifesto declara também corelink-hash como dependência local.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.0.0",
+      "local_dependencies": [
+        {
+          "key": "corelink-meta",
+          "path": "..",
+          "features": []
+        },
+        {
+          "key": "corelink-hash",
+          "path": "../../corelink-hash",
+          "features": []
+        }
+      ],
+      "unsafe_code_declared": "forbid",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-meta/fuzz/Cargo.toml"
+      ]
+    },
+    "crates/corelink-reapi/fuzz/Cargo.toml": {
+      "package": "corelink-reapi-fuzz",
+      "manifest": "crates/corelink-reapi/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "0be0b179e2442e2e44522b3f483cb636d44ece7f",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-reapi/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "proto_decode_batch_update",
+          "path": "fuzz_targets/proto_decode_batch_update.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": null
+        },
+        {
+          "name": "audit_request_id_total",
+          "path": "fuzz_targets/audit_request_id_total.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": null
+        },
+        {
+          "name": "parse_read_resource_name",
+          "path": "fuzz_targets/parse_read_resource_name.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": null
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-reapi",
+        "libfuzzer-sys",
+        "prost"
+      ],
+      "risks_to_investigate": [
+        "Este manifesto usa versão 0.1.0 e não declara bench=false nos bins; não copiar defaults dos demais fuzzers.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.1.0",
+      "local_dependencies": [
+        {
+          "key": "corelink-reapi",
+          "path": "..",
+          "features": []
+        }
+      ],
+      "unsafe_code_declared": "forbid",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-reapi/fuzz/Cargo.toml"
+      ]
+    },
+    "crates/corelink-client-verify/fuzz/Cargo.toml": {
+      "package": "corelink-client-verify-fuzz",
+      "manifest": "crates/corelink-client-verify/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "7ee20e2fda1293652cc61956564417fba67b2047",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-client-verify/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "verify_sync",
+          "path": "fuzz_targets/verify_sync.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "verify_ffi",
+          "path": "fuzz_targets/verify_ffi.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-client-verify",
+        "libfuzzer-sys",
+        "hex"
+      ],
+      "risks_to_investigate": [
+        "O harness permite unsafe explicitamente e habilita stream+ffi; não impor forbid nem confundir a política com a da library.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.0.0",
+      "local_dependencies": [
+        {
+          "key": "corelink-client-verify",
+          "path": "..",
+          "features": [
+            "stream",
+            "ffi"
+          ]
+        }
+      ],
+      "unsafe_code_declared": "allow",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-client-verify/fuzz/Cargo.toml"
+      ]
+    },
+    "crates/corelink-byok/fuzz/Cargo.toml": {
+      "package": "corelink-byok-fuzz",
+      "manifest": "crates/corelink-byok/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "c2a1247a566e6b95baf3352dc8bef9f8cf41374e",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-byok/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "wrapped_dek_parse",
+          "path": "fuzz_targets/wrapped_dek_parse.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "envelope_roundtrip",
+          "path": "fuzz_targets/envelope_roundtrip.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-byok",
+        "libfuzzer-sys",
+        "serde_json",
+        "arbitrary",
+        "tokio",
+        "async-trait"
+      ],
+      "risks_to_investigate": [
+        "O manifesto descreve parse/decrypt e roundtrip; verificar a implementação antes de atribuir cobertura a um provider KMS.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.0.0",
+      "local_dependencies": [
+        {
+          "key": "corelink-byok",
+          "path": "..",
+          "features": []
+        }
+      ],
+      "unsafe_code_declared": "forbid",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-byok/fuzz/Cargo.toml"
+      ]
+    },
+    "crates/corelink-audit-chain/fuzz/Cargo.toml": {
+      "package": "corelink-audit-chain-fuzz",
+      "manifest": "crates/corelink-audit-chain/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "f89476fb6d1ed518398f041435f06e7cab05124f",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-audit-chain/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "merkle_append",
+          "path": "fuzz_targets/merkle_append.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "jcs_canonicalize",
+          "path": "fuzz_targets/jcs_canonicalize.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-audit-chain",
+        "corelink-analytics",
+        "libfuzzer-sys",
+        "serde_json",
+        "serde_jcs",
+        "uuid"
+      ],
+      "risks_to_investigate": [
+        "Há dependência local adicional em corelink-analytics; ela precisa aparecer na visão direta do blast radius.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.0.0",
+      "local_dependencies": [
+        {
+          "key": "corelink-audit-chain",
+          "path": "..",
+          "features": []
+        },
+        {
+          "key": "corelink-analytics",
+          "path": "../../corelink-analytics",
+          "features": []
+        }
+      ],
+      "unsafe_code_declared": "forbid",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-audit-chain/fuzz/Cargo.toml"
+      ]
+    },
+    "crates/corelink-ac/fuzz/Cargo.toml": {
+      "package": "corelink-ac-fuzz",
+      "manifest": "crates/corelink-ac/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "d84afdbf77e3ffdc31d5c58b72ed40f2b45951c7",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ac/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "hkdf_expand",
+          "path": "fuzz_targets/hkdf_expand.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "libfuzzer-sys",
+        "hkdf",
+        "sha2"
+      ],
+      "risks_to_investigate": [
+        "Não existe dependência Cargo direta em corelink-ac neste manifesto. A associação pelo diretório não comprova exercício da implementação da crate-mãe.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.0.0",
+      "local_dependencies": [],
+      "unsafe_code_declared": "forbid",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-ac/fuzz/Cargo.toml"
+      ]
+    },
+    "tools/cli/fuzz/Cargo.toml": {
+      "package": "corelink-cli-fuzz",
+      "manifest": "tools/cli/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "239da43bfd77a6b9a43b4c4074807dfc1d57ef45",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/cli/fuzz/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "[workspace] próprio presente.",
+        "[package.metadata] declara cargo-fuzz=true.",
+        "publish=false; edition=2021; license=UNLICENSED.",
+        "Associação ao diretório pai é ownership estrutural, não prova de dependência ou cobertura."
+      ],
+      "explicit_targets": [
+        {
+          "name": "cli_input",
+          "path": "fuzz_targets/cli_input.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "config_toml",
+          "path": "fuzz_targets/config_toml.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "json_deserialize",
+          "path": "fuzz_targets/json_deserialize.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "auth_resolution",
+          "path": "fuzz_targets/auth_resolution.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        },
+        {
+          "name": "secret_redaction_check",
+          "path": "fuzz_targets/secret_redaction_check.rs",
+          "kind": "bin",
+          "test": false,
+          "doc": false,
+          "bench_declared": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-cli",
+        "libfuzzer-sys",
+        "arbitrary",
+        "toml",
+        "serde_json"
+      ],
+      "risks_to_investigate": [
+        "Workspace independente fora dos nove excludes iniciais. O manifesto usa toml 0.8, enquanto a CLI declara toml 1.1: inspecionar qual parser cada target exercita.",
+        "Verificar corpus, entradas realmente consumidas, timeout/memória, reprodução e minimização local; nenhum fuzz target foi executado nesta rodada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "workspace_is_independent": true,
+      "version": "0.0.0",
+      "local_dependencies": [
+        {
+          "key": "corelink-cli",
+          "path": "..",
+          "features": []
+        }
+      ],
+      "unsafe_code_declared": "forbid",
+      "initial_commands": [
+        "cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path tools/cli/fuzz/Cargo.toml"
+      ]
+    },
+    "tools/cli/Cargo.toml": {
+      "package": "corelink-cli",
+      "manifest": "tools/cli/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "2f3f66a1b313588c0f4462084c59db254486134e",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/cli/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Package corelink-cli; library corelink_cli; binário corelink.",
+        "O manifesto declara wiremock 0.6 para testes locais. Isso não comprova a execução dos testes."
+      ],
+      "explicit_targets": [
+        {
+          "name": "corelink_cli",
+          "path": "src/lib.rs",
+          "kind": "lib"
+        },
+        {
+          "name": "corelink",
+          "path": "src/main.rs",
+          "kind": "bin"
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-pat",
+        "corelink-runbook-tracker",
+        "corelink-audit-chain",
+        "corelink-analytics"
+      ],
+      "risks_to_investigate": [
+        "Preservar a distinção entre package e executável ao documentar instalação, comandos e gates.",
+        "Examinar o fuzzer independente tools/cli/fuzz e a seleção dos parsers; não presumir versões transitivas iguais."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "tools/sdks/python/Cargo.toml": {
+      "package": "corelink-py",
+      "manifest": "tools/sdks/python/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "3b9bde7367978020f29d276f1f72c397c3c13bfe",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sdks/python/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Package corelink-py; library corelink_py; crate-type cdylib.",
+        "Feature extension-module encaminha pyo3/extension-module; default=[]. publish=false no manifesto Cargo."
+      ],
+      "explicit_targets": [
+        {
+          "name": "corelink_py",
+          "path": null,
+          "kind": "lib",
+          "crate_types": [
+            "cdylib"
+          ]
+        }
+      ],
+      "declared_dependency_keys": [
+        "pyo3",
+        "corelink-client-verify",
+        "tracing"
+      ],
+      "risks_to_investigate": [
+        "Não tratar um check Rust sem a feature extension-module como validação da extensão Python.",
+        "Path implícito e targets automáticos devem ser confirmados por Cargo; distribuição PyPI não foi inspecionada."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "tools/sdks/go/Cargo.toml": {
+      "package": "corelink-go",
+      "manifest": "tools/sdks/go/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "9413ad8e7d71ff12dd02964151ca0c5b0a637de0",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sdks/go/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Package corelink-go; library corelink_go; crate-types cdylib e staticlib.",
+        "A dependência corelink-client-verify habilita ffi; publish=false no manifesto Cargo."
+      ],
+      "explicit_targets": [
+        {
+          "name": "corelink_go",
+          "path": null,
+          "kind": "lib",
+          "crate_types": [
+            "cdylib",
+            "staticlib"
+          ]
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-client-verify",
+        "tracing"
+      ],
+      "risks_to_investigate": [
+        "Documentar as duas formas de link e seus consumidores cgo reais; o manifesto não prova ABI nem distribuição.",
+        "Path implícito e targets automáticos continuam sujeitos ao censo Cargo."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "tools/sbom-publish/Cargo.toml": {
+      "package": "sbom-publish",
+      "manifest": "tools/sbom-publish/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "d314f370f0d40e2aed897a340d72ae17ee2db611",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sbom-publish/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Package sbom-publish; library sbom_publish; binário sbom-publish."
+      ],
+      "explicit_targets": [
+        {
+          "name": "sbom_publish",
+          "path": "src/lib.rs",
+          "kind": "lib"
+        },
+        {
+          "name": "sbom-publish",
+          "path": "src/main.rs",
+          "kind": "bin"
+        }
+      ],
+      "declared_dependency_keys": [],
+      "risks_to_investigate": [
+        "O trecho de manifesto inspecionado cobre identidades e entradas, não todas as dependências ou operações de publicação."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "tools/dt-cli/Cargo.toml": {
+      "package": "corelink-dt-cli",
+      "manifest": "tools/dt-cli/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "e1635058e4eb9c79790cf64f2a2d4bca5ad2ee36",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/dt-cli/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Package e binário corelink-dt-cli; entrada explícita src/main.rs."
+      ],
+      "explicit_targets": [
+        {
+          "name": "corelink-dt-cli",
+          "path": "src/main.rs",
+          "kind": "bin"
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-dt-webhook"
+      ],
+      "risks_to_investigate": [
+        "Distinguir comandos de diagnóstico de injeção/replay/operação externa; nomes de subcomandos não concedem autorização."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "tools/dt-reconcile/Cargo.toml": {
+      "package": "corelink-dt-reconcile",
+      "manifest": "tools/dt-reconcile/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "1f0730263886e0639bd808ee3a5ccf2d0a0524ca",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/dt-reconcile/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Package e binário corelink-dt-reconcile; entrada explícita src/main.rs."
+      ],
+      "explicit_targets": [
+        {
+          "name": "corelink-dt-reconcile",
+          "path": "src/main.rs",
+          "kind": "bin"
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-dt-webhook"
+      ],
+      "risks_to_investigate": [
+        "Distinguir comandos de diagnóstico de injeção/replay/operação externa; nomes de subcomandos não concedem autorização."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "apps/migrate-single-to-multi-region/Cargo.toml": {
+      "package": "migrate-single-to-multi-region",
+      "manifest": "apps/migrate-single-to-multi-region/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "4063bebc8ff6c3782512e15315638248d77c927d",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/apps/migrate-single-to-multi-region/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Package e binário migrate-single-to-multi-region; entrada src/main.rs."
+      ],
+      "explicit_targets": [
+        {
+          "name": "migrate-single-to-multi-region",
+          "path": "src/main.rs",
+          "kind": "bin"
+        }
+      ],
+      "declared_dependency_keys": [],
+      "risks_to_investigate": [
+        "O manifesto descreve dry-run, execute e rollback; verificar cada implementação e suas permissões antes de certificar recuperação."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "tools/openapi/Cargo.toml": {
+      "package": "corelink-openapi",
+      "manifest": "tools/openapi/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "acac2c04012fd987435ecb8f2c11cd4025d67e41",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/openapi/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Package corelink-openapi; o manifesto descreve constants e embedding do contrato OpenAPI YAML/JSON."
+      ],
+      "explicit_targets": [],
+      "declared_dependency_keys": [],
+      "risks_to_investigate": [
+        "Confirmar fonte canônica, arquivo gerado e consumidores; não confundir os dois formatos com duas autoridades."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "tests/e2e-billing-flow/Cargo.toml": {
+      "package": "e2e-billing-flow",
+      "manifest": "tests/e2e-billing-flow/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "1ae56c9eb087110cfe2ead4cf657d0f87cf8fcc4",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-billing-flow/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "publish=false; library em src/lib.rs; teste explícito end_to_end.",
+        "O manifesto descreve BillingHarness in-memory; não é evidência de Stripe/D1 real."
+      ],
+      "explicit_targets": [
+        {
+          "name": null,
+          "path": "src/lib.rs",
+          "kind": "lib"
+        },
+        {
+          "name": "end_to_end",
+          "path": "tests/end_to_end.rs",
+          "kind": "test"
+        }
+      ],
+      "declared_dependency_keys": [
+        "corelink-signup",
+        "corelink-tier-selection",
+        "corelink-billing-stripe",
+        "corelink-dsr",
+        "hex",
+        "sha2",
+        "uuid",
+        "thiserror"
+      ],
+      "risks_to_investigate": [
+        "Documentar quais implementações e efeitos os doubles realmente exercitam; não chamar esta composição de prova produtiva."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "crates/corelink-billing-stripe-traits/Cargo.toml": {
+      "package": "corelink-billing-stripe-traits",
+      "manifest": "crates/corelink-billing-stripe-traits/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "dfd9a5821ee5d95bab3110266222e683a95b3f11",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-stripe-traits/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Manifesto sem dependência direta corelink-*; chaves declaradas serde, serde_json, blake3 e hex.",
+        "O manifesto descreve ports da materialização e reexports de compatibilidade em stripe-real; conferir o código antes de assumir todos os símbolos."
+      ],
+      "explicit_targets": [],
+      "declared_dependency_keys": [
+        "serde",
+        "serde_json",
+        "blake3",
+        "hex"
+      ],
+      "risks_to_investigate": [
+        "Não reintroduzir dependência concreta de transporte ao documentar o ownership dos ports.",
+        "Separar dono dos tipos/traits, reexport de compatibilidade, materializador e composition root."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "crates/corelink-billing/Cargo.toml": {
+      "package": "corelink-billing",
+      "manifest": "crates/corelink-billing/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "225860c6b6d03b7ad7bd16e11428f2b48599ee12",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Manifesto declara dependências para reexports e dependências dos módulos absorvidos.",
+        "Leitura anterior de src/lib.rs documenta cinco absorções; aggregator.rs contém pub use corelink_billing_aggregator::*."
+      ],
+      "explicit_targets": [],
+      "declared_dependency_keys": [
+        "corelink-billing-aggregator",
+        "corelink-billing-emit",
+        "corelink-billing-reconcile",
+        "corelink-billing-stripe",
+        "corelink-billing-stripe-materializer",
+        "corelink-stripe-real",
+        "corelink-billing-stripe-traits",
+        "corelink-tier-selection",
+        "corelink-rate-headers",
+        "corelink-ratelimit",
+        "thiserror",
+        "serde",
+        "serde_json",
+        "uuid",
+        "corelink-eviction"
+      ],
+      "risks_to_investigate": [
+        "Tratar a crate como híbrida: implementação própria e reexports têm owners diferentes.",
+        "As chaves de dependência não certificam seleção por target/features nem agendamento da agregação."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "crates/corelink-billing-aggregator/Cargo.toml": {
+      "package": "corelink-billing-aggregator",
+      "manifest": "crates/corelink-billing-aggregator/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "2530bce59d9f0966fdead36b7fb82013b6957c56",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-aggregator/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Manifesto declara corelink-billing-emit em dependencies e corelink-analytics em dev-dependencies.",
+        "Teste explícito prop_billing_aggregator; a descrição do manifesto separa orquestrador in-memory da integração produtiva adiada."
+      ],
+      "explicit_targets": [
+        {
+          "name": "prop_billing_aggregator",
+          "path": "tests/prop_billing_aggregator.rs",
+          "kind": "test"
+        }
+      ],
+      "declared_dependency_keys": [
+        "thiserror",
+        "serde",
+        "serde_json",
+        "serde_jcs",
+        "blake3",
+        "hex",
+        "uuid",
+        "corelink-billing-emit"
+      ],
+      "risks_to_investigate": [
+        "Não transformar a aresta dev de analytics em chamada produtiva.",
+        "Reexports de billing não demonstram execução por cron. Conferir os pontos reais de construção e agendamento."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false,
+      "dev_dependency_keys": [
+        "proptest",
+        "rand",
+        "rand_chacha",
+        "corelink-analytics"
+      ]
+    },
+    "crates/corelink-hash/Cargo.toml": {
+      "package": "corelink-hash",
+      "manifest": "crates/corelink-hash/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "0b836118960c8f21c50473dc0e37461fd5b47bd7",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Override local: publish=true e license=MIT OR Apache-2.0.",
+        "Dois benches explícitos: blake3_bench e blake3, ambos harness=false; paths não aparecem no manifesto."
+      ],
+      "explicit_targets": [
+        {
+          "name": "blake3_bench",
+          "path": null,
+          "kind": "bench",
+          "harness": false
+        },
+        {
+          "name": "blake3",
+          "path": null,
+          "kind": "bench",
+          "harness": false
+        }
+      ],
+      "declared_dependency_keys": [
+        "blake3",
+        "bytes",
+        "hex",
+        "subtle",
+        "thiserror"
+      ],
+      "risks_to_investigate": [
+        "Não copiar política de publicação/licença do workspace sobre o override local.",
+        "Não usar benchmarks como prova dos contratos de parsing, digest ou verificação."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    },
+    "crates/corelink-container/Cargo.toml": {
+      "package": "corelink-server",
+      "manifest": "crates/corelink-container/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "provider_reported_git_blob": "e9feace6365776c6a4141ff59efa70fe1b36e158",
+      "source_url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-container/Cargo.toml",
+      "evidence_class": "SOURCE",
+      "extraction_method": "Structured transcription of inspected manifest fields; not Cargo metadata.",
+      "facts": [
+        "Diretório corelink-container; package corelink-server; autobins=false.",
+        "Bins explícitos corelink-server e corelink-gc-sweep-production."
+      ],
+      "explicit_targets": [
+        {
+          "name": "corelink-server",
+          "path": "src/main.rs",
+          "kind": "bin"
+        },
+        {
+          "name": "corelink-gc-sweep-production",
+          "path": "src/bin/gc_sweep.rs",
+          "kind": "bin"
+        }
+      ],
+      "declared_dependency_keys": [],
+      "risks_to_investigate": [
+        "Não criar ownership separado por binary; cobrir os dois targets no package.",
+        "Conferir combinações BYOK/target e as duas entradas reais antes de prescrever all-features ou deploy."
+      ],
+      "all_targets_enumerated": false,
+      "resolved_graph_verified": false,
+      "semantic_context_complete": false,
+      "runtime_verified": false
+    }
+  }
+}

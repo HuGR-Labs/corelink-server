@@ -1,0 +1,5158 @@
+{
+  "schema": "corelink-ownership-publication-ledger/1.1",
+  "method": "105 local drafts; identity SOURCE_CONFIRMED at pinned main. All issuance prerequisites remain pending; no GitHub mutations.",
+  "deduplication_registry": {
+    "state": "RECORDED_NOT_PUBLICATION_AUTHORIZATION",
+    "path": "docs/ownership/evidence/revision-1.4/DEDUPE-DECISION-REGISTRY.json",
+    "scope": 105,
+    "counts": {"DISTINCT": 92, "REUSE": 4, "EXPAND": 9, "UNRESOLVED": 0},
+    "evidence": "docs/ownership/evidence/revision-1.4/BACKLOG-DEDUPE-CLOSEOUT-20260922.md"
+  },
+  "items": [
+    {
+      "repository_id": 1232040291,
+      "manifest": "apps/migrate-single-to-multi-region/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/apps__migrate-single-to-multi-region.md",
+      "body_sha256": "392cbfff90185bbbea306dcdd4b2b5c5768608295fb8384f651f00e838357da1",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "migrate-single-to-multi-region",
+        "skill_slug": "own-migrate-single-to-multi-region",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/apps/migrate-single-to-multi-region/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-ac/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-ac.md",
+      "body_sha256": "20bbb94f22cb26864d70cf7567c0e160eb7726118860b12fc4c7dfe48ff8c7aa",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-ac",
+        "skill_slug": "own-corelink-ac",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ac/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-ac/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/crates__corelink-ac__fuzz.md",
+      "body_sha256": "4f52b4b7e771ee6d2588514ef4bd5265d8675fc604fa4ee61ae87f0f26658cee",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-ac-fuzz",
+        "skill_slug": "own-corelink-ac-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ac/fuzz/Cargo.toml#L3-L4"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-adapter-host/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-adapter-host.md",
+      "body_sha256": "9666423b26751d0b3248ca178104b1755b9cb218525cd7330179a276b676c7b0",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-adapter-host",
+        "skill_slug": "own-corelink-adapter-host",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-adapter-host/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-adapters-cloud/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-adapters-cloud.md",
+      "body_sha256": "0424c8962d479764b9c3c61ab682057bcb6dcc782e51a221a68378a38a977a30",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-adapters-cloud",
+        "skill_slug": "own-corelink-adapters-cloud",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-adapters-cloud/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-adapters-vault/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-adapters-vault.md",
+      "body_sha256": "2beb4c120f2f64cb02334651bd28516e7f37c7bcc4b878ab5ff4332eeb254163",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-adapters-vault",
+        "skill_slug": "own-corelink-adapters-vault",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-adapters-vault/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-analytics/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-analytics.md",
+      "body_sha256": "ce0bcc829a5b9d7344dbe41fef1d01f8ecc26cf4674fa31f7ca2c45547014d69",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-analytics",
+        "skill_slug": "own-corelink-analytics",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-analytics/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-audit-chain/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-audit-chain.md",
+      "body_sha256": "fbcd62b78944e7341386b9e342501401a51475b77a5012c88320a58cc2bfac92",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-audit-chain",
+        "skill_slug": "own-corelink-audit-chain",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-audit-chain/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-audit-chain/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/crates__corelink-audit-chain__fuzz.md",
+      "body_sha256": "2f9a1c146906d11cfcc3611b90905ea965254e988344a3430da2140b16231def",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-audit-chain-fuzz",
+        "skill_slug": "own-corelink-audit-chain-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-audit-chain/fuzz/Cargo.toml#L3-L4"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-audit/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-audit.md",
+      "body_sha256": "b88dd89b3e824576c1c59f0f782387a68f7efdf6d5c913b08be6e3fbda349eb0",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-audit",
+        "skill_slug": "own-corelink-audit",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-audit/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-auth/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-auth.md",
+      "body_sha256": "004e095e4ce380371be6c9c02c685b4d5619a3607d3de9e73adb525e0f4eed1c",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-auth",
+        "skill_slug": "own-corelink-auth",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-auth/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-bazel-bridge/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-bazel-bridge.md",
+      "body_sha256": "aaa1f3fed42536f8e70c413772404171e08781f761e71b365f97ad30ab6e9e46",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-bazel-bridge",
+        "skill_slug": "own-corelink-bazel-bridge",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-bazel-bridge/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-billing-aggregator/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-billing-aggregator.md",
+      "body_sha256": "079164f0666033506921f2da2014cd26731e5f0207133759d36184ba244706cd",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-billing-aggregator",
+        "skill_slug": "own-corelink-billing-aggregator",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-aggregator/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-billing-emit/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-billing-emit.md",
+      "body_sha256": "5769a44b49595cb9b2e055b30745aac6b216b06901ef37033a1f225f876c2ad7",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-billing-emit",
+        "skill_slug": "own-corelink-billing-emit",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-emit/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-billing-reconcile/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-billing-reconcile.md",
+      "body_sha256": "be1f1f183f7e38e6c0e3a8525f8b972944e6466a0063a5029d9baf6bfea2f110",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-billing-reconcile",
+        "skill_slug": "own-corelink-billing-reconcile",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-reconcile/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-billing-stripe-materializer/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-billing-stripe-materializer.md",
+      "body_sha256": "a8ff7c4e87060a49fc4a9e5efb6b0f80ae3e8f2e952397ad2dfddda4ea3b6fdd",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-billing-stripe-materializer",
+        "skill_slug": "own-corelink-billing-stripe-materializer",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-stripe-materializer/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-billing-stripe-traits/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-billing-stripe-traits.md",
+      "body_sha256": "4e4496b150e428b6d4b6d5ab1c51b7bd37271d98718cc92a611ab85ff67f00bf",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-billing-stripe-traits",
+        "skill_slug": "own-corelink-billing-stripe-traits",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-stripe-traits/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-billing-stripe/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-billing-stripe.md",
+      "body_sha256": "403b24e8bc5aa1f68081eb74a1db0b7ddab42626f0628585e84eab4dad69abf8",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-billing-stripe",
+        "skill_slug": "own-corelink-billing-stripe",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing-stripe/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-billing/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-billing.md",
+      "body_sha256": "a5f0e5db3c1148e52a90c784f4d888b53e2e6809b53b27f48b04fa54b7a43674",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-billing",
+        "skill_slug": "own-corelink-billing",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-billing/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-byok/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-byok.md",
+      "body_sha256": "f412aad306e53332ab81ebf6788fc99ecfa0d51ae4646b98e45a40a5d6882042",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-byok",
+        "skill_slug": "own-corelink-byok",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-byok/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-byok/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/crates__corelink-byok__fuzz.md",
+      "body_sha256": "01ffc50b0bde2fcdb569f661eade36b29886139fb51fca6f88b9380dc7f792f5",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-byok-fuzz",
+        "skill_slug": "own-corelink-byok-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-byok/fuzz/Cargo.toml#L3-L4"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-cas/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-cas.md",
+      "body_sha256": "a04e7aa97314beeecf1f1b15fc4fd2ad8498b7c30955aa5bf61de52756d1f1b9",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-cas",
+        "skill_slug": "own-corelink-cas",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-cas/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-cf-bindings/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-cf-bindings.md",
+      "body_sha256": "8a436a76f4f532958c274b55cd9846453a9fbe0f3ec019a0a331f81736d1f8fc",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-cf-bindings",
+        "skill_slug": "own-corelink-cf-bindings",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-cf-bindings/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-chaos-scheduler/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-chaos-scheduler.md",
+      "body_sha256": "35aa12e50096e5db85b3caff8dc86273fb92482f10300e9b1e04cc5666e93853",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-chaos-scheduler",
+        "skill_slug": "own-corelink-chaos-scheduler",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-chaos-scheduler/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-clerk-cf/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-clerk-cf.md",
+      "body_sha256": "3ec91ae44a2e36a0027474c040dc609a02d486f07412730cdc323a19c6946c14",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-clerk-cf",
+        "skill_slug": "own-corelink-clerk-cf",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-clerk-cf/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-clerk/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-clerk.md",
+      "body_sha256": "13b5caa70af712eecf9104d066c6c80c07f094ef1ee27ae167dbe3afa757de8c",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-clerk",
+        "skill_slug": "own-corelink-clerk",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-clerk/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-client-verify/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-client-verify.md",
+      "body_sha256": "267e58f65af84c008abb2e62bc74e89254860847b18697804b8037a65429d53d",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-client-verify",
+        "skill_slug": "own-corelink-client-verify",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-client-verify/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-client-verify/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/crates__corelink-client-verify__fuzz.md",
+      "body_sha256": "102f544826020f2fca98f1a74a88a0351db3d6df6334fc99ede627110f233d1a",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-client-verify-fuzz",
+        "skill_slug": "own-corelink-client-verify-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-client-verify/fuzz/Cargo.toml#L3-L4"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-config-do/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-config-do.md",
+      "body_sha256": "8c57b3c73badf2d71ccb62b06de53b68ffe5a730a8e2272db77bfeb53d3fe1d2",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-config-do",
+        "skill_slug": "own-corelink-config-do",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-config-do/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-container/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-container.md",
+      "body_sha256": "3e8d67e7b1e0ae91b621d22ac3c6ca6c8f90aa38bed289c8abbda9dd1ac34367",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-server",
+        "skill_slug": "own-corelink-server",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-container/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-core/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-core.md",
+      "body_sha256": "39d0881504c9caf55cbd26ad4f41c444271e08efc4b98352725229ffb17c4589",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-core",
+        "skill_slug": "own-corelink-core",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-core/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-crypto/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-crypto.md",
+      "body_sha256": "d65b5e43085bd7c4c31f3de03c39dffbccdea7f918c92260adf9c6f302b31a8a",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-crypto",
+        "skill_slug": "own-corelink-crypto",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-crypto/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-dpa-acceptance/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-dpa-acceptance.md",
+      "body_sha256": "0969155641510669efd3feba967cd10d7d994e8f9d2894c85d49cc8eb5d8fdb0",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-dpa-acceptance",
+        "skill_slug": "own-corelink-dpa-acceptance",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dpa-acceptance/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-dsr-statuspage-scheduler/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-dsr-statuspage-scheduler.md",
+      "body_sha256": "8cf96ad503a542d1424b8d9729ca7e37c3bfbd1cbd2cfbcc9e52b87ba8cf061c",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-dsr-statuspage-scheduler",
+        "skill_slug": "own-corelink-dsr-statuspage-scheduler",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dsr-statuspage-scheduler/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-dsr/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-dsr.md",
+      "body_sha256": "3356cc83ca39c5f27cb55fbfb139df7ec51bdc436b7a979396f2d0f0bc1a353b",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-dsr",
+        "skill_slug": "own-corelink-dsr",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dsr/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-dt-webhook/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-dt-webhook.md",
+      "body_sha256": "5e34846f82468a6fa0b9e242fa9837ba96154042b60520abee096a4efacfdbb1",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-dt-webhook",
+        "skill_slug": "own-corelink-dt-webhook",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dt-webhook/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-dual-approval/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-dual-approval.md",
+      "body_sha256": "42623411a1e80fdcf79dd50ac4e2888d58bce643cc5dd31e98ebe10c5b4d6a0d",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-dual-approval",
+        "skill_slug": "own-corelink-dual-approval",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-dual-approval/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-enterprise-inquiry/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-enterprise-inquiry.md",
+      "body_sha256": "054d32a02dee10aabc18e7cbc0d5d6902797b56a9c23a3a045e558cc226c4519",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-enterprise-inquiry",
+        "skill_slug": "own-corelink-enterprise-inquiry",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-enterprise-inquiry/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-erasure-attestation/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-erasure-attestation.md",
+      "body_sha256": "a2d1d29438a713c403d47d32e2d5175124d83fdfe3b1d9273877c23267dc55e8",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-erasure-attestation",
+        "skill_slug": "own-corelink-erasure-attestation",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-erasure-attestation/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-eviction/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-eviction.md",
+      "body_sha256": "c4042d9427fddafa0b6516b876ae1a3e8b3b79569b72ef3cdc2ef5c9b1f7b69b",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-eviction",
+        "skill_slug": "own-corelink-eviction",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-eviction/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-failover-router/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-failover-router.md",
+      "body_sha256": "60f91d7b9ecbbaecbbd61994048b09735579a8c117f65a7601f438d9b60d1d5c",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-failover-router",
+        "skill_slug": "own-corelink-failover-router",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-failover-router/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-gc/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-gc.md",
+      "body_sha256": "224c07fa2707b8bd2113c9041f9e0d94ddcfc417e4bd7636dec0b87729d29a15",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-gc",
+        "skill_slug": "own-corelink-gc",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-gc/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-handler-ac/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-handler-ac.md",
+      "body_sha256": "13cc22d971f8a05e45dee571e3f7c160b1712464b0275d2d788a6100df9c6bc7",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-handler-ac",
+        "skill_slug": "own-corelink-handler-ac",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-ac/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-handler-admin/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-handler-admin.md",
+      "body_sha256": "616318fc0c0fdcac9405f9a9988697855b5617863742e6225202ecd9d35fe2a9",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-handler-admin",
+        "skill_slug": "own-corelink-handler-admin",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-admin/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-handler-cas-erase/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-handler-cas-erase.md",
+      "body_sha256": "ead3fce7b2720b3828f51414d253c082afddf7f3ab2c6bb11630b9b9e7581f30",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-handler-cas-erase",
+        "skill_slug": "own-corelink-handler-cas-erase",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-cas-erase/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-handler-cas/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-handler-cas.md",
+      "body_sha256": "a0fc018e7656923cad66ee7d6af5f4c8dc66989441c90cb2e9e45e05329de1f6",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-handler-cas",
+        "skill_slug": "own-corelink-handler-cas",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-cas/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-handler-customer/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-handler-customer.md",
+      "body_sha256": "e7687de546b8e2eb0f51a5dae29e94c896c288115809931bec72f2fcf7c80314",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-handler-customer",
+        "skill_slug": "own-corelink-handler-customer",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-handler-customer/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-hash/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-hash.md",
+      "body_sha256": "0e1846e3162c0a4647a00a46573c63a32e49e5d6c64da2bdf63c6cee13a1657c",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-hash",
+        "skill_slug": "own-corelink-hash",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-hash/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/crates__corelink-hash__fuzz.md",
+      "body_sha256": "f3c19c6ba08a15d457088608f2a262c1bc2470df89f927042c3fdb55d5a7b534",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-hash-fuzz",
+        "skill_slug": "own-corelink-hash-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/fuzz/Cargo.toml#L3-L4"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-meta/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-meta.md",
+      "body_sha256": "61a7b5dc9861c81483d850f66e8200e11e4fe69bbb64af47ce84de78fb283a97",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-meta",
+        "skill_slug": "own-corelink-meta",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-meta/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-meta/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/crates__corelink-meta__fuzz.md",
+      "body_sha256": "9271664e4681c71006a9900f0a1f025008765188126e414ee2501f5e79a96e6d",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-meta-fuzz",
+        "skill_slug": "own-corelink-meta-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-meta/fuzz/Cargo.toml#L3-L4"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-ops/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-ops.md",
+      "body_sha256": "3fd7506f1905c867ef58f3408f9892f1dd69678425436a5e82f4bf044af47279",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-ops",
+        "skill_slug": "own-corelink-ops",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ops/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-pat/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-pat.md",
+      "body_sha256": "3a943e87c84b5afdf5c5ca08aefa68ee5d6b5dfe60002ca37312ee3e0872fdf9",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-pat",
+        "skill_slug": "own-corelink-pat",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-pat/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-privacy-erasure-worker/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-privacy-erasure-worker.md",
+      "body_sha256": "43b3eeaafc5752f47e9895556570a9bb132337f13716d8e26f5d56f532337337",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-privacy-erasure-worker",
+        "skill_slug": "own-corelink-privacy-erasure-worker",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-privacy-erasure-worker/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-privacy-pseudonymize/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-privacy-pseudonymize.md",
+      "body_sha256": "0bb4724342bc721dc274cd69c33a1cd2d52f66b3361cbb0a5b49ff7ffca017c7",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-privacy-pseudonymize",
+        "skill_slug": "own-corelink-privacy-pseudonymize",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-privacy-pseudonymize/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-privacy/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-privacy.md",
+      "body_sha256": "11cb44dbc82ecfca883452eef722067802c0bc43195f5204068cdb669718e14d",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-privacy",
+        "skill_slug": "own-corelink-privacy",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-privacy/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-r2-multipart/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-r2-multipart.md",
+      "body_sha256": "bb0c0ed47c7f2ef4fcd6b3eb9131cf8c67b0fa8e94d7048ba2309a8cfde38758",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-r2-multipart",
+        "skill_slug": "own-corelink-r2-multipart",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-r2-multipart/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-rate-headers/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-rate-headers.md",
+      "body_sha256": "a51886070b7364d23b20dd2ed5de93a3f8f1df4230e22721ecaeea8c55991a80",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-rate-headers",
+        "skill_slug": "own-corelink-rate-headers",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-rate-headers/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-ratelimit/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-ratelimit.md",
+      "body_sha256": "eca75bf53cf25c55df6ec3e33d2ae693b27c5e302fec9abaf4fc11a1da6ef05e",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-ratelimit",
+        "skill_slug": "own-corelink-ratelimit",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ratelimit/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-reapi/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-reapi.md",
+      "body_sha256": "e718f3d1b50b918da7633fd45aef00bacda496fde8a471e4a6b0a4f296c26987",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-reapi",
+        "skill_slug": "own-corelink-reapi",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-reapi/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-reapi/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/crates__corelink-reapi__fuzz.md",
+      "body_sha256": "3c50985d531842d9199493a734dcf196ed1dfa64aac19c9eb26fc3c01cd310bd",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-reapi-fuzz",
+        "skill_slug": "own-corelink-reapi-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-reapi/fuzz/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-region/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-region.md",
+      "body_sha256": "3f4d52f6e6823d14995ef196a2e11f0999e955869a3b8332fd5896a61fc45cc0",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-region",
+        "skill_slug": "own-corelink-region",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-region/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-replica-worker/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-replica-worker.md",
+      "body_sha256": "ac82957d8e2c7c09b062ab174302b5848f641b3c92833f6ed24beaaab701297d",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-replica-worker",
+        "skill_slug": "own-corelink-replica-worker",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-replica-worker/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-replication-coordinator/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-replication-coordinator.md",
+      "body_sha256": "a490e9fcf64cb7c3b140661b46df921ee00a5c3d5e7904be03fb9067570a1eaf",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-replication-coordinator",
+        "skill_slug": "own-corelink-replication-coordinator",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-replication-coordinator/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-replication/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-replication.md",
+      "body_sha256": "09d954ff379f60189b5e7e81bb3424274f5b1c7430a424c2fd49d17057e67c69",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-replication",
+        "skill_slug": "own-corelink-replication",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-replication/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-rotation-adapters/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-rotation-adapters.md",
+      "body_sha256": "97a85bd9ef561d9c7aa89039fa0a9a26779fd9a7b1d852ea2da31b8397135ed5",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-rotation-adapters",
+        "skill_slug": "own-corelink-rotation-adapters",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-rotation-adapters/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-runbook-tracker/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-runbook-tracker.md",
+      "body_sha256": "d2282bff7c63eef233fc3e875b968bb59b965ddeb5df9942870f8bff4eea41dc",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-runbook-tracker",
+        "skill_slug": "own-corelink-runbook-tracker",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-runbook-tracker/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-runner-aggregate/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-runner-aggregate.md",
+      "body_sha256": "a3e8e814104a7ce47f4f4a527fa64119f9b987a3bd985eb239b1879478f74365",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-runner-aggregate",
+        "skill_slug": "own-corelink-runner-aggregate",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-runner-aggregate/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-runner-overage/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-runner-overage.md",
+      "body_sha256": "8f0a05eb951f49f697bc81a68c4b12cc317cfdea2d51b3fd75e0213b149aef14",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-runner-overage",
+        "skill_slug": "own-corelink-runner-overage",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-runner-overage/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-signup/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-signup.md",
+      "body_sha256": "a58f176a0de08f3ee7d07f519b3a8de3bd9e6d9d45970e547344a0e4979f1833",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-signup",
+        "skill_slug": "own-corelink-signup",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-signup/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-slack-real/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-slack-real.md",
+      "body_sha256": "730c76e9f0ffcdff0480b39270649289585e9873933be33f98727dc1501b0552",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-slack-real",
+        "skill_slug": "own-corelink-slack-real",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-slack-real/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-slo/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-slo.md",
+      "body_sha256": "5ac839f419230a6e97b9d7153b58a020c7ded9b666a3763a66594b6d837fb454",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-slo",
+        "skill_slug": "own-corelink-slo",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-slo/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-statuspage-real/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-statuspage-real.md",
+      "body_sha256": "b533bd24caf2e927bd7c35fa9b9072aaa252e31911979a47e5efab3dab17a3d7",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-statuspage-real",
+        "skill_slug": "own-corelink-statuspage-real",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-statuspage-real/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-stripe-real/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-stripe-real.md",
+      "body_sha256": "20afb9874797f8e1d57123ce7411172cbcafdc35e4ad784aa41ca307d7a0e00c",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-stripe-real",
+        "skill_slug": "own-corelink-stripe-real",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-stripe-real/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-telemetry/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-telemetry.md",
+      "body_sha256": "8ef438743babc42045eddf50c8f1421983e5719d799c8ebff906a3006ecc4a93",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-telemetry",
+        "skill_slug": "own-corelink-telemetry",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-telemetry/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-terraform-drift-consumer/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-terraform-drift-consumer.md",
+      "body_sha256": "98ed6061e171a91e005c563fcf86d20566769514b5e939facb9dd99f1a7e98a1",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-terraform-drift-consumer",
+        "skill_slug": "own-corelink-terraform-drift-consumer",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-terraform-drift-consumer/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-tier-selection/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-tier-selection.md",
+      "body_sha256": "b37cb09bf542ddf967eb7d52c511907342c168f4853ff0d1b0e27da1b08bcc23",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-tier-selection",
+        "skill_slug": "own-corelink-tier-selection",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-tier-selection/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-tracing/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-tracing.md",
+      "body_sha256": "25fcb810e859d20c7a42d341898ac1a29684b74dcbd8d313cbff69f7baaade2a",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-tracing",
+        "skill_slug": "own-corelink-tracing",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-tracing/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-transparency-log/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-transparency-log.md",
+      "body_sha256": "04ada98148365ea7237752cdf2b3d2632cc9974f681bce76c18739111063631a",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-transparency-log",
+        "skill_slug": "own-corelink-transparency-log",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-transparency-log/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-turbo-bridge/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-turbo-bridge.md",
+      "body_sha256": "667b998185675102199228acc20dfda0c9be3deaa82c41b10eb1124d12616e24",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-turbo-bridge",
+        "skill_slug": "own-corelink-turbo-bridge",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-turbo-bridge/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-wasm/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-wasm.md",
+      "body_sha256": "2a87ed6c4cd0935fcf8f1ae82a3940b609c3cffd4818e2e60484c00ff5dae475",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-wasm",
+        "skill_slug": "own-corelink-wasm",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-wasm/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-worker/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__corelink-worker.md",
+      "body_sha256": "cfc7c803feb8d5c00779ed3cbf4023a67d8228a0386cfdea471f61b9457bf50e",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-worker",
+        "skill_slug": "own-corelink-worker",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-worker/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/corelink-worker/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/crates__corelink-worker__fuzz.md",
+      "body_sha256": "7b279289cfe905e6a8559482ecc4e74f97b8e653b709c3a0153f9bb4be790851",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-worker-fuzz",
+        "skill_slug": "own-corelink-worker-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-worker/fuzz/Cargo.toml#L3-L4"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/tenant-path/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/crates__tenant-path.md",
+      "body_sha256": "a93e85ddbb61a1b0bca35b6990c954a3d0e4b1aa228d906814565b0d22c7f6b7",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-tenant-path",
+        "skill_slug": "own-corelink-tenant-path",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/tenant-path/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "crates/tenant-path/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/crates__tenant-path__fuzz.md",
+      "body_sha256": "964593f00f77b67699ed787f67df991c925741832564999eed080801a62e7734",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-tenant-path-fuzz",
+        "skill_slug": "own-corelink-tenant-path-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/tenant-path/fuzz/Cargo.toml#L3-L4"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/chaos/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__chaos.md",
+      "body_sha256": "bc5379f93c212a491386c0efbcbef42db3b60214bce19ffe725b0ce83d8b650f",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "chaos-campaign",
+        "skill_slug": "own-chaos-campaign",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/chaos/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-billing-flow/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-billing-flow.md",
+      "body_sha256": "34314ec34f2aafe84014211efe2ff4711404c3fbc33d9e06afc7b464d0b27404",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-billing-flow",
+        "skill_slug": "own-e2e-billing-flow",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-billing-flow/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-byok-revoke/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-byok-revoke.md",
+      "body_sha256": "cc9a33e3921752cc18c59be501457160ce79eedb884a10ec81bee349cc2de764",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-byok-revoke",
+        "skill_slug": "own-e2e-byok-revoke",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-byok-revoke/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-chaos/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-chaos.md",
+      "body_sha256": "bcfdaaa5dcf05f4a81accef93b7491fccec1348bb1d95199259b4cb2f8d43596",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-chaos",
+        "skill_slug": "own-e2e-chaos",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-chaos/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-dsr/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-dsr.md",
+      "body_sha256": "2f168619819ba84e3aef85f0723e226da68d4ea6c16d7a6419cc09328ec3050b",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-dsr",
+        "skill_slug": "own-e2e-dsr",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-dsr/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-failover-router/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-failover-router.md",
+      "body_sha256": "29272dda1bd95df66648283e59af24644feda6d53df1b1812b20df79c1a00a8a",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-failover-router",
+        "skill_slug": "own-e2e-failover-router",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-failover-router/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-pilot-onboarding/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-pilot-onboarding.md",
+      "body_sha256": "2a156b1a5738768cca2c5228ec88b15173391ddf1435c4c45d991924cff270e5",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-pilot-onboarding",
+        "skill_slug": "own-e2e-pilot-onboarding",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-pilot-onboarding/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-replication-failover/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-replication-failover.md",
+      "body_sha256": "6e4a5c7204892b664d62b8ab92906bec5b5bbbd053986d03d7aad42b34dee5de",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-replication-failover",
+        "skill_slug": "own-e2e-replication-failover",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-replication-failover/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-resilience/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-resilience.md",
+      "body_sha256": "bdfa55c6b1a77b2990ed6f2072961b0603edec3437cf0d916348e42ca8e7b06b",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-resilience",
+        "skill_slug": "own-e2e-resilience",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-resilience/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-signup-flow/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-signup-flow.md",
+      "body_sha256": "f7f5cf22c6b259c192410186806b867e2cd936beba40a4172d858417fdaed042",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-signup-flow",
+        "skill_slug": "own-e2e-signup-flow",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-signup-flow/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-tenant-isolation/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-tenant-isolation.md",
+      "body_sha256": "01d68abd08f885123328a73231e04f44c2304b1db44a8b3fbee5edd66b4714d0",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-tenant-isolation",
+        "skill_slug": "own-e2e-tenant-isolation",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-tenant-isolation/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tests/e2e-user-journeys/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tests__e2e-user-journeys.md",
+      "body_sha256": "0168227e7f8a738fdf7ec2758f48834640cc006f141566ca7cbcca1be0650dd2",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "e2e-user-journeys",
+        "skill_slug": "own-e2e-user-journeys",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-user-journeys/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tools/cli/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tools__cli.md",
+      "body_sha256": "3e8e74e7f003b92b103bcd03726f40f18c4adf73d0f43332d8904f9395ceba44",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-cli",
+        "skill_slug": "own-corelink-cli",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/cli/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tools/cli/fuzz/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/fuzz-candidates/tools__cli__fuzz.md",
+      "body_sha256": "49205099e198a8aabab3472289262ab8fe5a21dc284e59adba7908836fa99839",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-cli-fuzz",
+        "skill_slug": "own-corelink-cli-fuzz",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/cli/fuzz/Cargo.toml#L3-L4"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tools/dt-cli/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tools__dt-cli.md",
+      "body_sha256": "dc00435a6bc9bb213bac0a15ad4c3b559b9def00989e03ad11a78625931080e2",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-dt-cli",
+        "skill_slug": "own-corelink-dt-cli",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/dt-cli/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tools/dt-reconcile/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tools__dt-reconcile.md",
+      "body_sha256": "a6bfac855e794afed247a912fd566f676ae77963e05cce4634da67c4ae649abb",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-dt-reconcile",
+        "skill_slug": "own-corelink-dt-reconcile",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/dt-reconcile/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tools/openapi/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tools__openapi.md",
+      "body_sha256": "b2cf1bf0d9d37ed9ca95c8278d7d67a5d976fd079041af4a44d8fb997a816f3a",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-openapi",
+        "skill_slug": "own-corelink-openapi",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/openapi/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tools/sbom-publish/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tools__sbom-publish.md",
+      "body_sha256": "01f873af7b184cf63c5367adf5d5174b3877247f59d046e08a92d7d996b49aee",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "sbom-publish",
+        "skill_slug": "own-sbom-publish",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sbom-publish/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tools/sdks/go/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tools__sdks__go.md",
+      "body_sha256": "3c5e9cf4a3ede5e812593d779143b2f38ddd489a2f120b2449c3b60a38c9a946",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-go",
+        "skill_slug": "own-corelink-go",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sdks/go/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    },
+    {
+      "repository_id": 1232040291,
+      "manifest": "tools/sdks/python/Cargo.toml",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "state": "BLOCKED",
+      "issue_number": null,
+      "issue_url": null,
+      "body_path": "issue-drafts/workspace/tools__sdks__python.md",
+      "body_sha256": "fc07873e12d8854445e0cc5580ca0f36dde9bcc01368d0646dcdbf2246fa772f",
+      "former_manifests": [],
+      "contract": {
+        "version": "1.1-candidate",
+        "frozen": false,
+        "url": null
+      },
+      "gates": {
+        "census": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "context": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "capacity": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "shared-contract": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "deduplication": {
+          "state": "PENDING",
+          "evidence": []
+        },
+        "backlog": {
+          "state": "PENDING",
+          "evidence": []
+        }
+      },
+      "identity": {
+        "state": "SOURCE_CONFIRMED",
+        "package": "corelink-py",
+        "skill_slug": "own-corelink-py",
+        "evidence": "https://github.com/HuGR-dev/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sdks/python/Cargo.toml#L1-L2"
+      },
+      "repository": "HuGR-dev/corelink-server"
+    }
+  ]
+}

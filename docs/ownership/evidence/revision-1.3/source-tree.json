@@ -1,0 +1,15 @@
+{
+  "repository_id": 1232040291,
+  "baseline": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+  "tree": "15a6c01c4d3ed4ed2e0ce717002287edd02e8ddf",
+  "path": "crates/corelink-hash/src",
+  "truncated": false,
+  "method": "GitHub tree read; reported blobs, not locally recomputed",
+  "files": {
+    "lib.rs": "403f7e2e4ef8c7bb30a47e7d7eee3ce94a785730",
+    "digest.rs": "40aea50c8127ada98133e3719171b65f047f2bcd",
+    "verified_body.rs": "d387eca974b5314dad46b6e92b1623cb8b3e10d5",
+    "store.rs": "ca438358841cef76cf139fadff5acc57526baae0",
+    "error.rs": "d953932982f95178cfc1e2fe0021c6664a68b2f9"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "repository": "HuGR-Labs/corelink-server",
+  "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+  "class": "SOURCE",
+  "scope": "Leitura seletiva conforme RESEARCH.md, não censo de todos os arquivos.",
+  "blobs": {
+    "Cargo.toml": "801ee986c93374461d468ed6e643345e8c2ed8f1",
+    "CLAUDE.md": "f8c1f2a0aaad2ab29e00943d5bfa835d2253ac00",
+    ".claude/skills/okf-context/SKILL.md": "2a1e51f5a55e9c28264edcdc989bd3dd99fdc46d",
+    ".claude/skills/built-not-wired/SKILL.md": "b1f966f7e3f70c930bb04c366c9cce53412a42f2",
+    ".claude/skills/techlead/SKILL.md": "80baab2c188443406129d3d4897805dde8251c60",
+    "crates/corelink-billing/Cargo.toml": "225860c6b6d03b7ad7bd16e11428f2b48599ee12",
+    "crates/corelink-billing/src/lib.rs": "1cb8f80ba9bdaa593f3780717e371ed68f346164",
+    "crates/corelink-billing/src/aggregator.rs": "1c297b1c59d49bff6f14354699541839d86c9443",
+    "crates/corelink-container/Cargo.toml": "e9feace6365776c6a4141ff59efa70fe1b36e158",
+    "crates/corelink-hash/Cargo.toml": "0b836118960c8f21c50473dc0e37461fd5b47bd7",
+    "crates/corelink-cf-bindings/src/lib.rs": "c908b3d050663b0d154463bf59f4e785cf1c63a8"
+  },
+  "cold_review_performed": false,
+  "github_issues_created": 0
+}

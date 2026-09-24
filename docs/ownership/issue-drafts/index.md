@@ -1,0 +1,119 @@
+# Rascunhos por package — revisão 1.2
+
+[Voltar](../README.md) · [Identidades](../inventory/index.md) · [Bloqueios](../PROGRESS.md)
+
+**105 rascunhos, zero issues publicadas.** Nomes e destinos preenchidos; preparação semântica e gates de emissão pendentes.
+A pasta `fuzz-candidates/` é mantida por compatibilidade de links; seus dez manifestos foram confirmados como packages, mas a emissão permanece bloqueada.
+
+| Package | Grupo | Rascunho |
+|---|---|---|
+| `migrate-single-to-multi-region` | workspace_declared | [Abrir](workspace/apps__migrate-single-to-multi-region.md) |
+| `corelink-ac` | workspace_declared | [Abrir](workspace/crates__corelink-ac.md) |
+| `corelink-adapter-host` | workspace_declared | [Abrir](workspace/crates__corelink-adapter-host.md) |
+| `corelink-adapters-cloud` | workspace_declared | [Abrir](workspace/crates__corelink-adapters-cloud.md) |
+| `corelink-adapters-vault` | workspace_declared | [Abrir](workspace/crates__corelink-adapters-vault.md) |
+| `corelink-analytics` | workspace_declared | [Abrir](workspace/crates__corelink-analytics.md) |
+| `corelink-audit-chain` | workspace_declared | [Abrir](workspace/crates__corelink-audit-chain.md) |
+| `corelink-audit` | workspace_declared | [Abrir](workspace/crates__corelink-audit.md) |
+| `corelink-auth` | workspace_declared | [Abrir](workspace/crates__corelink-auth.md) |
+| `corelink-bazel-bridge` | workspace_declared | [Abrir](workspace/crates__corelink-bazel-bridge.md) |
+| `corelink-billing-aggregator` | workspace_declared | [Abrir](workspace/crates__corelink-billing-aggregator.md) |
+| `corelink-billing-emit` | workspace_declared | [Abrir](workspace/crates__corelink-billing-emit.md) |
+| `corelink-billing-reconcile` | workspace_declared | [Abrir](workspace/crates__corelink-billing-reconcile.md) |
+| `corelink-billing-stripe-materializer` | workspace_declared | [Abrir](workspace/crates__corelink-billing-stripe-materializer.md) |
+| `corelink-billing-stripe-traits` | workspace_declared | [Abrir](workspace/crates__corelink-billing-stripe-traits.md) |
+| `corelink-billing-stripe` | workspace_declared | [Abrir](workspace/crates__corelink-billing-stripe.md) |
+| `corelink-billing` | workspace_declared | [Abrir](workspace/crates__corelink-billing.md) |
+| `corelink-byok` | workspace_declared | [Abrir](workspace/crates__corelink-byok.md) |
+| `corelink-cas` | workspace_declared | [Abrir](workspace/crates__corelink-cas.md) |
+| `corelink-cf-bindings` | workspace_declared | [Abrir](workspace/crates__corelink-cf-bindings.md) |
+| `corelink-chaos-scheduler` | workspace_declared | [Abrir](workspace/crates__corelink-chaos-scheduler.md) |
+| `corelink-clerk-cf` | workspace_declared | [Abrir](workspace/crates__corelink-clerk-cf.md) |
+| `corelink-clerk` | workspace_declared | [Abrir](workspace/crates__corelink-clerk.md) |
+| `corelink-client-verify` | workspace_declared | [Abrir](workspace/crates__corelink-client-verify.md) |
+| `corelink-config-do` | workspace_declared | [Abrir](workspace/crates__corelink-config-do.md) |
+| `corelink-server` | workspace_declared | [Abrir](workspace/crates__corelink-container.md) |
+| `corelink-core` | workspace_declared | [Abrir](workspace/crates__corelink-core.md) |
+| `corelink-crypto` | workspace_declared | [Abrir](workspace/crates__corelink-crypto.md) |
+| `corelink-dpa-acceptance` | workspace_declared | [Abrir](workspace/crates__corelink-dpa-acceptance.md) |
+| `corelink-dsr-statuspage-scheduler` | workspace_declared | [Abrir](workspace/crates__corelink-dsr-statuspage-scheduler.md) |
+| `corelink-dsr` | workspace_declared | [Abrir](workspace/crates__corelink-dsr.md) |
+| `corelink-dt-webhook` | workspace_declared | [Abrir](workspace/crates__corelink-dt-webhook.md) |
+| `corelink-dual-approval` | workspace_declared | [Abrir](workspace/crates__corelink-dual-approval.md) |
+| `corelink-enterprise-inquiry` | workspace_declared | [Abrir](workspace/crates__corelink-enterprise-inquiry.md) |
+| `corelink-erasure-attestation` | workspace_declared | [Abrir](workspace/crates__corelink-erasure-attestation.md) |
+| `corelink-eviction` | workspace_declared | [Abrir](workspace/crates__corelink-eviction.md) |
+| `corelink-failover-router` | workspace_declared | [Abrir](workspace/crates__corelink-failover-router.md) |
+| `corelink-gc` | workspace_declared | [Abrir](workspace/crates__corelink-gc.md) |
+| `corelink-handler-ac` | workspace_declared | [Abrir](workspace/crates__corelink-handler-ac.md) |
+| `corelink-handler-admin` | workspace_declared | [Abrir](workspace/crates__corelink-handler-admin.md) |
+| `corelink-handler-cas-erase` | workspace_declared | [Abrir](workspace/crates__corelink-handler-cas-erase.md) |
+| `corelink-handler-cas` | workspace_declared | [Abrir](workspace/crates__corelink-handler-cas.md) |
+| `corelink-handler-customer` | workspace_declared | [Abrir](workspace/crates__corelink-handler-customer.md) |
+| `corelink-hash` | workspace_declared | [Abrir](workspace/crates__corelink-hash.md) |
+| `corelink-meta` | workspace_declared | [Abrir](workspace/crates__corelink-meta.md) |
+| `corelink-ops` | workspace_declared | [Abrir](workspace/crates__corelink-ops.md) |
+| `corelink-pat` | workspace_declared | [Abrir](workspace/crates__corelink-pat.md) |
+| `corelink-privacy-erasure-worker` | workspace_declared | [Abrir](workspace/crates__corelink-privacy-erasure-worker.md) |
+| `corelink-privacy-pseudonymize` | workspace_declared | [Abrir](workspace/crates__corelink-privacy-pseudonymize.md) |
+| `corelink-privacy` | workspace_declared | [Abrir](workspace/crates__corelink-privacy.md) |
+| `corelink-r2-multipart` | workspace_declared | [Abrir](workspace/crates__corelink-r2-multipart.md) |
+| `corelink-rate-headers` | workspace_declared | [Abrir](workspace/crates__corelink-rate-headers.md) |
+| `corelink-ratelimit` | workspace_declared | [Abrir](workspace/crates__corelink-ratelimit.md) |
+| `corelink-reapi` | workspace_declared | [Abrir](workspace/crates__corelink-reapi.md) |
+| `corelink-region` | workspace_declared | [Abrir](workspace/crates__corelink-region.md) |
+| `corelink-replica-worker` | workspace_declared | [Abrir](workspace/crates__corelink-replica-worker.md) |
+| `corelink-replication-coordinator` | workspace_declared | [Abrir](workspace/crates__corelink-replication-coordinator.md) |
+| `corelink-replication` | workspace_declared | [Abrir](workspace/crates__corelink-replication.md) |
+| `corelink-rotation-adapters` | workspace_declared | [Abrir](workspace/crates__corelink-rotation-adapters.md) |
+| `corelink-runbook-tracker` | workspace_declared | [Abrir](workspace/crates__corelink-runbook-tracker.md) |
+| `corelink-runner-aggregate` | workspace_declared | [Abrir](workspace/crates__corelink-runner-aggregate.md) |
+| `corelink-runner-overage` | workspace_declared | [Abrir](workspace/crates__corelink-runner-overage.md) |
+| `corelink-signup` | workspace_declared | [Abrir](workspace/crates__corelink-signup.md) |
+| `corelink-slack-real` | workspace_declared | [Abrir](workspace/crates__corelink-slack-real.md) |
+| `corelink-slo` | workspace_declared | [Abrir](workspace/crates__corelink-slo.md) |
+| `corelink-statuspage-real` | workspace_declared | [Abrir](workspace/crates__corelink-statuspage-real.md) |
+| `corelink-stripe-real` | workspace_declared | [Abrir](workspace/crates__corelink-stripe-real.md) |
+| `corelink-telemetry` | workspace_declared | [Abrir](workspace/crates__corelink-telemetry.md) |
+| `corelink-terraform-drift-consumer` | workspace_declared | [Abrir](workspace/crates__corelink-terraform-drift-consumer.md) |
+| `corelink-tier-selection` | workspace_declared | [Abrir](workspace/crates__corelink-tier-selection.md) |
+| `corelink-tracing` | workspace_declared | [Abrir](workspace/crates__corelink-tracing.md) |
+| `corelink-transparency-log` | workspace_declared | [Abrir](workspace/crates__corelink-transparency-log.md) |
+| `corelink-turbo-bridge` | workspace_declared | [Abrir](workspace/crates__corelink-turbo-bridge.md) |
+| `corelink-wasm` | workspace_declared | [Abrir](workspace/crates__corelink-wasm.md) |
+| `corelink-worker` | workspace_declared | [Abrir](workspace/crates__corelink-worker.md) |
+| `corelink-tenant-path` | workspace_declared | [Abrir](workspace/crates__tenant-path.md) |
+| `chaos-campaign` | workspace_declared | [Abrir](workspace/tests__chaos.md) |
+| `e2e-billing-flow` | workspace_declared | [Abrir](workspace/tests__e2e-billing-flow.md) |
+| `e2e-byok-revoke` | workspace_declared | [Abrir](workspace/tests__e2e-byok-revoke.md) |
+| `e2e-chaos` | workspace_declared | [Abrir](workspace/tests__e2e-chaos.md) |
+| `e2e-dsr` | workspace_declared | [Abrir](workspace/tests__e2e-dsr.md) |
+| `e2e-failover-router` | workspace_declared | [Abrir](workspace/tests__e2e-failover-router.md) |
+| `e2e-pilot-onboarding` | workspace_declared | [Abrir](workspace/tests__e2e-pilot-onboarding.md) |
+| `e2e-replication-failover` | workspace_declared | [Abrir](workspace/tests__e2e-replication-failover.md) |
+| `e2e-resilience` | workspace_declared | [Abrir](workspace/tests__e2e-resilience.md) |
+| `e2e-signup-flow` | workspace_declared | [Abrir](workspace/tests__e2e-signup-flow.md) |
+| `e2e-tenant-isolation` | workspace_declared | [Abrir](workspace/tests__e2e-tenant-isolation.md) |
+| `e2e-user-journeys` | workspace_declared | [Abrir](workspace/tests__e2e-user-journeys.md) |
+| `corelink-cli` | workspace_declared | [Abrir](workspace/tools__cli.md) |
+| `corelink-dt-cli` | workspace_declared | [Abrir](workspace/tools__dt-cli.md) |
+| `corelink-dt-reconcile` | workspace_declared | [Abrir](workspace/tools__dt-reconcile.md) |
+| `corelink-openapi` | workspace_declared | [Abrir](workspace/tools__openapi.md) |
+| `sbom-publish` | workspace_declared | [Abrir](workspace/tools__sbom-publish.md) |
+| `corelink-go` | workspace_declared | [Abrir](workspace/tools__sdks__go.md) |
+| `corelink-py` | workspace_declared | [Abrir](workspace/tools__sdks__python.md) |
+| `corelink-ac-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/crates__corelink-ac__fuzz.md) |
+| `corelink-audit-chain-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/crates__corelink-audit-chain__fuzz.md) |
+| `corelink-byok-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/crates__corelink-byok__fuzz.md) |
+| `corelink-client-verify-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/crates__corelink-client-verify__fuzz.md) |
+| `corelink-hash-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/crates__corelink-hash__fuzz.md) |
+| `corelink-meta-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/crates__corelink-meta__fuzz.md) |
+| `corelink-reapi-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/crates__corelink-reapi__fuzz.md) |
+| `corelink-worker-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/crates__corelink-worker__fuzz.md) |
+| `corelink-tenant-path-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/crates__tenant-path__fuzz.md) |
+| `corelink-cli-fuzz` | fuzz_manifest_confirmed | [Abrir](fuzz-candidates/tools__cli__fuzz.md) |
+
+## Piloto de autoria 1.3
+
+[corelink-hash — quatro candidatos e contexto atualizado](workspace/crates__corelink-hash.md).
+Permanece bloqueado; nenhum checkbox de cold review foi marcado.

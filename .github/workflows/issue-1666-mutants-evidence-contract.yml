@@ -12,6 +12,7 @@ on:
       - "tests/load/k6/scenarios/endurance-24h.js"
       - "scripts/verify_i1687_endurance_lane.py"
       - "scripts/test_i1687_endurance_lane.py"
+      - "scripts/validate_load_teardown_receipt.py"
       - "specs/_audits/2026-09-22-i1687-endurance-lane.md"
   workflow_dispatch:
 
