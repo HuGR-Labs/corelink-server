@@ -1,0 +1,63 @@
+name: issue-2386 hosted runner contract
+
+# This is a static, credentialless proof only.  It neither invokes candidate
+# code nor deploys, publishes, signs, loads, or mutates an external system.
+on:
+  pull_request:
+    paths:
+      - "scripts/verify_hosted_runner_migration_contract.py"
+      - ".github/workflows/issue-2386-hosted-runner-contract.yml"
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full SHA of the same-repository candidate to inspect as inert YAML
+        required: true
+        type: string
+      inventory:
+        description: Closed workflow/job inventory to inspect
+        required: true
+        type: choice
+        options: [rust-correctness, repository-policy]
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    name: static negative controls
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: python3 -S scripts/verify_hosted_runner_migration_contract.py --self-test
+
+  inspect-candidate:
+    name: exact-SHA static inventory
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted contract
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          path: trusted-contract
+          persist-credentials: false
+      - name: Checkout candidate YAML as inert data
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: HuGR-dev/corelink-server
+          ref: ${{ inputs.candidate_sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Validate the closed candidate inventory
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          INVENTORY: ${{ inputs.inventory }}
+        run: >-
+          python3 -S trusted-contract/scripts/verify_hosted_runner_migration_contract.py
+          --root candidate --inventory "$INVENTORY" --expected-head "$CANDIDATE_SHA"
