@@ -5,6 +5,9 @@ on:
     paths:
       - ".github/workflows/b029-load-gate.yml"
       - ".github/workflows/load-test-nightly.yml"
+      - "scripts/load-test-baseline-check.py"
+      - "scripts/sanitize_k6_summary.py"
+      - "scripts/validate_load_target_receipt.py"
       - "scripts/verify_b029_load_gate.py"
       - "tests/test_b029_load_gate.py"
   workflow_dispatch:

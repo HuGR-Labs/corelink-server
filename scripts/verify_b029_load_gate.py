@@ -23,8 +23,10 @@ from pathlib import Path
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ".github/workflows/load-test-nightly.yml"
+FOCUSED_PACK = ".github/workflows/b029-load-gate.yml"
 COMPARATOR = "scripts/load-test-baseline-check.py"
 SANITIZER = "scripts/sanitize_k6_summary.py"
+TARGET_RECEIPT_VALIDATOR = "scripts/validate_load_target_receipt.py"
 OPERATOR_README = "tests/load/README.md"
 COMPARE_STEP = "compare median vs stored baseline"
 POPULATION_STEP = "classify scenario population"
@@ -41,6 +43,15 @@ HOSTNAME_SOURCES = (
     "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json",
     "evidence/owner-actions/B-029/staging-load-gate.json",
     "docs/internal/secrets-checklist.md",
+)
+FOCUSED_PACK_REQUIRED_PATHS = (
+    FOCUSED_PACK,
+    WORKFLOW,
+    COMPARATOR,
+    SANITIZER,
+    TARGET_RECEIPT_VALIDATOR,
+    "scripts/verify_b029_load_gate.py",
+    "tests/test_b029_load_gate.py",
 )
 EXPECTED_COMPARATOR = (
     "python3",
@@ -118,6 +129,47 @@ def _yaml_steps(workflow: str) -> tuple[_YamlStep, ...]:
             )
         )
     return tuple(steps)
+
+
+def _pull_request_path_filters(workflow: str) -> set[str]:
+    """Return only literal entries under the top-level pull_request.paths key."""
+
+    lines = workflow.splitlines()
+    event_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if re.fullmatch(r"  pull_request:\s*", line)
+        ),
+        None,
+    )
+    if event_index is None:
+        return set()
+
+    paths_index = next(
+        (
+            index
+            for index in range(event_index + 1, len(lines))
+            if lines[index].strip()
+            and len(lines[index]) - len(lines[index].lstrip()) <= 2
+        ),
+        len(lines),
+    )
+    for index in range(event_index + 1, paths_index):
+        if re.fullmatch(r"    paths:\s*", lines[index]):
+            paths_index = index
+            break
+    else:
+        return set()
+
+    paths: set[str] = set()
+    for line in lines[paths_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip()) <= 4:
+            break
+        match = re.fullmatch(r'      -\s*"([^\"]+)"\s*', line)
+        if match:
+            paths.add(match.group(1))
+    return paths
 
 
 def _shell_tokens(source: str) -> list[str]:
@@ -585,15 +637,25 @@ def _hostname_gaps(root: Path) -> list[str]:
 def assess(root: Path, *, expect: str) -> list[str]:
     gaps: list[str] = []
     workflow_path = root / WORKFLOW
+    focused_pack_path = root / FOCUSED_PACK
     comparator_path = root / COMPARATOR
     readme_path = root / OPERATOR_README
     try:
         workflow = workflow_path.read_text(encoding="utf-8")
+        focused_pack = focused_pack_path.read_text(encoding="utf-8")
         comparator = comparator_path.read_text(encoding="utf-8")
         sanitizer = (root / SANITIZER).read_text(encoding="utf-8")
         readme = readme_path.read_text(encoding="utf-8")
     except OSError as exc:
         return [f"instrument error: {exc}"]
+
+    focused_pack_paths = _pull_request_path_filters(focused_pack)
+    missing_pack_paths = sorted(set(FOCUSED_PACK_REQUIRED_PATHS) - focused_pack_paths)
+    if missing_pack_paths:
+        gaps.append(
+            "focused B-029 CI pack does not trigger for required inputs: "
+            + ", ".join(missing_pack_paths)
+        )
 
     if "BASELINE_SCHEMA = 2" not in comparator or 'BASELINE_VERSION = "k6-baseline-v2"' not in comparator:
         gaps.append("baseline schema/version is not explicit")
