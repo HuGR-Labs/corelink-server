@@ -21,9 +21,6 @@ jobs:
     env:
       # Record the runtime identity fields so the receipt describes the hosted runner.
       I1672_FLEET_LABEL: github-hosted
-      I1672_RUNNER_NAME: ${{ runner.name }}
-      I1672_RUNNER_OS: ${{ runner.os }}
-      I1672_RUNNER_ARCH: ${{ runner.arch }}
     steps:
       - name: Checkout tested tree
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -49,6 +46,9 @@ jobs:
         shell: bash
         env:
           I1672_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+          I1672_RUNNER_NAME: ${{ runner.name }}
+          I1672_RUNNER_OS: ${{ runner.os }}
+          I1672_RUNNER_ARCH: ${{ runner.arch }}
         run: |
           set -euo pipefail
           timeout="${I1672_TIMEOUT_SECONDS:-2}"
