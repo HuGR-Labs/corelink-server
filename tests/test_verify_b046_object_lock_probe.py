@@ -141,6 +141,14 @@ class B046ObjectLockProbeTests(unittest.TestCase):
             verifier.validate_evidence_record(malformed)
 
         malformed = raw.replace(
+            '"attempted": false,\n    "resources_created": false,',
+            '"attempted": true,\n    "resources_created": true,',
+            1,
+        )
+        with self.assertRaises(verifier.ProbeError):
+            verifier.validate_evidence_record(malformed)
+
+        malformed = raw.replace(
             '"operation": "CreateBucket with Object Lock enabled"',
             '"operation": "ListBuckets"',
             1,
