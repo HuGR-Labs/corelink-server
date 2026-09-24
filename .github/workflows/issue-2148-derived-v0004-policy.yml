@@ -11,13 +11,14 @@ on:
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0003.json'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0004.json'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0005.json'
+      - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0006.json'
 
 permissions:
   contents: read
 
 jobs:
   policy:
-    name: verify immutable v0004-v0005 successor policy
+    name: verify immutable v0004-v0006 successor policy
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -40,3 +41,7 @@ jobs:
           tests/test_backlog_ledger_successor.py::test_v0005_policy_pins_complete_first_parent_history_from_git_objects
           tests/test_backlog_ledger_successor.py::test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition
           tests/test_backlog_ledger_successor.py::test_v0005_receipt_is_required_to_bridge_post_v0004_history
+          tests/test_backlog_ledger_successor.py::test_v0006_replays_the_exact_delivered_successor_chain
+          tests/test_backlog_ledger_successor.py::test_v0006_pins_source_hash_and_exact_changed_ids
+          tests/test_backlog_ledger_successor.py::test_v0006_receipt_is_required_for_the_main_baseline_transition
+          tests/test_backlog_ledger_successor.py::test_v0006_authorizer_rejects_wrong_immutable_main_parent

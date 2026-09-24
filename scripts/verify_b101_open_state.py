@@ -159,7 +159,7 @@ RULES: dict[str, Rule] = {
     "B-176": Rule(("crates/corelink-container/src/routes/dsr/attestation.rs",), r"\bfn\s+sign_and_persist\s*\(", "tests/audit/b101/closures/B-176.py"),
     "B-177": Rule(("crates/corelink-container/src/routes.rs",), r"\bpub\s+fn\s+build\s*\(\s*\)\s*->\s*Router", "tests/audit/b101/closures/B-177.py"),
     "B-178": Rule(("worker/src/lib/quota.ts",), r"\bexport\s+async\s+function\s+checkRequestQuota\s*\(", "tests/audit/b101/closures/B-178.py"),
-    "B-179": Rule(("worker/src/index_special_routes.ts",), r"\bh\.set\(\s*", "tests/audit/b101/closures/B-179.py"),
+    "B-179": Rule(("worker/src/index_special_passthrough.ts",), r"\bh\.set\(\s*", "tests/audit/b101/closures/B-179.py"),
     "B-180": Rule(("crates/corelink-container/src/routes/oci.rs",), r"\bpub\s+const\s+OCI_TOKEN_KEY_ENV\b", "tests/audit/b101/closures/B-180.py"),
     "B-181": Rule(("worker/src/lib/quota.ts",), r"\bexport\s+async\s+function\s+checkStorageQuota\s*\(", "tests/audit/b101/closures/B-181.py"),
     "B-182": Rule(("crates/corelink-container/src/adapter_pat_lookup.rs",), r"\bpub\(super\)\s+const\s+PAT_LOOKUP_SQL\s*:", "tests/audit/b101/closures/B-182.py"),
@@ -463,7 +463,7 @@ def _verify_special_semantics(root: Path, identifier: str) -> None:
         body_code = _mask_non_code(body)
         _require_patterns(identifier, body, literal_view=body_code, checked_view=body_code)
     elif identifier == "B-179":
-        path = _safe_file(root, "worker/src/index_special_routes.ts", identifier)
+        path = _safe_file(root, "worker/src/index_special_passthrough.ts", identifier)
         raw = path.read_text(encoding="utf-8")
         literal_view = _strip_comments(raw)
         route = re.search(r"if\s*\(\s*route\.routeKind\s*===\s*\"oci_v2\".*?\n", literal_view)
