@@ -216,8 +216,10 @@ async fn valid_write_calls_decorated_handler_once_and_read_honors_range() {
         )
         .await
         .expect("read succeeds")
-        .collect::<Result<Vec<_>, Status>>()
+        .collect::<Vec<_>>()
         .await
+        .into_iter()
+        .collect::<Result<Vec<_>, Status>>()
         .expect("read frames");
     let returned: Vec<u8> = frames.into_iter().flat_map(|frame| frame.data).collect();
     assert_eq!(returned, body[3..3 + REAPI_BYTESTREAM_CHUNK_BYTES + 1]);
