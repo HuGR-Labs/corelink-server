@@ -264,8 +264,7 @@ impl DeleteProbeTarget {
             || expected_principal_arn.trim().is_empty()
         {
             return Err(ObjectLockArchiveError::CapabilityNegotiationFailed(
-                "delete probe requires an exact object version and STS principal"
-                    .to_string(),
+                "delete probe requires an exact object version and STS principal".to_string(),
             ));
         }
         Ok(Self {
@@ -1143,14 +1142,18 @@ mod tests {
         assert!(DeleteProbeTarget::new("audit/../other", "version-1", "arn").is_err());
         assert!(DeleteProbeTarget::new("audit/probe", "version-2", "arn").is_ok());
 
-        assert!(
-            AwsS3ObjectLockAdapter::validate_delete_probe_configuration(false, true, Some(&target))
-                .is_err()
-        );
-        assert!(
-            AwsS3ObjectLockAdapter::validate_delete_probe_configuration(true, false, Some(&target))
-                .is_err()
-        );
+        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_configuration(
+            false,
+            true,
+            Some(&target)
+        )
+        .is_err());
+        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_configuration(
+            true,
+            false,
+            Some(&target)
+        )
+        .is_err());
         assert!(
             AwsS3ObjectLockAdapter::validate_delete_probe_configuration(true, true, None).is_err()
         );
@@ -1183,12 +1186,14 @@ mod tests {
             "durable-permission-receipt",
         )
         .expect("complete permission evidence");
-        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_permission_evidence(
-            &target,
-            "approved-bucket",
-            &exact,
-        )
-        .is_ok());
+        assert!(
+            AwsS3ObjectLockAdapter::validate_delete_probe_permission_evidence(
+                &target,
+                "approved-bucket",
+                &exact,
+            )
+            .is_ok()
+        );
 
         let wrong_version = DeleteProbePermissionEvidence::new(
             "arn:aws:iam::123456789012:role/delete-probe",
@@ -1199,12 +1204,14 @@ mod tests {
             "durable-permission-receipt",
         )
         .expect("well-formed but wrong permission evidence");
-        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_permission_evidence(
-            &target,
-            "approved-bucket",
-            &wrong_version,
-        )
-        .is_err());
+        assert!(
+            AwsS3ObjectLockAdapter::validate_delete_probe_permission_evidence(
+                &target,
+                "approved-bucket",
+                &wrong_version,
+            )
+            .is_err()
+        );
     }
 
     #[test]
