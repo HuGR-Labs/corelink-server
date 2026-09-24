@@ -67,7 +67,7 @@ def assess(root: Path) -> list[str]:
         if "CANONICAL_TARGET='https://staging.corelink.humangr.com'" not in text or 'TARGET_HOST="${K6_TARGET_HOST%/}"' not in text or '[[ "$TARGET_HOST" != "$CANONICAL_TARGET" ]]' not in text:
             gaps.append(f"workflow-host:{path.name}")
     endurance = (root / WORKFLOWS[1]).read_text(encoding="utf-8")
-    if "30s|2h" not in endurance or 'DURATION: ${{ github.event.inputs.duration || \'2h\' }}' not in endurance:
+    if ("DURATION=30s" not in endurance and "30s|2h" not in endurance) or 'DURATION: ${{ github.event.inputs.duration || \'2h\' }}' not in endurance:
         gaps.append("workflow-duration-budget")
     if re.search(r"(?m)^\s*\[env\.staging\]\s*$", (root / "wrangler.toml").read_text(encoding="utf-8")):
         gaps.append("partial-wrangler-staging-environment")

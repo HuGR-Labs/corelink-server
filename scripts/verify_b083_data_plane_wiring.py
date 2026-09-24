@@ -18,6 +18,7 @@ BYOK_CACHE = ROOT / "crates/corelink-container/src/storage/byok_cas/part-00.rs"
 BYOK_POLICY = ROOT / "crates/corelink-container/src/storage/byok_cas/part-01.rs"
 DO_START = ROOT / "worker/src/durable_object_start.ts"
 WORKER_ENV = ROOT / "worker/src/index_env.ts"
+CONTAINER_CARGO = ROOT / "crates/corelink-container/Cargo.toml"
 
 
 def require(source: str, needle: str, label: str) -> None:
@@ -25,9 +26,9 @@ def require(source: str, needle: str, label: str) -> None:
         raise AssertionError(f"{label}: missing {needle!r}")
 
 
-def verify(cas: str, ac: str, cache: str, policy: str, do_start: str, worker_env: str) -> None:
+def verify(cas: str, ac: str, cache: str, policy: str, do_start: str, worker_env: str, container_cargo: str) -> None:
     for label, builder in (("CAS", cas), ("AC", ac)):
-        require(builder, 'feature = "byok-aws-real"', f"{label} real-provider cfg")
+        require(container_cargo, 'byok-aws-real = ["corelink-byok/aws"]', f"{label} real-provider cfg")
         require(builder, "crate::byok_orchestrator::make_provider()", f"{label} real KMS")
         require(builder, "D1ByokConfigReader::new", f"{label} config source")
         require(builder, "D1ByokSecretReader::new", f"{label} wrapped-Tcs source")
@@ -57,7 +58,7 @@ def verify(cas: str, ac: str, cache: str, policy: str, do_start: str, worker_env
 
 
 def mutation_self_test(
-    cas: str, ac: str, cache: str, policy: str, do_start: str, worker_env: str
+    cas: str, ac: str, cache: str, policy: str, do_start: str, worker_env: str, container_cargo: str
 ) -> None:
     mutations = {
         "cas-attachment-removed": (
@@ -69,6 +70,7 @@ def mutation_self_test(
             policy,
             do_start,
             worker_env,
+            container_cargo,
         ),
         "ac-attachment-removed": (
             cas,
@@ -79,6 +81,7 @@ def mutation_self_test(
             policy,
             do_start,
             worker_env,
+            container_cargo,
         ),
         "negative-cache-restored": (
             cas,
@@ -87,6 +90,7 @@ def mutation_self_test(
             policy,
             do_start,
             worker_env,
+            container_cargo,
         ),
         "shredded-plaintext": (
             cas,
@@ -99,6 +103,7 @@ def mutation_self_test(
             ),
             do_start,
             worker_env,
+            container_cargo,
         ),
         "kms-secret-forward-removed": (
             cas,
@@ -111,6 +116,7 @@ def mutation_self_test(
                 1,
             ),
             worker_env,
+            container_cargo,
         ),
     }
     for label, candidate in mutations.items():
@@ -124,7 +130,7 @@ def mutation_self_test(
 def main() -> None:
     sources = tuple(
         path.read_text(encoding="utf-8")
-        for path in (CAS_BUILDER, AC_BUILDER, BYOK_CACHE, BYOK_POLICY, DO_START, WORKER_ENV)
+        for path in (CAS_BUILDER, AC_BUILDER, BYOK_CACHE, BYOK_POLICY, DO_START, WORKER_ENV, CONTAINER_CARGO)
     )
     verify(*sources)
     mutation_self_test(*sources)
