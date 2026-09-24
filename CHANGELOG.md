@@ -24,6 +24,11 @@ Each entry cross-references:
 
 ### Fixed
 
+- **DSR DLQ redrive is receipt-bound and one-time.** Dedicated operator auth
+  atomically claims a bounded, tenant-bound envelope, derives salt only in the
+  Worker, fences ambiguous sends before queue submission, records redacted
+  transitions, and expires retained recovery data.
+
 - **B-098 repository hygiene evidence now matches shipped populations.** Canonical specs carry required front matter; CLAUDE and blocker receipt counts derive from the current validator population while release state remains blocked.
 
 - **CAS writes expose durable failure effects.** The handler seam now
