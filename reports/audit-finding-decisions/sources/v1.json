@@ -135,6 +135,11 @@
       "sha256": "a5bed049e41cf83715e51f9fbcce08046b032e74c22b78732c3284a4aa2a7632"
     },
     {
+      "path": "docs/security/b028-dependabot-census-2026-09-06-postmerge.json",
+      "reason": "Explicit B-101 non-source classification: this 2026-09-08 post-merge B-028 receipt records operational closure evidence for delivered main@cdd6a6714; the admitted historical source remains the nine-alert pre-merge census.",
+      "sha256": "57f84d1c97e8d14f8274c0e0ec962aba6e63063c223fa368d68b5200f46bb812"
+    },
+    {
       "path": "docs/security/report-security.md",
       "reason": "Explicit B-101 scope decision: this named security report is not an enumerated input; admission requires a parser, count, digest, and one decision per finding.",
       "sha256": "e1e4d9309a161f97ab9ccb324b3927db95c306a14e9c0c91becf63c136d6c70e"
@@ -151,13 +156,13 @@
     },
     {
       "path": "reports/audits/2026-08-25-comprehensive-audit-and-verification.md",
-      "reason": "Explicit B-101 scope decision: this audit-and-verification report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
-      "sha256": "f7387930aaaf19526c8c99e4c5c118c96c575843a73cacc8f2950f974b784d73"
+      "reason": "Explicit B-101 scope decision, re-reviewed 2026-09-23: this historical comprehensive audit mixes confirmed, partial, refuted, and internally inconsistent claims and remains outside the five admitted sources; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "8a0d0c8a8f6f294974b694c9f96778f500751fa84c543159b2682f45202eaacf"
     },
     {
       "path": "reports/audits/2026-08-25-definitive-master-report.md",
-      "reason": "Explicit B-101 scope decision: this master report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
-      "sha256": "a381c32583180aea7c2f3633c3e6bd601f2738249288ac5fc141d8f3c3cfb86b"
+      "reason": "Explicit B-101 scope decision, re-reviewed 2026-09-23: this historical definitive master report mixes confirmed, partial, refuted, and subsequent-wave claims and remains outside the five admitted sources; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "02412d74c99f096041664022afcd80d8436398b0adf7e60292d5220f87f34cbf"
     },
     {
       "path": "reports/audits/2026-08-25-fix-briefing-ox-alpha-addendum-v2.md",

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-08T06:32:21Z",
+  "repository": "HuGR-Labs/corelink-server",
+  "query": "gh api --paginate --slurp repos/HuGR-Labs/corelink-server/dependabot/alerts?state=open",
+  "default_branch_commit": "cdd6a671484a378e443bd8b4c4b7b5e0948dcb8b",
+  "candidate_commit": "8796799192daf00aa98c99a60e0bd4d790ec1ce9",
+  "post_merge_refresh_required": false,
+  "open_alert_count": 0,
+  "alerts": []
+}

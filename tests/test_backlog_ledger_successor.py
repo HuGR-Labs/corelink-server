@@ -593,9 +593,72 @@ def test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition():
     )
 
 
-def test_v0005_replays_the_exact_delivered_successor_chain():
-    """The committed v0005 receipt closes the delivered v0004 drift."""
-    assert ledger.load_successor_chain()["sequence"] == 5
+def test_v0006_replays_the_exact_delivered_successor_chain():
+    """The committed v0006 receipt binds the #2346 baseline correction."""
+    assert ledger.load_successor_chain()["sequence"] == 6
+
+
+def test_v0006_pins_source_hash_and_exact_changed_ids():
+    """Changing the source digest or issue set invalidates the authorization."""
+    policy = successor.install(ledger)
+    receipt = json.loads(
+        (ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0006.json")
+        .read_text()
+    )
+    previous = json.loads(
+        (ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0005.json")
+        .read_text()
+    )
+    prior = policy._git_state_bytes(ledger.REPO_ROOT, receipt["base_commit"])
+    current = policy._state_bytes(ledger.REPO_ROOT)
+    assert policy._v0006_reconciliation_authorized(previous, prior, current, receipt, 6)
+
+    wrong_hash = dict(receipt, source_sha256="0" * 64)
+    assert not policy._v0006_reconciliation_authorized(
+        previous, prior, current, wrong_hash, 6,
+    )
+    wrong_ids = dict(receipt, changed_ids=["B-028", "B-101"])
+    assert not policy._v0006_reconciliation_authorized(
+        previous, prior, current, wrong_ids, 6,
+    )
+
+
+def test_v0006_receipt_is_required_for_the_main_baseline_transition(tmp_path):
+    """Removing v0006 keeps the prior delivered snapshot fail-closed."""
+    receipt = (
+        ledger.REPO_ROOT
+        / ledger.SNAPSHOT_DIRECTORY
+        / "backlog-ledger-snapshot-v0006.json"
+    )
+    held_receipt = tmp_path / receipt.name
+    shutil.move(str(receipt), str(held_receipt))
+    try:
+        with pytest.raises(
+            LedgerError,
+            match=r"backlog-ledger-snapshot-v0005\.json: delivered state drifted after last successor",
+        ):
+            ledger.load_successor_chain()
+    finally:
+        shutil.move(str(held_receipt), str(receipt))
+
+
+def test_v0006_authorizer_rejects_wrong_immutable_main_parent():
+    """The v0006 authorization itself binds the exact main parent."""
+    policy = successor.install(ledger)
+    receipt = json.loads(
+        (ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0006.json")
+        .read_text()
+    )
+    previous = json.loads(
+        (ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0005.json")
+        .read_text()
+    )
+    prior = policy._git_state_bytes(ledger.REPO_ROOT, receipt["base_commit"])
+    current = policy._state_bytes(ledger.REPO_ROOT)
+    wrong_parent = dict(receipt, base_commit="2af5c9b64cccba9cf618145224186ec2717cca50")
+    assert not policy._v0006_reconciliation_authorized(
+        previous, prior, current, wrong_parent, 6,
+    )
 
 
 def test_v0005_receipt_is_required_to_bridge_post_v0004_history(tmp_path):
@@ -610,7 +673,7 @@ def test_v0005_receipt_is_required_to_bridge_post_v0004_history(tmp_path):
     try:
         with pytest.raises(
             LedgerError,
-            match=r"backlog-ledger-snapshot-v0004\.json: delivered state drifted after last successor",
+            match=r"successor snapshot sequence is not contiguous from v0003",
         ):
             ledger.load_successor_chain()
     finally:
