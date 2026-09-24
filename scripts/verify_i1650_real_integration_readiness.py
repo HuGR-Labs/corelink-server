@@ -21,10 +21,23 @@ MANIFEST = ROOT / "scripts/real-ignored-harness-manifest.json"
 WORKFLOW = ROOT / ".github/workflows/real-ignored-harnesses.yml"
 PROFILES = ("d1", "r2", "stripe", "neon")
 REQUIRED_RESOURCES = {
-    "d1": ("Cloudflare account", "D1 database", "R2 test bucket"),
-    "r2": ("Cloudflare account", "D1 database", "R2 test bucket"),
-    "stripe": ("HuGR wallet broker test reference", "Starter test price"),
-    "neon": ("Neon shadow database",),
+    "d1": (
+        ("Cloudflare account", "provider account", "dedicated test account; no production writes"),
+        ("D1 database", "D1 database", "dedicated integration database"),
+        ("R2 test bucket", "R2 bucket", "dedicated disposable bucket; cleanup after receipt"),
+    ),
+    "r2": (
+        ("Cloudflare account", "provider account", "dedicated test account; no production writes"),
+        ("D1 database", "D1 database", "dedicated integration database for audit path"),
+        ("R2 test bucket", "R2 bucket", "dedicated disposable bucket; cleanup after receipt"),
+    ),
+    "stripe": (
+        ("HuGR wallet broker test reference", "wallet broker account", "stripe-prod-test only; test mode"),
+        ("Starter test price", "Stripe price", "test-mode price_* only"),
+    ),
+    "neon": (
+        ("Neon shadow database", "PostgreSQL database", "staging shadow branch; disposable tenant data only"),
+    ),
 }
 FORBIDDEN = ("-----BEGIN ", "github_pat_", "ghp_", "gho_", "sk_live_", "whsec_")
 
@@ -99,8 +112,12 @@ def validate_packet(packet: dict[str, Any], manifest: dict[str, Any], workflow: 
             fail(f"{profile} resource/cleanup inventory is incomplete")
         if any(not isinstance(resource, dict) for resource in resources):
             fail(f"{profile} resource entry shape is invalid")
-        if [resource.get("name") for resource in resources] != list(REQUIRED_RESOURCES[profile]):
-            fail(f"{profile} resource inventory does not match the reviewed profile")
+        actual_resources = [
+            tuple(resource.get(key) for key in ("name", "kind", "scope"))
+            for resource in resources
+        ]
+        if actual_resources != list(REQUIRED_RESOURCES[profile]):
+            fail(f"{profile} resource identity, kind, or test-only scope differs from the reviewed profile")
         for resource in resources:
             if set(resource) != {"name", "kind", "scope", "status", "evidence_ref"}:
                 fail(f"{profile} resource entry shape drifted")
@@ -188,6 +205,10 @@ def mutation_checks(packet: dict[str, Any], manifest: dict[str, Any], workflow: 
             "evidence_ref": None,
         }
         expect_rejected(f"{profile} ready without owner-reviewed cleanup", missing_cleanup, manifest, workflow)
+
+    production_scope = copy.deepcopy(ready_packet)
+    production_scope["profiles"]["d1"]["resources"][0]["scope"] = "production account; production writes allowed"
+    expect_rejected("ready profile with production resource scope", production_scope, manifest, workflow)
 
 
 def expect_rejected(label: str, packet: dict[str, Any], manifest: dict[str, Any], workflow: str) -> None:
