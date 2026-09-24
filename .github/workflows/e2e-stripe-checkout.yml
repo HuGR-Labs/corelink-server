@@ -61,8 +61,8 @@ jobs:
   # needs-output gate in pentest-findings-sync.yml.)
   gate:
     name: Gate — Stripe keys present?
-    # zero-hosted (WP-CI): node/pnpm/python3/wrangler — todos baked
-    runs-on: corelink
+    # GitHub-hosted Ubuntu 24.04 provides the required base utilities.
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
       run: ${{ steps.check.outputs.run }}
@@ -87,8 +87,8 @@ jobs:
     name: Stripe checkout E2E (prod)
     needs: gate
     if: needs.gate.outputs.run == 'true'
-    # zero-hosted (WP-CI): node/pnpm/python3/wrangler — todos baked
-    runs-on: corelink
+    # GitHub-hosted Ubuntu 24.04 provides the required base utilities.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       # Mask secrets at the env layer so they never appear in logs
@@ -119,7 +119,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Verify required tools present
-        # python3 + curl are pre-installed on ubuntu-latest; assert so we fail
+        # python3 + curl are pre-installed on ubuntu-24.04; assert so we fail
         # fast if the image ever drops them rather than failing mid-script.
         run: |
           set -euo pipefail
