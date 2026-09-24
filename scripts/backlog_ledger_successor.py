@@ -195,6 +195,66 @@ V0004_RECONCILIATION = {
     ),
 }
 
+# v0004 was committed before the next first-parent backlog reconciliation
+# batch.  Those later edits must remain an auditable immutable sequence: this
+# bridge accepts only a v0005 receipt based on their exact delivered history.
+V0005_RECONCILIATION = {
+    "sequence": 5,
+    "previous_sequence": 4,
+    "base_commit": "595d234a7db91da529e5eae46d4b4a31b0211b57",
+    "previous_source_sha256": "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
+    "history_start": "a21ae199ad763fd6fd6c2ca93d86ed968f32d60d",
+    "history_changed_ids": ("B-101", "B-142", "B-251", "B-314"),
+    # Every first-parent commit after v0004 that changed BACKLOG.md.  The
+    # commit and first parent bind provenance; complete pre/post hashes and
+    # section deltas bind the actual historical transition.
+    "history_transitions": (
+        (
+            "abd087bb6957ac98cc2175f7c16284cbb367e72d",
+            "910c5a07676ffc4d360b56904b65e24aa4f35ef3",
+            "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
+            "52f8b687c2f9f9ad8c6adf8cb2dedc564ace4d509650bf4606912a886e3bfee6",
+            ("B-101",),
+        ),
+        (
+            "61562e2cd49ae49139fbe6a109c1f251ae9c67dc",
+            "8acc8631a2eb144da2481e2189667ae7bcf550b9",
+            "52f8b687c2f9f9ad8c6adf8cb2dedc564ace4d509650bf4606912a886e3bfee6",
+            "38b91cff97ec59e6da364642c22f73d3f9a646cdb58d5ecbe3bbb3755ec0aa2f",
+            ("B-251",),
+        ),
+        (
+            "8ab920b4e5d65521381b69bceb76236cdf1bec84",
+            "b9481e08c383532336b8ebfadf44b0e43dc42e36",
+            "38b91cff97ec59e6da364642c22f73d3f9a646cdb58d5ecbe3bbb3755ec0aa2f",
+            "55e44e3782e671b573e781331f7183768e9c9cd22559115ae585d389e5038076",
+            ("B-251",),
+        ),
+        (
+            "09c3c58f9e320e39c62861e5cf9a56e8f31cd4b7",
+            "6da67d68a5d06072ca06f19ef70d34b0f370d9f2",
+            "55e44e3782e671b573e781331f7183768e9c9cd22559115ae585d389e5038076",
+            "0fc0dd7c6076296abaf8646ee253335584262a6c448ddfca0a7e0475c309aa42",
+            ("B-142",),
+        ),
+        (
+            "cbd77d1d890c99e1bb935c934ac3e85ef3222476",
+            "09c3c58f9e320e39c62861e5cf9a56e8f31cd4b7",
+            "0fc0dd7c6076296abaf8646ee253335584262a6c448ddfca0a7e0475c309aa42",
+            "f478182a9d325515db69471098b8771c703b38eda8e9a1cf2ba6296b159cd99d",
+            ("B-314",),
+        ),
+    ),
+    "prior_source_sha256": "f478182a9d325515db69471098b8771c703b38eda8e9a1cf2ba6296b159cd99d",
+    "prior_ledger_sha256": "e3d5347ec16f0454a98a3e10e59b210e008e0293f4c52482df07c11a720b93dd",
+    "prior_catalog_sha256": {
+        "docs/campaigns/remediation/work-packages/B001-B045.md": "081c9885db8d79c18f2f31edb7864bb1ca1a18d53f408720f3f9e4f00524f9c6",
+        "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+        "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+        "docs/campaigns/remediation/work-packages/B131-B167.md": "13805dab851c5023d7d49bc707ce0c30713a11aeca8b1e179c8710ad8d91671f",
+    },
+}
+
 
 def install(api):
     REPO_ROOT = api.REPO_ROOT
@@ -341,6 +401,20 @@ def install(api):
             text = _replace_once(text, old, new)
         return text.encode("utf-8")
 
+    def _v0005_ledger(prior_raw: bytes, base_sha: str) -> bytes:
+        """Derive the ledger image for the exact post-v0004 history base."""
+        text = prior_raw.decode("utf-8")
+        for old, new in (
+            ("base-ref: 91630baebe3ae7abe686cd4e06a5621ecdc4ab73", f"base-ref: {base_sha}"),
+            ("base-sha: 91630baebe3ae7abe686cd4e06a5621ecdc4ab73", f"base-sha: {base_sha}"),
+            ("observed-at: 2026-09-23", "observed-at: 2026-09-24"),
+            ("The current population is 374 items: 12 open, 330 done and 32 parked. The 12", "The current population is 374 items: 12 open, 332 done and 30 parked. The 12"),
+            ("done-count: 330", "done-count: 332"),
+            ("parked-count: 32", "parked-count: 30"),
+        ):
+            text = _replace_once(text, old, new)
+        return text.encode("utf-8")
+
     def _sprint3_rewrite_authorized(
         prior: dict[str, bytes], current: dict[str, bytes],
         receipt: dict[str, object], sequence: int,
@@ -461,6 +535,44 @@ def install(api):
             and _sha256(str(new.get("verify", "")).encode()) == new_verify
             and _sha256(str(old.get("verify-means", "")).encode()) == old_means
             and _sha256(str(new.get("verify-means", "")).encode()) == new_means
+        )
+
+    def _v0005_reconciliation_authorized(
+        previous: dict[str, object], prior: dict[str, bytes], current: dict[str, bytes],
+        receipt: dict[str, object], sequence: int,
+    ) -> bool:
+        """Authorize only the byte-pinned v0004-to-v0005 history repair."""
+        pinned = V0005_RECONCILIATION
+        if (
+            sequence != pinned["sequence"]
+            or receipt.get("base_commit") != pinned["base_commit"]
+            or previous.get("sequence") != pinned["previous_sequence"]
+            or previous.get("source_sha256") != pinned["previous_source_sha256"]
+            or receipt.get("changed_ids") != []
+            or _sha256(prior["BACKLOG.md"]) != pinned["prior_source_sha256"]
+            or current["BACKLOG.md"] != prior["BACKLOG.md"]
+            or _sha256(prior[LEDGER_RELATIVE.as_posix()]) != pinned["prior_ledger_sha256"]
+            or receipt.get("prior_source_sha256") != pinned["prior_source_sha256"]
+            or receipt.get("source_sha256") != pinned["prior_source_sha256"]
+            or receipt.get("prior_ledger_sha256") != pinned["prior_ledger_sha256"]
+            or not _v0005_history_authorized()
+        ):
+            return False
+        catalog_hashes = {
+            path.as_posix(): _sha256(prior[path.as_posix()])
+            for path in _catalog_relatives()
+        }
+        return (
+            catalog_hashes == pinned["prior_catalog_sha256"]
+            and all(
+                current[path.as_posix()] == prior[path.as_posix()]
+                for path in _catalog_relatives()
+            )
+            and receipt.get("prior_catalog_sha256") == catalog_hashes
+            and receipt.get("catalog_sha256") == catalog_hashes
+            and current[LEDGER_RELATIVE.as_posix()] == _v0005_ledger(
+                prior[LEDGER_RELATIVE.as_posix()], receipt.get("base_commit", ""),
+            )
         )
 
     def _catalog_relatives() -> tuple[Path, ...]:
@@ -598,9 +710,8 @@ def install(api):
             path.as_posix(): _git_bytes(repo_root, commit, path) for path in relatives
         }
 
-    def _v0004_history_authorized() -> bool:
-        """Reconstruct the complete post-v0003 BACKLOG history from Git objects."""
-        pinned = V0004_RECONCILIATION
+    def _history_authorized(pinned: dict[str, object]) -> bool:
+        """Reconstruct one pinned first-parent BACKLOG history from Git objects."""
         expected = pinned.get("history_transitions")
         if not expected:
             return False
@@ -649,6 +760,14 @@ def install(api):
             and expected[0][2] == pinned["previous_source_sha256"]
             and expected[-1][3] == pinned["prior_source_sha256"]
         )
+
+    def _v0004_history_authorized() -> bool:
+        """Reconstruct the complete post-v0003 BACKLOG history from Git objects."""
+        return _history_authorized(V0004_RECONCILIATION)
+
+    def _v0005_history_authorized() -> bool:
+        """Reconstruct the complete post-v0004 BACKLOG history from Git objects."""
+        return _history_authorized(V0005_RECONCILIATION)
 
     def _backlog_sections(raw: bytes) -> tuple[bytes, list[str], dict[str, bytes]]:
         """Preserve each complete item section and all bytes before the first item."""
@@ -893,6 +1012,9 @@ def install(api):
                 bridge = _v0004_reconciliation_authorized(
                     receipt, next_prior, next_current, next_receipt, index + 4,
                 )
+                bridge = bridge or _v0005_reconciliation_authorized(
+                    receipt, next_prior, next_current, next_receipt, index + 4,
+                )
                 if current != next_prior and not bridge:
                     raise LedgerError(
                         f"{path}: delivered state drifted before next successor"
@@ -902,6 +1024,12 @@ def install(api):
                     pending_receipt is not None
                     and pending_current is not None
                     and _v0004_reconciliation_authorized(
+                        receipt, _state_bytes(root), pending_current,
+                        pending_receipt, index + 4,
+                    )
+                    or pending_receipt is not None
+                    and pending_current is not None
+                    and _v0005_reconciliation_authorized(
                         receipt, _state_bytes(root), pending_current,
                         pending_receipt, index + 4,
                     )
@@ -992,6 +1120,9 @@ def install(api):
             and not _v0004_reconciliation_authorized(
                 previous, prior, current, receipt, len(base_paths) + 3,
             )
+            and not _v0005_reconciliation_authorized(
+                previous, prior, current, receipt, len(base_paths) + 3,
+            )
         ):
             raise LedgerError("candidate predecessor is not the trusted BASE snapshot")
         trusted_items = backlog_verify.parse(prior["BACKLOG.md"].decode("utf-8"))
@@ -1023,8 +1154,11 @@ def install(api):
         _catalog_relatives=_catalog_relatives,
         _v0004_catalogs=_v0004_catalogs,
         _v0004_ledger=_v0004_ledger,
+        _v0005_ledger=_v0005_ledger,
         _git_state_bytes=_git_state_bytes,
         _v0004_history_authorized=_v0004_history_authorized,
+        _v0005_history_authorized=_v0005_history_authorized,
+        _v0005_reconciliation_authorized=_v0005_reconciliation_authorized,
         _state_bytes=_state_bytes,
         _successor_paths=_successor_paths,
         load_successor_chain=load_successor_chain,

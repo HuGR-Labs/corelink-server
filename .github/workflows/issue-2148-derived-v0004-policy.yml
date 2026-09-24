@@ -1,4 +1,4 @@
-name: issue-2148 derived v0004 policy
+name: issue-2138 immutable ledger successor policy
 
 on:
   pull_request:
@@ -7,13 +7,17 @@ on:
       - 'scripts/backlog_ledger_successor.py'
       - 'scripts/backlog_verify.py'
       - 'tests/test_backlog_ledger_successor.py'
+      - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
+      - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0003.json'
+      - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0004.json'
+      - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0005.json'
 
 permissions:
   contents: read
 
 jobs:
   policy:
-    name: verify derived BASE v0004 policy
+    name: verify immutable v0004-v0005 successor policy
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -33,3 +37,5 @@ jobs:
           python -m pytest -q
           tests/test_backlog_ledger_successor.py::test_v0004_policy_derives_only_b012_retirement_from_pr_base
           tests/test_backlog_ledger_successor.py::test_v0004_policy_pins_complete_first_parent_history_from_git_objects
+          tests/test_backlog_ledger_successor.py::test_v0005_policy_pins_complete_first_parent_history_from_git_objects
+          tests/test_backlog_ledger_successor.py::test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition
