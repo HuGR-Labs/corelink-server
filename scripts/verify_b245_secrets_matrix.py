@@ -9,7 +9,11 @@ fail rather than being hidden by a global allowlist.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
+import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -176,24 +180,64 @@ def main() -> int:
         )
         _must_reject(validator, root, manifest, "credential moved to another collector")
 
-    # Exercise the matrix parser's negative mutation as well: deleting a row
-    # must remove the name from the parsed population, exposing code-only drift
-    # to the normal validator.
+    # Exercise matrix deletion through the normal gate, not just the parser:
+    # deleting the live secret row must produce code-only drift and exit 1.
     with tempfile.TemporaryDirectory(prefix="corelink-b245-matrix-") as temp:
-        path = Path(temp) / "matrix.md"
-        path.write_text(
-            "| 242 | Perf PAT | `CORELINK_PERF_PAT` | collector |\n"
-            "| 243 | Fresh session | `CORELINK_FRESH_SESSION` | collector |\n",
+        root = Path(temp)
+        (root / "Cargo.toml").write_text(
+            "[package]\nname = 'matrix-mutation'\n", encoding="utf-8"
+        )
+        matrix = root / validator.MATRIX_FILE_REL
+        matrix.parent.mkdir(parents=True, exist_ok=True)
+        matrix_lines = (ROOT / validator.MATRIX_FILE_REL).read_text(
+            encoding="utf-8"
+        ).splitlines(keepends=True)
+        fresh_rows = [
+            line
+            for line in matrix_lines
+            if validator.MATRIX_ROW_RE.match(line) and "CORELINK_FRESH_SESSION" in line
+        ]
+        if len(fresh_rows) != 1:
+            raise AssertionError(
+                "expected exactly one CORELINK_FRESH_SESSION matrix row for deletion mutation"
+            )
+        matrix.write_text(
+            "".join(line for line in matrix_lines if line != fresh_rows[0]),
             encoding="utf-8",
         )
-        mutated = path.read_text(encoding="utf-8").replace(
-            "| 243 | Fresh session | `CORELINK_FRESH_SESSION` | collector |\n", ""
-        )
-        path.write_text(mutated, encoding="utf-8")
-        if "CORELINK_FRESH_SESSION" in validator.parse_matrix(path):
-            raise AssertionError("matrix-row deletion mutation was accepted")
-        if path.read_text(encoding="utf-8").replace("B245_NONEXISTENT", "") != path.read_text(encoding="utf-8"):
-            raise AssertionError("no-op mutation fixture unexpectedly changed matrix")
+
+        for relative in (
+            ".github/workflows/perf-production-evidence.yml",
+            "scripts/collect_b102_b107_measurements.py",
+            "scripts/collect_b105_same_lane.py",
+            "tests/test_b105_isolated_lane_behavior.py",
+        ):
+            source = ROOT / relative
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+
+        prior_argv = sys.argv
+        report = io.StringIO()
+        diagnostics = io.StringIO()
+        try:
+            sys.argv = [
+                "validate_secrets_matrix.py",
+                "--repo-root",
+                str(root),
+                "--quiet",
+            ]
+            with contextlib.redirect_stdout(report), contextlib.redirect_stderr(diagnostics):
+                exit_code = validator.main()
+        finally:
+            sys.argv = prior_argv
+        parsed_report = json.loads(report.getvalue())
+        if exit_code != 1 or parsed_report.get("code_only") != ["CORELINK_FRESH_SESSION"]:
+            raise AssertionError(
+                "matrix-row deletion did not fail closed through the normal gate: "
+                f"exit={exit_code}, code_only={parsed_report.get('code_only')!r}, "
+                f"stderr={diagnostics.getvalue()!r}"
+            )
 
     print("verify_b245_secrets_matrix: PASS (exact scope + 6 mutations rejected; no-op unchanged)")
     return 0
