@@ -34,8 +34,8 @@ SOURCE_REGISTRY_RELATIVE = SOURCE_DIRECTORY_RELATIVE / "v1.json"
 B101_STAGE = "historical_coverage_complete_semantic_review_complete"
 CANONICAL_BACKLOG_ID = re.compile(r"B-\d{3}")
 # This content certificate is stable across squash; it does not consult Git history.
-B101_REGISTRY_SHA256 = "7d46702db99bf165cc82aeb08a18c938bcc45046d22b3bf704b321b6f3339661"
-B101_MANIFEST_SHA256 = "278e958df6b83c5210d572433dcd56d29bcf9df751705b996038e0d44ccadb75"
+B101_REGISTRY_SHA256 = "f3f05ed44d65843b3931ba7323ac015474fc1a1a6f2817d0c199b6ec232b29b9"
+B101_MANIFEST_SHA256 = "334bdb575d7a66d499e2c77fda6f6cda44a94a97250d5aeda7282bd4fc6c6cbe"
 B101_CENSUS_TREE_SHA256 = "f76c98cf3768044b3da97f96350e771e970bda986852b33667a630730228c5ca"
 B101_CENSUS_ROOTS = ("docs/security", "reports/audits")
 B101_PROPOSAL_IDS = {f"B-{number}" for number in range(171, 244)}
@@ -118,7 +118,7 @@ def _checkpoint_contract(repo_root: Path) -> CensusCheckpoint:
     digest = hashlib.sha256(json.dumps(census, separators=(",", ":")).encode()).hexdigest()
     if digest != B101_CENSUS_TREE_SHA256:
         raise CoverageError("governed audit tree differs from the B-101 content certificate")
-    return CensusCheckpoint(registry=registry, manifest=manifest, expected_report={"documents": {"due_diligence_2026_06_15": 87, "go_live_2026_08_26": 20, "pilot_identity_2026_07_02": 3, "b028_dependabot_2026_09_06": 9, "b373_dependabot_2026_09_09": 19}, "total": 138, "tracked": 61, "duplicate": 4, "proposed": 73, "status": "historical_coverage_complete_semantic_review_complete"})
+    return CensusCheckpoint(registry=registry, manifest=manifest, expected_report={"documents": {"due_diligence_2026_06_15": 87, "go_live_2026_08_26": 20, "pilot_identity_2026_07_02": 3, "b373_dependabot_2026_09_09": 19}, "total": 129, "tracked": 52, "duplicate": 4, "proposed": 73, "status": "historical_coverage_complete_semantic_review_complete"})
 
 def _open_directory_beneath(repo_root: Path, relative: str, label: str) -> Path:
     """Resolve a directory while rejecting symlinked path components."""

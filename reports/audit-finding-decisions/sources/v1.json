@@ -10,6 +10,11 @@
   ],
   "excluded_audits": [
     {
+      "path": "docs/security/b028-dependabot-census-2026-09-06.json",
+      "reason": "Explicit B-101 scope decision: this zero-open closure receipt is governed by B-028's dedicated verifier, not a finding-bearing historical census.",
+      "sha256": "8ce42e23b046178e27d8ca1d185ca615f9d6050ee2d0b9166c4740d63356b940"
+    },
+    {
       "path": "docs/security/2026-06-13-CAA-360-audit-report.md",
       "reason": "Explicit B-101 scope decision: this historical CAA audit is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
       "sha256": "8a1b12e5c657b7c31eb48068f1b84aaa15850c0409c7c1bbc66cb4b8b732effb"
@@ -238,12 +243,6 @@
       "path": "docs/security/2026-07-02-pilot-identity-brutal-audit.md",
       "expected_count": 3,
       "parser": "pilot_identity"
-    },
-    {
-      "source_id": "b028_dependabot_2026_09_06",
-      "path": "docs/security/b028-dependabot-census-2026-09-06.json",
-      "expected_count": 9,
-      "parser": "b028_dependabot"
     },
     {
       "source_id": "b373_dependabot_2026_09_09",

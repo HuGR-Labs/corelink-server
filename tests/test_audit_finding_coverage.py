@@ -53,11 +53,10 @@ def test_live_inputs_rederive_the_documented_live_population() -> None:
             "due_diligence_2026_06_15": 87,
             "go_live_2026_08_26": 20,
             "pilot_identity_2026_07_02": 3,
-            "b028_dependabot_2026_09_06": 9,
             "b373_dependabot_2026_09_09": 19,
         },
-        "total": 138,
-        "tracked": 61,
+        "total": 129,
+        "tracked": 52,
         "duplicate": 4,
         "proposed": 73,
         "status": "historical_coverage_complete_semantic_review_complete",
@@ -121,7 +120,7 @@ def test_post_squash_plain_tree_rederives_the_same_certificate(tmp_path: Path) -
     """The checkpoint is content-based, so a copied/squashed tree remains valid."""
     fixture_root = _copy_gate_root(tmp_path)
 
-    assert coverage.verify(fixture_root)["total"] == 138
+    assert coverage.verify(fixture_root)["total"] == 129
 
 
 def test_tree_certificate_rejects_a_mutation_even_when_registry_and_manifest_are_untouched(
@@ -400,7 +399,7 @@ def test_b101_contract_records_completed_semantic_review_stage() -> None:
     block = re.search(r"(?ms)^### B-101\b.*?(?=^### B-\d+\b|\Z)", backlog)
 
     assert block, "B-101 must remain a canonical backlog item"
-    assert "87 + 20 + 3 + 9 + 19 = 138" in block.group(0)
+    assert "87 + 20 + 3 + 19 = 129" in block.group(0)
     assert "status: done" in block.group(0)
     assert f"stage: {coverage.B101_STAGE}" in block.group(0)
     assert "verify: python3 scripts/verify_audit_finding_coverage.py --format json" in block.group(0)

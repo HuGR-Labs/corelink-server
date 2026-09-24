@@ -12287,7 +12287,7 @@ construção.
 O recenseamento reexecutável de 2026-09-01 corrigiu a contagem histórica. Os 66 itens
 MEDIUM/LOW do documento de 2026-06-15 omitiam as suas 21 headings CRITICAL/HIGH confirmadas;
 a população viva daquele documento é, portanto, 87, não 66. A cobertura que este item exige
-é **87 + 20 + 3 + 9 + 19 = 138** achados, sem mudar ou apagar as fontes originais:
+é **87 + 20 + 3 + 19 = 129** achados, sem mudar ou apagar as fontes originais:
 
 | Documento | Achados parseados | Decisão registrada |
 |---|---:|---|
