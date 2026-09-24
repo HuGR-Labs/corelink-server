@@ -75,7 +75,7 @@ def _hourly_sql() -> str:
 
 def test_hourly_sql_is_one_select_only_aggregate_with_six_offsets() -> None:
     sql = _hourly_sql()
-    assert sql.startswith("SELECT ")
+    assert sql.startswith("WITH hour_offsets")
     assert ";" not in sql
     assert not re.search(r"\b(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE|PRAGMA|ATTACH|DETACH)\b", sql)
     assert "aggregate_counts AS" in sql
@@ -141,6 +141,9 @@ def test_all_production_control_queries_are_single_read_only_selects() -> None:
     connection.execute(
         "CREATE TABLE audit_chain_head (tenant_id TEXT, region TEXT, head_signature TEXT, "
         "next_sequence INTEGER, head_hash TEXT)"
+    )
+    connection.execute(
+        "INSERT INTO audit_outbox VALUES ('tenant', 'region', 0, 0, 0, 'prev', 'hash', '{}', 0)"
     )
     for query_id, sql in queries.items():
         rows = connection.execute(sql).fetchall()
