@@ -373,7 +373,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-065",
-        "canonical_title": "dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias",
+        "canonical_title": "dois esquemas de ID em webhooks Stripe; estado atual dos destinos não verificado",
         "evidence": {
           "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
           "source_locator": "MEDIUM / LOW item 2",
