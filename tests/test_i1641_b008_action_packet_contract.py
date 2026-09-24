@@ -56,6 +56,9 @@ class B008OwnerActionContractTests(unittest.TestCase):
             "immediate delivery mode": lambda item: item["evidence"].__setitem__(
                 "item_schema", item["evidence"]["item_schema"].replace("delivery_mode=immediate, ", "", 1)
             ),
+            "one scheduled tick": lambda item: item["evidence"].__setitem__(
+                "item_schema", item["evidence"]["item_schema"].replace("scheduled_tick_count=1, ", "", 1)
+            ),
             "shared D1 correlation": lambda item: item["evidence"].__setitem__(
                 "item_schema", item["evidence"]["item_schema"].replace(
                     "d1_receipt records drill_id, correlation_id=drill.correlation_id, delivery_mode=immediate, ",
@@ -67,7 +70,11 @@ class B008OwnerActionContractTests(unittest.TestCase):
                 "item_schema", item["evidence"]["item_schema"].replace("dedup_key=drill_id, correlation_id=drill.correlation_id, ", "", 1)
             ),
             "webhook drill join": lambda item: item["evidence"].__setitem__(
-                "item_schema", item["evidence"]["item_schema"].replace("drill_id, correlation_id=drill.correlation_id, ", "", 1)
+                "item_schema", item["evidence"]["item_schema"].replace(
+                    "webhook_receipt records event_id, drill_id, correlation_id=drill.correlation_id, ",
+                    "webhook_receipt records event_id, drill_id, ",
+                    1,
+                )
             ),
             "scheduler disabled after one tick": lambda item: item["evidence"].__setitem__(
                 "item_schema", item["evidence"]["item_schema"].replace("scheduled_tick_disabled_at, ", "", 1)
