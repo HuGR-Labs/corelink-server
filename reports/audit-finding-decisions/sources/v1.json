@@ -12,7 +12,7 @@
     {
       "path": "docs/security/b028-dependabot-census-2026-09-06.json",
       "reason": "Explicit B-101 scope decision: this zero-open closure receipt is governed by B-028's dedicated verifier, not a finding-bearing historical census.",
-      "sha256": "8ce42e23b046178e27d8ca1d185ca615f9d6050ee2d0b9166c4740d63356b940"
+      "sha256": "57f84d1c97e8d14f8274c0e0ec962aba6e63063c223fa368d68b5200f46bb812"
     },
     {
       "path": "docs/security/2026-06-13-CAA-360-audit-report.md",
