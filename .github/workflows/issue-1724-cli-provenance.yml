@@ -51,4 +51,4 @@ jobs:
           tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
           "${RUNNER_TEMP}/actionlint/actionlint" -version
       - name: Validate the dry-run trigger and workflow schema
-        run: "${RUNNER_TEMP}/actionlint/actionlint -color .github/workflows/issue-2050-cli-release-dry-run.yml"
+        run: '"${RUNNER_TEMP}/actionlint/actionlint" -color .github/workflows/issue-2050-cli-release-dry-run.yml'
