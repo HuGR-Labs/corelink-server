@@ -95,6 +95,67 @@ B111_RELEASE_CHAIN = {
     "notarize-macos": {"sign-windows", "release"},
 }
 B110_EVIDENCE_PATH = "evidence/owner-actions/B-110/ci-capacity-decision.json"
+B008_EVIDENCE_PATH = "evidence/owner-actions/B-008/pagerduty-incident-review.json"
+B008_EVIDENCE_REQUIRED_FIELDS = [
+    "schema_version", "captured_at", "admission", "drill", "pagerduty_timeline",
+    "webhook_receipt", "d1_receipt", "human_delivery_verdict", "reviewer",
+]
+B008_PROCEDURE = [
+    "UI: In PagerDuty, create a separate read-only API key named corelink-incident-review-UTC; do not reuse or rotate PAGERDUTY_ROUTING_KEY.",
+    "UI: With a repository administrator, establish required approval protection for synthetic-drill-staging and provision the staging root worker with SCHEDULED_DRILL_DELIVERY bound to corelink-synthetic-pager-staging; verify the receiver, migrated D1 schema, and dedicated synthetic-service routing/webhook secrets, leaving activation false.",
+    "UI: After those prerequisites are verified, the SRE Lead explicitly authorizes one non-production root-worker scheduled tick in immediate-delivery mode; remove/disable the staging trigger after that tick and never activate the production receiver.",
+    "RUN: Capture that single scheduler acceptance, receiver D1 triggered row, PagerDuty incident ID/timestamp, and signed acknowledgement or escalation webhook; do not retry or dispatch a duplicate.",
+    "RUN: With the read-only key supplied through a password manager or stdin (never argv/logs), export the PagerDuty incident timeline and correlate it to the staging D1 row and webhook receipt at the canonical evidence path.",
+    "UI: Record the human-delivery verdict and D1 outcome/mtta_ms, then disable staging activation and revoke the read-only review key; if any receipt is missing or ambiguous, keep B-008 open and escalate.",
+]
+B008_INPUTS = [
+    "PagerDuty account/service identifier",
+    "read-only review interval",
+    "repository-admin-protected synthetic-drill-staging environment",
+    "staging root worker and SCHEDULED_DRILL_DELIVERY binding",
+    "staging receiver and migrated D1 schema",
+    "dedicated synthetic-drill routing/webhook secrets",
+    "explicit SRE Lead authorization for one immediate-mode scheduled tick",
+]
+B008_CREDENTIAL_BOUNDARY = (
+    "The owner creates and holds a separate read-only PagerDuty API key for incident review. The synthetic-drill "
+    "routing key and webhook secret are staging-only platform secrets; never reuse PAGERDUTY_ROUTING_KEY, commit "
+    "credentials, or include them in evidence."
+)
+B008_EVIDENCE_ITEM_SCHEMA = (
+    "admission records read_only_key_scope=read_only, protected_environment=synthetic-drill-staging, "
+    "required_approvals, staging_root_worker, service_binding, staging_receiver, d1_schema, "
+    "dedicated_secret_names, and owner_authorized_at; drill records drill_id, correlation_id, delivery_mode=immediate, "
+    "scheduled_tick_count=1, scheduled_at, scheduled_tick_disabled_at, and scheduler_acceptance; "
+    "pagerduty_timeline records incident_id, dedup_key=drill_id, correlation_id=drill.correlation_id, "
+    "created_at, trigger_status, escalation_policy_id, acknowledgement_at, escalation_at, and redacted source_url; "
+    "webhook_receipt records event_id, drill_id, correlation_id=drill.correlation_id, kind, occurred_at, "
+    "signature_verified, and redacted source_reference; "
+    "d1_receipt records drill_id, correlation_id=drill.correlation_id, delivery_mode=immediate, "
+    "triggered_at_ms, delivered_at_ms, outcome, ack_ts_ms, mtta_ms, "
+    "ack_vector, and redacted source_reference; human_delivery_verdict is delivered, not_delivered, or inconclusive."
+)
+B008_EXPECTED_POSTCONDITION = (
+    "The redacted receipt correlates one explicitly authorized protected staging drill through scheduler, D1, "
+    "PagerDuty, and signed human acknowledgement/escalation. B-008 remains open unless the evidence proves "
+    "human delivery and all issue closure gates are met."
+)
+B008_RETRY_AND_ROLLBACK = (
+    "Before prerequisites and explicit SRE Lead authorization, dispatch nothing. After authorization, permit one "
+    "staging drill only; do not retry or duplicate. If any receipt is missing/ambiguous or delivery is not proven, "
+    "disable staging activation, retain the evidence, escalate, and keep B-008 open. Revoke only the new read-only "
+    "review key; never revoke or repurpose PAGERDUTY_ROUTING_KEY."
+)
+B008_REQUIRED_REFERENCES = frozenset({
+    "BACKLOG.md#B-008",
+    "BACKLOG.md#B-072",
+    "docs/internal/2026-08-24-owner-decision-brief.md",
+    "evidence/i1641/pagerduty-contract-manifest.json",
+})
+B008_STAGING_TOPOLOGY_PATH = "infra/staging/topology.json"
+B008_STAGING_ROOT_WORKER = "corelink-staging"
+B008_STAGING_SERVICE_BINDING = "SCHEDULED_DRILL_DELIVERY"
+B008_STAGING_RECEIVER = "corelink-synthetic-pager-staging"
 B065_EVIDENCE_REQUIRED_FIELDS = [
     "schema_version", "captured_at", "account", "destination_inventory",
     "retained_endpoint_ids", "resolution", "billing_health_runs",
@@ -873,6 +934,62 @@ def _check_b083_evidence(item: dict[str, object]) -> None:
     _check_repository_checks(record["repository_checks"], "B-083", B083_REPOSITORY_CHECKS)
 
 
+def _check_b008_action_contract(item: dict[str, object]) -> None:
+    """Keep B-008's owner procedure aligned with the protected staging receipt gate."""
+    if item["action_type"] != "external_read_credential_and_single_staging_drill":
+        raise PacketError("B-008 action type must require read-only review and one staging drill")
+    if item["procedure"] != B008_PROCEDURE:
+        raise PacketError("B-008 procedure lost its read-only key, protected admission, or one-drill boundary")
+
+    boundary = item["inputs_and_credentials_boundary"]
+    assert isinstance(boundary, dict)
+    if boundary["inputs"] != B008_INPUTS or boundary["credentials"] != B008_CREDENTIAL_BOUNDARY:
+        raise PacketError("B-008 admission inputs or credential separation drifted")
+
+    evidence = item["evidence"]
+    assert isinstance(evidence, dict)
+    if evidence["path"] != B008_EVIDENCE_PATH or evidence["format"] != "json":
+        raise PacketError("B-008 evidence binding drifted")
+    if evidence["required_fields"] != B008_EVIDENCE_REQUIRED_FIELDS:
+        raise PacketError("B-008 receipt fields must capture admission, drill, PagerDuty, webhook, and D1 evidence")
+    if evidence["item_schema"] != B008_EVIDENCE_ITEM_SCHEMA:
+        raise PacketError("B-008 nested receipt schema drifted")
+    if item["expected_postcondition"] != B008_EXPECTED_POSTCONDITION:
+        raise PacketError("B-008 postcondition must require correlated proof of human delivery")
+    if item["retry_and_rollback"] != B008_RETRY_AND_ROLLBACK:
+        raise PacketError("B-008 retry path must prohibit duplicates and require owner authorization")
+    references = item["references"]
+    assert isinstance(references, list)
+    if not B008_REQUIRED_REFERENCES.issubset(references):
+        raise PacketError("B-008 references lost its backlog, staging dependency, or receipt contract")
+    try:
+        topology = json.loads((ROOT / B008_STAGING_TOPOLOGY_PATH).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise PacketError(f"B-008 staging topology is unavailable or invalid: {exc}") from exc
+    _check_b008_staging_binding(topology)
+
+
+def _check_b008_staging_binding(topology: object) -> None:
+    """Bind the owner packet to the checked-in protected staging service route."""
+    if not isinstance(topology, dict):
+        raise PacketError("B-008 staging topology must be an object")
+    cloudflare = topology.get("cloudflare")
+    if not isinstance(cloudflare, dict):
+        raise PacketError("B-008 staging topology has no Cloudflare contract")
+    if cloudflare.get("root_worker") != B008_STAGING_ROOT_WORKER:
+        raise PacketError("B-008 staging root worker binding drifted")
+    if cloudflare.get("synthetic_receiver_worker") != B008_STAGING_RECEIVER:
+        raise PacketError("B-008 staging receiver binding drifted")
+    service_bindings = cloudflare.get("service_bindings")
+    expected_binding = {
+        "worker": B008_STAGING_ROOT_WORKER,
+        "binding": B008_STAGING_SERVICE_BINDING,
+        "service": B008_STAGING_RECEIVER,
+    }
+    if not isinstance(service_bindings, list) or expected_binding not in service_bindings:
+        raise PacketError("B-008 scheduled drill service binding is not source-bound to staging")
+
+
 def _check_b097_evidence(item: dict[str, object]) -> None:
     evidence = item["evidence"]
     assert isinstance(evidence, dict)
@@ -1235,6 +1352,8 @@ def _check_item(
     references = _string_list(item["references"], f"{expected_id}.references", minimum=1)
     if not any(reference.startswith("BACKLOG.md#") for reference in references):
         raise PacketError(f"{expected_id}.references must include its BACKLOG anchor")
+    if expected_id == "B-008":
+        _check_b008_action_contract(item)
     if expected_id == "B-089":
         _check_b089_surface_contract(item)
     if expected_id == "B-065":
