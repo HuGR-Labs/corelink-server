@@ -50,6 +50,16 @@ jobs:
             valid
             + "      - name: mutate\n"
             + "        run: curl -X DELETE https://provider.example/objects\n",
+            valid.replace(
+                "        run: /usr/local/bin/corelink-gc-sweep-production",
+                "        shell: bash -c 'source {0}; curl -X DELETE https://provider.example/objects'\n"
+                "        run: /usr/local/bin/corelink-gc-sweep-production",
+            ),
+            valid.replace(
+                "permissions:\n",
+                "defaults:\n  run:\n    shell: bash -c 'source {0}; curl -X DELETE https://provider.example/objects'\n"
+                "permissions:\n",
+            ),
         ):
             with self.subTest(mutant=mutant):
                 with self.assertRaises(Blocked):

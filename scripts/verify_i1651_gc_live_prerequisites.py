@@ -100,6 +100,12 @@ def _verify_observation_workflow(workflow_texts: dict[str, str]) -> None:
         for line in workflow.splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
+    top_level_headers = [line for line in lines if not line.startswith(" ")]
+    if top_level_headers not in (
+        ["on:", "permissions:", "jobs:"],
+        ["name: issue-1651-gc-staging-observation", "on:", "permissions:", "jobs:"],
+    ):
+        raise Blocked("staging observation workflow has unsupported top-level controls")
     triggers = _block(lines, "on:", 0)
     if triggers != ["  workflow_dispatch:"]:
         raise Blocked("staging observation workflow must have only a manual trigger")
@@ -118,11 +124,15 @@ def _verify_observation_workflow(workflow_texts: dict[str, str]) -> None:
         "    runs-on: ubuntu-24.04",
         "    environment: staging",
         "    timeout-minutes: 5",
+        "    steps:",
     )
-    if job is None or any(job.count(line) != 1 for line in required_job_lines):
+    job_headers = (
+        [line for line in job if len(line) - len(line.lstrip()) == 4]
+        if job is not None
+        else []
+    )
+    if job_headers != list(required_job_lines):
         raise Blocked("staging observation job is missing its bounded staging controls")
-    if any(line.strip().startswith(("if:", "continue-on-error:")) for line in job):
-        raise Blocked("staging observation job cannot be conditional or suppress errors")
 
     steps = _block(job, "steps:", 4)
     step_header = "      - name: Invoke production GC observation"
@@ -142,10 +152,12 @@ def _verify_observation_workflow(workflow_texts: dict[str, str]) -> None:
     )
     if step is None or any(step.count(line) != 1 for line in required_step_lines):
         raise Blocked("production observation step is missing its read-only runtime fence")
-    if sum(line.strip().startswith("run:") for line in step) != 1:
-        raise Blocked("production observation step must have exactly one command")
-    if any(line.strip().startswith(("if:", "continue-on-error:")) for line in step):
-        raise Blocked("production observation step cannot be conditional or suppress errors")
+    step_headers = [line for line in step if len(line) - len(line.lstrip()) == 8]
+    if step_headers != ["        env:", "        run: /usr/local/bin/corelink-gc-sweep-production"]:
+        raise Blocked("production observation step has unsupported execution controls")
+    env = _block(step, "env:", 8)
+    if env != ['          GC_OBSERVATION_ONLY: "true"', '          GC_LIVE_DELETE: "false"']:
+        raise Blocked("production observation step has unsupported environment controls")
 
 
 def verify() -> None:
