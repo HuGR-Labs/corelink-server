@@ -77,11 +77,28 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         '[[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]',
     )
     errors = [f"central workflow is missing required contract: {item}" for item in required if item not in workflow_text]
-    if workflow_text.count("\n  workflow_dispatch:\n") != 1:
-        errors.append("central workflow must expose exactly one manual workflow_dispatch trigger")
-    if "\n  pull_request:\n" in workflow_text or "\n  pull_request_target:\n" in workflow_text:
-        errors.append("central issue pack workflow must not run automatically on pull requests")
+    triggers = mapping_child_keys(workflow_text, "on")
+    if triggers != ["workflow_dispatch"]:
+        errors.append(f"central issue pack workflow must have only workflow_dispatch triggers; found {triggers}")
     return errors
+
+
+def mapping_child_keys(document: str, parent_key: str) -> list[str]:
+    """Return direct two-space-indented keys from a top-level YAML mapping block."""
+    lines = document.splitlines()
+    parent_line = re.compile(rf"^{re.escape(parent_key)}:\s*(?:#.*)?$")
+    child_line = re.compile(r"^  ([A-Za-z_][A-Za-z0-9_-]*):(?:\s|$)")
+    start = next((index for index, line in enumerate(lines) if parent_line.fullmatch(line)), None)
+    if start is None:
+        return []
+    keys: list[str] = []
+    for line in lines[start + 1 :]:
+        if line and not line[0].isspace() and not line.startswith("#"):
+            break
+        match = child_line.match(line)
+        if match:
+            keys.append(match.group(1))
+    return keys
 
 
 def valid_sha_pair(expected: str, actual: str) -> bool:
@@ -231,9 +248,12 @@ def self_test(catalog: dict) -> list[str]:
     canonical_workflow = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8")
     if validate_workflow_contract(canonical_workflow):
         failures.append("canonical workflow failed its static contract")
-    automatic_workflow = canonical_workflow.replace("\n  workflow_dispatch:\n", "\n  pull_request:\n", 1)
-    if not validate_workflow_contract(automatic_workflow):
-        failures.append("workflow auto-trigger mutation was accepted")
+    for trigger in ("push", "schedule"):
+        automatic_workflow = canonical_workflow.replace(
+            "\n  workflow_dispatch:\n", f"\n  workflow_dispatch:\n  {trigger}:\n", 1
+        )
+        if not validate_workflow_contract(automatic_workflow):
+            failures.append(f"workflow {trigger} trigger mutation was accepted")
     unbound_workflow = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8").replace(
         'ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"', "ACTUAL_SHA=$EXPECTED_SHA"
     )
