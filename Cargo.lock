@@ -2350,6 +2350,7 @@ dependencies = [
  "corelink-privacy-erasure-worker",
  "corelink-reapi",
  "corelink-ratelimit",
+ "corelink-reapi",
  "corelink-slo",
  "corelink-stripe-real",
  "corelink-telemetry",
