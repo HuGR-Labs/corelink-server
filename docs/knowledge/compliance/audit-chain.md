@@ -53,18 +53,15 @@ timestamp: "2026-09-06T00:00:00Z"
 
 ---
 
-## Current archive evidence boundary (2026-09-22)
+## Current archive evidence boundary (2026-09-24)
 
-The archive route and provider-neutral Object-Lock contract are repository
-surfaces only. No approved provider, account, bucket, prefix, residency
-mapping, retention configuration, or writer/reader deployment has been
-identified for the keyed archive. The redacted B-046 receipt
-(`evidence/owner-actions/B-046/object-lock-probe.json`) is `INDETERMINATE`:
-the supplied credential shape was rejected before bucket creation, so no
-object or manifest probe ran. Until an owner provisions one exact target and
-attaches authenticated redacted readback receipts, the archive is
-`INDETERMINATE`; a provider label, D1 index, or repository contract cannot
-establish immutable archive completeness.
+Canonical main at d33412d0ffd56c1d73d99cd1cd342cabfcd81833 includes the existing R2 archive path and provider-neutral Object-Lock contract, plus the optional tenant/residency-bound AWS S3 adapter, inactive AWS provisioning template, and protected manual OIDC proof workflow from [#2347](https://github.com/HuGR-dev/corelink-server/pull/2347). [#2400](https://github.com/HuGR-dev/corelink-server/pull/2400) binds delete-permission evidence to the exact principal, bucket, key, version, and action. These are repository controls only: AWS remains inactive and unwired, and no provider account, bucket, region/residency mapping, retention policy, or writer/reader deployment has been approved for the archive.
+
+Cloudflare's [R2 S3 API compatibility table](https://developers.cloudflare.com/r2/api/s3/api/) marks Object-Lock enablement on CreateBucket unsupported and marks the PutObject Compliance mode, retain-until, and legal-hold headers unsupported. R2 therefore cannot satisfy this Compliance/Object-Lock requirement. That capability evidence does not identify or approve a replacement target.
+
+The retained B-046 receipt (evidence/owner-actions/B-046/object-lock-probe.json) is INDETERMINATE: on 2026-09-09 the configured R2 S3-compatible endpoint returned InvalidArgument before bucket creation, so no bucket or object was created and no data or manifest behavior was observed. Native R2 Bucket Lock metadata, lifecycle configuration, conditional writes, a D1 index, and repository checks do not establish immutable archive completeness. A separate B-063 packet records a 2026-09-05 archive-partition lag observation and says recovery is not proven; it is historical operational evidence, not a target-bound immutability receipt.
+
+Until one exact target is approved and authenticated redacted receipts establish the required data-object and signed-manifest behavior, the keyed archive remains INDETERMINATE.
 
 CoreLink needs an audit log whose retroactive alteration an EXTERNAL reader can DETECT at verify time. It does this in two layers: a per-tenant BLAKE3 hash chain that makes any post-hoc edit/delete of a sealed row surface as a chain break when the daily verifier walks it (the RFC-6962-style transparency discipline applied to CloudEvents audit events), and an OPTIONAL public witness that submits a signed chain/attestation digest to the sigstore/Rekor transparency log. The live chain producer IS wired: the hourly `POST /_internal/audit/drain` drain (`crates/corelink-container/src/routes/audit_drain.rs`, mounted in `crates/corelink-container/src/main.rs:463-475`) seals pending `audit_outbox` rows into the chain in D1.
 
