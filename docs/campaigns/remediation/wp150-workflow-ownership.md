@@ -4,8 +4,8 @@ Canonical closed ownership map for tracked GitHub Actions workflows.
 Update this manifest with every workflow add, rename or removal. Unknown ownership remains `LEAD-BLOCKED | blocked`.
 Historical owned assignments are preserved from B131-B167.md at immutable base 648ecdccd229bdb5154b86843053c28b9cce9d36; the added workflow rows have no evidence-backed owner and remain blocked.
 
-workflow-count: 221
-workflow-paths-sha256: 7832f64a8a0c5d0c0fd3578d062107f5f9fdc5369280c9f1100ba0ec29d74294
+workflow-count: 223
+workflow-paths-sha256: fac983884d51e970f8bf8d50f1990d4778bbc1bc7801d2f8b387fe153a1b15cc
 
 ```wp-workflow-ownership
 # workflow path | owner WP or LEAD-BLOCKED | status
@@ -25,6 +25,7 @@ workflow-paths-sha256: 7832f64a8a0c5d0c0fd3578d062107f5f9fdc5369280c9f1100ba0ec2
 .github/workflows/audit-keyed-epoch-workerd.yml | LEAD-BLOCKED | blocked
 .github/workflows/audit-keyed-epoch.yml | LEAD-BLOCKED | blocked
 .github/workflows/audit-witness-deploy.yml | LEAD-BLOCKED | blocked
+.github/workflows/aws-s3-object-lock-live-proof.yml | LEAD-BLOCKED | blocked
 .github/workflows/aws-s3-object-lock-template.yml | LEAD-BLOCKED | blocked
 .github/workflows/b029-load-gate.yml | LEAD-BLOCKED | blocked
 .github/workflows/b035-contract-pr.yml | LEAD-BLOCKED | blocked
@@ -159,6 +160,7 @@ workflow-paths-sha256: 7832f64a8a0c5d0c0fd3578d062107f5f9fdc5369280c9f1100ba0ec2
 .github/workflows/issue-2148-derived-v0004-policy.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2152-cyclonedx-diagnostic.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2156-ci-bundle-1-contract.yml | LEAD-BLOCKED | blocked
+.github/workflows/issue-2169-b105-hosted-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2176-grpc-deny-gate.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2177-reapi-ingress-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2198-okf-adr-authority.yml | LEAD-BLOCKED | blocked
