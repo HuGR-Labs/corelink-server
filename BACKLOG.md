@@ -5364,9 +5364,10 @@ finding-title: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates
 problem: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 41: Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 dependencies: []
-next-action: "Keep B-210 done while B-119 remains done and /admin/ops* remains absent; if a durable, securely bound approval surface is restored, re-open B-119 and B-210 together and re-audit SSR guard ordering before publishing any page."
-acceptance: "B-210 is retired/superseded by done B-119: /admin/ops* is absent, the B-119 census remains done, and the retirement gate fails closed on status regression or surface reintroduction; restore of a durable bound surface reopens both items."
+next-action: "For DD-062: remediate the finding titled \"Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 41); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-062: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
 verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-210 --expect done
   python3 scripts/verify_b210_retirement.py --self-test
   python3 scripts/verify_b210_retirement.py
 verify-means: |
@@ -5576,12 +5577,11 @@ acceptance: "Evidence for DD-068: a code or documented owner decision at the cit
 verify: |
   python3 scripts/verify_b101_proposals.py --id B-216
 verify-means: |
-  parked — focused source tests and mutation gates prove the DLQ consumer accepts
+  parked — owner packet `docs/internal/b215-b230-runtime-owner-actions.md` remains: focused source tests and mutation gates prove the DLQ consumer accepts
   only PagerDuty HTTP 202 as delivery, retains the DLQ delivery when paging is
   missing/rejected, records privacy-minimized durable lifecycle receipts before
   queue disposition, redacts transport errors, and permits only one main-queue
-  re-enqueue. Runtime/owner packet
-  `docs/internal/b215-b230-runtime-owner-actions.md` remains: verify the deployed
+  re-enqueue. Verify the deployed
   consumer, an accepted on-call delivery, and one controlled exhausted-message
   observation. Local source evidence is not production delivery evidence.
 last-verified: 2026-09-09
@@ -6020,9 +6020,10 @@ finding-title: "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it ga
 problem: "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
 evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 64: CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
 dependencies: []
-next-action: "Completed: confirm the deployed secret-name gate, deploy the exact source SHA, and verify one signed production webhook without retaining credential or payload values."
-acceptance: "Redacted production evidence at evidence/production/B-229-clerk-webhook-2026-09-08.md records the exact source SHA, Cloudflare version, 100% traffic, health 200, and signed probe 200 ignored."
+next-action: "For DD-085: remediate the finding titled \"CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 64); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-085: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
 verify: |
+  python3 scripts/verify_b101_closures.py --id B-229 --expect done
   python3 scripts/verify_b229_clerk_webhook.py && \
   python3 scripts/verify_b229_clerk_webhook.py --self-test && \
   python3 -m unittest tests/test_verify_b229_clerk_webhook.py
@@ -6684,9 +6685,11 @@ owner: tl
 status: done
 verify: python3 scripts/verify_b028_dependabot.py
 verify-means: |
-  done — the fail-closed verifier requires the authenticated zero-open census
-  captured in `docs/security/b028-dependabot-census-2026-09-06.json`, anchored
-  to delivered `main@cdd6a6714`, and verifies patched `fast-uri`/`qs`, local
+  done — the fail-closed verifier preserves the nine-alert pre-merge census in
+  `docs/security/b028-dependabot-census-2026-09-06.json` and requires the
+  authenticated zero-open census in
+  `docs/security/b028-dependabot-census-2026-09-06-postmerge.json`, anchored to
+  delivered `main@cdd6a6714`. It verifies patched `fast-uri`/`qs`, local
   audited `extract-zip`/`image-size`, no vulnerable published nodes, no
   audit-ignore masking, complete pagination metadata and a non-vacuous
   historical census. Any API, lockfile, marker or classification drift fails
@@ -10672,7 +10675,8 @@ o Dockerfile embarca explicitamente `byok-aws-real`, e a ativação consulta o K
 (incluindo `check_access`) antes de qualquer escrita D1. Não há sucesso simulado, nem
 fallback plaintext/XOR. Credenciais AWS, endpoint e evidência de execução contra o KMS
 do owner continuam requisitos operacionais separados; por isso o item permanece `open`
-até o owner fornecer essa evidência e o binário ligar o `run_loop` de revogação.
+até o owner fornecer recibos do ciclo de vida, incluindo a medição de revogação do
+`run_loop` no binário de produção.
 
 Registro histórico do estado pré-D03 (verificado no código de 2026-08-30; não descreve
 os bytes atuais):
@@ -10888,8 +10892,9 @@ verify-means: |
   `tests/test_verify_b083_byok.py` executes this exact verifier in a temporary tree
   and requires the feature-removal Dockerfile mutant to fail with the named
   provider-selection error.
-  This gate intentionally does not claim owner credentials, live KMS execution, or
-  revocation-loop wiring; those remain separate closure evidence.
+  This gate intentionally does not claim owner credentials, live KMS execution, or a
+  measured production revocation p99; those remain separate closure evidence. Production
+  `run_loop` wiring is verified independently by `scripts/verify_b083_revocation_wiring.py`.
 
   The remainder of this block is retained as historical pre-D03 mutation evidence.
 
@@ -12311,8 +12316,8 @@ ancestralidade de commit; alterar registry, manifest ou qualquer arquivo auditad
 reancorar o checkpoint.
 
 **Estágio concluído:** a ingestão estrutural e a revisão semântica das fontes admitidas
-estão registradas no manifesto. Cada uma das 42 equivalências aponta para o título canônico,
-fonte e localizador; quatro duplicatas exatas apontam para o achado-fonte repetido; cada uma das 73 descobertas distintas tem um item canônico B-171…B-243,
+estão registradas no manifesto. As 61 equivalências apontam para o título canônico,
+fonte e localizador; as 4 duplicatas exatas apontam para o achado-fonte repetido; cada uma das 73 descobertas distintas tem um item canônico B-171…B-243,
 título, fonte, contrato aberto e prova de distinção. B-244…B-249 são itens técnicos
 independentes registrados depois do censo, não propostas adicionais de B-101. A admissão
 de fontes futuras continua falhando fechada.
@@ -12329,7 +12334,7 @@ verify-means: |
   `reports/audits/**`; cada um é fonte admitida ou exclusão explícita. Um quarto audit,
   symlink, tipo não regular, digest, contagem, ID, decisão ou B-ID canônico inválido fica
   vermelho. Cada achado admitido também carrega no manifesto uma disposição semântica
-  individual: equivalência a um B canônico existente (42), duplicata exata (4), ou proposta de novo B (73), com
+  individual: equivalência a um B canônico existente (61), duplicata exata (4), ou proposta de novo B (73), totalizando 61 + 4 + 73 = 138, com
   título, fonte, localizador e prova específica, além de um contrato de ação aberto no
   backlog para cada B-171…B-243. B-244…B-249 não pertencem ao censo B-101 e são
   mantidos como itens técnicos independentes. Não existe bucket de recusa genérico.
@@ -12338,8 +12343,8 @@ verify-means: |
   `reports/audit-finding-decisions/**` disparam este gate em PR e push. Não é o antigo grep
   que contava a própria prosa.
 
-  B-101 está `done` porque as 119 associações já têm uma disposição semanticamente
-  auditável: 42 equivalências, 4 duplicatas exatas e 73 propostas novas. O verificador rederiva a população,
+  B-101 está `done` porque os 138 achados já têm uma disposição semanticamente
+  auditável: 61 equivalências, 4 duplicatas exatas e 73 propostas novas (61 + 4 + 73 = 138). O verificador rederiva a população,
   valida cada prova e impede que uma alteração de título, fonte, decisão ou proposta passe
   verde. Uma proposta nova é uma decisão canônica registrada, não uma aceitação silenciosa
   do risco.

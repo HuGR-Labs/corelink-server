@@ -106,11 +106,14 @@ Capability negotiation requires a separate probe configuration and the exact
 key/version of an already locked synthetic object. The adapter constructs both
 the probe S3 and STS clients from that one configuration, verifies the observed
 STS ARN against the approved probe principal, and accepts only a structured S3
-`AccessDenied` with a provider request ID for that exact version. The protected
-workflow independently records the effective `s3:DeleteObjectVersion` policy
-simulation for the same principal, bucket, key, and version. A missing probe,
-identity mismatch, missing permission receipt, successful delete, or other
-service error fails closed. The archive writer never receives delete permission.
+`AccessDenied` with a provider request ID for that exact version. Before that
+delete attempt, a protected permission verifier must return a durable receipt
+bound to the exact STS principal, bucket, key, version, and
+`s3:DeleteObjectVersion` action. The protected workflow independently records
+the effective policy simulation for that same binding. A caller-supplied string,
+missing or mismatched evidence, missing probe, identity mismatch, successful
+delete, or other service error fails closed. The archive writer never receives
+delete permission.
 
 The template writer policy grants no delete or retention-override authority.
 It permits setting legal hold only to `ON`. The runtime adapter stays

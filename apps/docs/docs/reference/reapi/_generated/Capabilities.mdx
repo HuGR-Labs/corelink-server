@@ -33,6 +33,108 @@ description: Auto-generated reference for the Capabilities gRPC service.
 | `hash` | `string` | 1 |
 | `size_bytes` | `int64` | 2 |
 
+### GetActionResultRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `instance_name` | `string` | 1 |
+| `action_digest` | `Digest` | 2 |
+| `inline_stdout` | `bool` | 3 |
+| `inline_stderr` | `bool` | 4 |
+| `inline_output_files` | `repeated string` | 5 |
+| `digest_function` | `DigestFunction.Value` | 6 |
+
+### UpdateActionResultRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `instance_name` | `string` | 1 |
+| `action_digest` | `Digest` | 2 |
+| `action_result` | `ActionResult` | 3 |
+| `results_cache_policy` | `ResultsCachePolicy` | 4 |
+| `digest_function` | `DigestFunction.Value` | 5 |
+
+### ActionResult
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `output_files` | `repeated OutputFile` | 2 |
+| `output_directories` | `repeated OutputDirectory` | 3 |
+| `exit_code` | `int32` | 4 |
+| `stdout_raw` | `bytes` | 5 |
+| `stdout_digest` | `Digest` | 6 |
+| `stderr_raw` | `bytes` | 7 |
+| `stderr_digest` | `Digest` | 8 |
+| `execution_metadata` | `ExecutedActionMetadata` | 9 |
+| `output_file_symlinks` | `repeated OutputSymlink` | 10 |
+| `output_directory_symlinks` | `repeated OutputSymlink` | 11 |
+| `output_symlinks` | `repeated OutputSymlink` | 12 |
+
+### OutputFile
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `path` | `string` | 1 |
+| `digest` | `Digest` | 2 |
+| `is_executable` | `bool` | 4 |
+| `contents` | `bytes` | 5 |
+| `node_properties` | `NodeProperties` | 7 |
+
+### OutputDirectory
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `path` | `string` | 1 |
+| `tree_digest` | `Digest` | 3 |
+| `is_topologically_sorted` | `bool` | 4 |
+| `root_directory_digest` | `Digest` | 5 |
+
+### OutputSymlink
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `path` | `string` | 1 |
+| `target` | `string` | 2 |
+| `node_properties` | `NodeProperties` | 4 |
+
+### NodeProperty
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `name` | `string` | 1 |
+| `value` | `string` | 2 |
+
+### NodeProperties
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `properties` | `repeated NodeProperty` | 1 |
+| `mtime` | `google.protobuf.Timestamp` | 2 |
+| `unix_mode` | `google.protobuf.UInt32Value` | 3 |
+
+### ExecutedActionMetadata
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `worker` | `string` | 1 |
+| `queued_timestamp` | `google.protobuf.Timestamp` | 2 |
+| `worker_start_timestamp` | `google.protobuf.Timestamp` | 3 |
+| `worker_completed_timestamp` | `google.protobuf.Timestamp` | 4 |
+| `input_fetch_start_timestamp` | `google.protobuf.Timestamp` | 5 |
+| `input_fetch_completed_timestamp` | `google.protobuf.Timestamp` | 6 |
+| `execution_start_timestamp` | `google.protobuf.Timestamp` | 7 |
+| `execution_completed_timestamp` | `google.protobuf.Timestamp` | 8 |
+| `output_upload_start_timestamp` | `google.protobuf.Timestamp` | 9 |
+| `output_upload_completed_timestamp` | `google.protobuf.Timestamp` | 10 |
+| `auxiliary_metadata` | `repeated google.protobuf.Any` | 11 |
+| `virtual_execution_duration` | `google.protobuf.Duration` | 12 |
+
+### ResultsCachePolicy
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `priority` | `int32` | 1 |
+
 ### BatchUpdateBlobsRequest
 
 | Field | Type | Tag |

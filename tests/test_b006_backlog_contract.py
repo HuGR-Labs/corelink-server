@@ -13,7 +13,7 @@ from scripts.collect_b006_metrics import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, Rej
 from scripts import collect_b006_provider_binding as provider_collector
 from scripts.verify_b006_evidence import EvidenceError, validate_closure, validate_receipt
 from scripts.verify_b006_provider_binding import EXPECTED_ACCOUNT_ID, EXPECTED_AUTH_EMAIL, EXPECTED_AUTH_TYPE, EXPECTED_DEPLOYMENT_ID, EXPECTED_SCRIPT_ETAG, EXPECTED_VERSION_ID, EXPECTED_VERSION_NUMBER, ProviderBindingError, validate_provider_binding
-from scripts.verify_d03_graduation import GraduationError, _check_packets, _load_packets
+from scripts.verify_d03_graduation import GraduationError, _check_b006_done_population, _load_packets, _validate_b006_committed_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,13 +64,47 @@ def test_b006_does_not_publish_a_bearer_probe_command() -> None:
 
 def test_b006_evidence_retains_redacted_403_and_no_guessed_counter() -> None:
     evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
-    validate_receipt(evidence)
+    validate_receipt(evidence, mode="historical")
     assert evidence["schema"] == "corelink-b006-capability-metrics-v2"
     assert evidence["http_status"] == 403
     assert evidence["authenticated"] is False
     assert evidence["aggregate_only"] is False
     assert evidence["labels_included"] is False
     assert evidence["capability_claim_unserved"] is None
+
+
+def test_b006_historical_fixture_ignores_age_while_live_receipts_remain_fresh() -> None:
+    evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    stale = {
+        **evidence,
+        "captured_at": "2020-01-01T00:00:00Z",
+    }
+
+    # The committed 403 receipt remains useful evidence of the redacted,
+    # fail-closed contract after its observation window has expired.
+    validate_receipt(stale, mode="historical")
+
+    # The same data cannot stand in for a current production observation.
+    with pytest.raises(EvidenceError, match="receipt timestamp is stale or from the future"):
+        validate_receipt(stale, mode="live")
+
+    future = {**evidence, "captured_at": "2999-01-01T00:00:00Z"}
+    with pytest.raises(EvidenceError, match="receipt timestamp is stale or from the future"):
+        validate_receipt(future, mode="historical")
+
+
+def test_b006_committed_closure_is_static_but_live_validation_stays_fresh() -> None:
+    metrics = json.loads((ROOT / "artifacts/d03/B006-capability-metrics.json").read_text(encoding="utf-8"))
+    provider = json.loads((ROOT / "artifacts/d03/B006-provider-binding.json").read_text(encoding="utf-8"))
+
+    validate_closure(metrics, provider, mode="historical")
+    with pytest.raises(EvidenceError, match="receipt timestamp is stale or from the future"):
+        validate_closure(metrics, provider)
+
+    # D03 validates its committed DONE and reopened receipts through these
+    # historical paths, without evaluating unrelated packet contracts.
+    _validate_b006_committed_evidence(ROOT, require_closure=True)
+    _validate_b006_committed_evidence(ROOT, require_closure=False)
 
 
 def test_b006_rejects_unauthenticated_zero_and_receipt_boundary_mutations() -> None:
@@ -223,6 +257,7 @@ def test_b006_provider_collector_rejects_substituted_tarball_before_execution(mo
 
 def test_b006_d03_packet_cannot_reopen_after_authenticated_zero_closure() -> None:
     packet = _load_packets(PACKET.read_text(encoding="utf-8"))
+    _validate_b006_committed_evidence(ROOT, require_closure=True)
     packet["packets"]["B-006"]["disposition"] = "REOPENED"
     with pytest.raises(GraduationError, match="B-006"):
-        _check_packets(packet, ROOT)
+        _check_b006_done_population(packet["packets"])

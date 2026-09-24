@@ -26,7 +26,9 @@ on:
     branches: [main]
     paths:
       - 'apps/signup-worker/**'
+      - 'migrations/d1/0145_dsr_dlq_redrive_authority.sql'
       - 'scripts/verify-signup-worker-secrets.sh'
+      - 'scripts/verify-signup-worker-dsr-redrive-schema.sh'
       - '.github/workflows/signup-worker-deploy.yml'
   workflow_dispatch:
 
@@ -124,6 +126,12 @@ jobs:
       # PagerDuty sync and before shipping code; values are never listed/logged.
       - name: Verify required runtime secrets
         run: bash ../../scripts/verify-signup-worker-secrets.sh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Verify DSR redrive schema before deploy
+        run: bash ../../scripts/verify-signup-worker-dsr-redrive-schema.sh
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}

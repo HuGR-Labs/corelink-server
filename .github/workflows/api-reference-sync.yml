@@ -45,9 +45,9 @@ jobs:
   drift-check:
     name: drift check (PR-side)
     if: github.event_name == 'pull_request'
-    # Runner: GitHub-hosted ubuntu-latest (Bundle 5 migration from self-hosted).
+    # Runner: GitHub-hosted ubuntu-24.04 for a stable actionlint contract.
     # Pure python3 + PyYAML; read-only drift check.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -69,7 +69,7 @@ jobs:
   regenerate-and-pr:
     name: regenerate + open PR (main-side)
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: corelink  # zero-hosted: python3 (regenerate) + `gh pr create` — gh 2.97.0 baked at increment 3 (#453)
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Mint repository-scoped bot token
@@ -88,12 +88,13 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-          # Need a writable token for the auto-PR branch push.
-          # A GITHUB_TOKEN branch push suppresses push workflows; the PR
-          # opened/synchronize/reopened event can yield approval-required
-          # runs. Once provisioned, the dedicated token supports unattended
-          # CI; actual completed jobs, not check presence, prove execution.
+          # Need the app token for the auto-PR branch push, but do not persist
+          # credentials into the worktree. A GITHUB_TOKEN branch push suppresses
+          # push workflows; PR opened/synchronize/reopened events can yield
+          # approval-required runs. The dedicated token supports unattended CI;
+          # completed jobs, not check presence, prove execution.
           token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
 
       - name: Regenerate reference set
         run: |
@@ -133,6 +134,9 @@ jobs:
           set -euo pipefail
           : "${BOT_APP_TOKEN:?BOT_APP_TOKEN must be configured before opening an auto-PR}"
           export GH_TOKEN="${BOT_APP_TOKEN}"
+          # Keep checkout credentialless while allowing this bot-authenticated
+          # push to use the already minted, repository-scoped app token.
+          gh auth setup-git
           BRANCH="bot/api-reference-sync-${GITHUB_SHA::7}"
           git checkout -b "$BRANCH"
           git add apps/docs/docs/reference/api/

@@ -53,6 +53,8 @@ on:
           - i1680-schema-contract
           - i1792-miniflare-epoch
           - i2013-migration-replay
+          - i2194
+          - i2417
 
 permissions:
   contents: read
@@ -115,6 +117,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache Cargo
+        if: runner.environment == 'github-hosted'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: . -> target
@@ -790,6 +793,147 @@ jobs:
               tests/test_b142_codeql_selfhost.py \
               tests/test_b142_workflow_predicate.py
           } 2>&1 | tee artifacts/campaign-ci/i1674.log
+
+      - name: Install i2194 Python verifier dependencies
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv-i2194
+          .venv-i2194/bin/python -m pip install --disable-pip-version-check --quiet --upgrade pip
+          .venv-i2194/bin/python -m pip install --disable-pip-version-check --quiet -r requirements-ci.txt
+
+      - name: Install checksum-pinned actionlint for i2194
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
+
+      - name: Lint the six Bundle 2 workflows
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml \
+            .github/workflows/alerts-validate.yml \
+            .github/workflows/api-deprecation-check.yml \
+            .github/workflows/audit-finding-coverage.yml \
+            .github/workflows/b156-published-claims.yml \
+            .github/workflows/b249-dt-webhook-sunset.yml \
+            .github/workflows/canonical-consistency.yml \
+            .github/workflows/campaign-ci.yml
+
+      - name: Install checksum-pinned promtool for i2194
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=3.5.0
+          checksum=e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
+          tarball="${RUNNER_TEMP}/prometheus-${version}.linux-amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/prometheus/prometheus/releases/download/v${version}/prometheus-${version}.linux-amd64.tar.gz" \
+            -o "${tarball}"
+          echo "${checksum}  ${tarball}" | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/promtool"
+          tar -xzf "${tarball}" -C "${RUNNER_TEMP}/promtool" \
+            --strip-components=1 "prometheus-${version}.linux-amd64/promtool"
+          chmod +x "${RUNNER_TEMP}/promtool/promtool"
+          echo "${RUNNER_TEMP}/promtool" >> "$GITHUB_PATH"
+
+      - name: Bundle 2 alerts-validate check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/validate_alert_promtool.sh 2>&1 | tee artifacts/campaign-ci/i2194-alerts.log
+          python3 scripts/validate_alert_runbook_labels.py 2>&1 | tee -a artifacts/campaign-ci/i2194-alerts.log
+
+      - name: Bundle 2 API deprecation check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv-i2194/bin/python scripts/extract-api-deprecations.py \
+            --spec openapi/corelink-v1.yaml --format text \
+            2>&1 | tee artifacts/campaign-ci/i2194-api-deprecations.log
+          .venv-i2194/bin/python scripts/extract-api-deprecations.py \
+            --spec openapi/corelink-v1.yaml --format json --no-check-lead-time \
+            > artifacts/campaign-ci/i2194-api-deprecations.json
+          # PR-only base/head checks have no pull-request event data on this protected-main dispatch.
+          echo "main-ref validation: PR-only base/head metadata checks are not applicable here"
+
+      - name: Bundle 2 audit finding coverage check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv-i2194/bin/python -m pytest \
+            tests/test_audit_finding_coverage.py -q \
+            -k b373_dependabot_census_has_one_exact_b101_decision_per_alert \
+            2>&1 | tee artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python scripts/verify_audit_finding_coverage.py --format json \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python scripts/verify_b101_proposals.py \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python -m pytest tests/test_b101_proposal_contracts.py -q \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python -m pytest tests/test_audit_finding_coverage.py -q \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python -m pytest tests/test_verify_b028_dependabot.py -q \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+
+      - name: Bundle 2 B-156 published claims check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv-i2194/bin/python scripts/verify_b156_pentest_claims.py \
+            2>&1 | tee artifacts/campaign-ci/i2194-b156.log
+          .venv-i2194/bin/python scripts/published_claims_census.py \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-b156.log
+          .venv-i2194/bin/python -m pytest \
+            tests/test_b156_pentest_claims.py tests/test_published_claims_census.py -q \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-b156.log
+
+      - name: Bundle 2 B249 sunset check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_b249_dt_webhook_sunset.py --self-test \
+            2>&1 | tee artifacts/campaign-ci/i2194-b249.log
+          python3 -m unittest -v tests/test_verify_b249_dt_webhook_sunset.py \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-b249.log
+
+      - name: Bundle 2 canonical consistency check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/campaign-ci/i2194-canonical
+          python3 scripts/validate_canonical_consistency.py \
+            --out artifacts/campaign-ci/i2194-canonical/report.json \
+            | tee artifacts/campaign-ci/i2194-canonical/report.txt
+
+      - name: Verify Bundle 2 workflow contract and adversarial mutations
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: .venv-i2194/bin/python scripts/verify_ci_bundle_2.py
+
+      - name: Run the focused BASE backlog ID mutation suite
+        if: ${{ inputs.suite == 'i2417' }}
+        shell: bash
+        run: python3 -m pytest -q tests/test_backlog_verify_trust_boundary.py
 
       - name: Upload compact campaign logs
         if: ${{ always() }}

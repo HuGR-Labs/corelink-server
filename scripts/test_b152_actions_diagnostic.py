@@ -198,6 +198,7 @@ class B152DiagnosticTests(unittest.TestCase):
                  patch.object(diag, "collect_jobs", return_value=[job]), \
                  patch("sys.stderr") as stderr:
                 self.assertEqual(diag.main([
+                    "--repo", "HuGR-dev/corelink-server",
                     "--start", "2026-08-31T00:00:00Z",
                     "--end", "2026-08-31T01:00:00Z",
                 ]), 2)
@@ -283,6 +284,48 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertEqual(report["run_conclusion_counts"], {"startup_failure": 1})
         self.assertEqual(report["run_outcomes"][0]["classification"], "runner_startup_failure")
         self.assertEqual(report["failed_run_count"], 0)
+
+    def test_deleted_buildfailed_identity_is_exact_and_active_same_name_stays_generic(self):
+        deleted = run(100, "2026-08-31T00:00:00Z", conclusion="startup_failure")
+        deleted.update(workflow_id=303501160, path="BuildFailed")
+        active = run(101, "2026-08-31T00:01:00Z", conclusion="startup_failure")
+        active.update(
+            name="Issue 1679 BuildFailed classification",
+            workflow_id=364720472,
+            path=".github/workflows/issue-1679-classification.yml",
+        )
+        self.assertEqual(
+            diag.classify_run_outcome(deleted, "startup_failure"),
+            "buildfailed_workflow_startup_failure",
+        )
+        self.assertEqual(diag.classify_run_outcome(active, "startup_failure"), "runner_startup_failure")
+
+        with patch.object(diag, "collect_runs", return_value=[deleted, active]), \
+             patch.object(diag, "collect_jobs", return_value=[]):
+            report = diag.collect_evidence(
+                "o/r", dt.datetime(2026, 8, 31, tzinfo=UTC),
+                dt.datetime(2026, 9, 1, tzinfo=UTC), 594, 615,
+            )
+        self.assertEqual(
+            report["run_classification_counts"],
+            {"buildfailed_workflow_startup_failure": 1, "runner_startup_failure": 1},
+        )
+        self.assertEqual(report["run_outcomes"][0]["workflow_id"], 303501160)
+        self.assertNotIn("workflow_id", report["run_outcomes"][1])
+
+    def test_partial_deleted_buildfailed_identity_fails_closed(self):
+        candidates = (
+            {"workflow_id": 303501160, "path": "other.yml"},
+            {"workflow_id": 9, "path": "BuildFailed"},
+            {"workflow_id": "303501160", "path": "BuildFailed"},
+            {"workflow_id": 303501160, "path": None},
+        )
+        for identity in candidates:
+            with self.subTest(identity=identity), self.assertRaises(diag.EvidenceUnavailable):
+                diag.classify_run_outcome(
+                    {"id": 102, "conclusion": "startup_failure", **identity},
+                    "startup_failure",
+                )
 
     def test_malformed_total_count_fails_closed(self):
         with patch.object(diag, "run_gh", return_value={"total_count": "1000", "workflow_runs": []}):
@@ -384,6 +427,7 @@ class B152DiagnosticTests(unittest.TestCase):
              patch.object(diag.time, "sleep") as sleep, \
              patch("sys.stderr") as stderr:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
             ]), 2)
@@ -438,6 +482,13 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertIn("scripts/test_b250_deleted_workflow_startup_failure.py", workflow)
         self.assertIn('python3 -m pytest "${FILES[@]}" "${REQUIRED_SUITES[@]}" -q', workflow)
 
+    def test_focused_b250_workflow_uses_exact_head_without_persisting_credentials(self):
+        workflow = (pathlib.Path(__file__).resolve().parent.parent / ".github/workflows/issue-1679-classification.yml").read_text(encoding="utf-8")
+        self.assertIn("ref: ${{ github.event.pull_request.head.sha }}", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn("actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", workflow)
+        self.assertIn("python3 scripts/test_b152_actions_diagnostic.py", workflow)
+
     def test_b152_monitor_is_bounded_read_only_and_persists_indeterminate_evidence(self):
         workflow = (pathlib.Path(__file__).resolve().parent.parent / ".github/workflows/b152-actions-monitor.yml").read_text(encoding="utf-8")
         self.assertIn("cron: '*/15 * * * *'", workflow)
@@ -446,6 +497,7 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertIn("runs-on: ubuntu-latest", workflow)
         self.assertIn("timeout-minutes: 8", workflow)
         self.assertIn("--fetch-logs", workflow)
+        self.assertIn('"run_classification_counts": report.get("run_classification_counts", {})', workflow)
         self.assertIn('"zero_window_jobs_is_not_closure": True', workflow)
         self.assertIn("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", workflow)
         self.assertIn("retention-days: 30", workflow)
@@ -455,6 +507,7 @@ class B152DiagnosticTests(unittest.TestCase):
     def test_missing_gh_is_sanitized_indeterminate_not_a_traceback(self):
         with patch.object(diag.subprocess, "run", side_effect=FileNotFoundError("secret path")), patch("sys.stderr") as stderr:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
             ]), 2)
@@ -466,6 +519,7 @@ class B152DiagnosticTests(unittest.TestCase):
         report = {"run_ids": [], "failed_jobs": [], "window_jobs": [{"job_id": 42}]}
         with patch.object(diag, "collect_evidence", return_value=report), patch.object(diag.subprocess, "run", side_effect=FileNotFoundError("secret path")), patch("sys.stderr") as stderr:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
                 "--fetch-logs",
@@ -478,6 +532,7 @@ class B152DiagnosticTests(unittest.TestCase):
         report = {"run_ids": [], "failed_jobs": [], "window_jobs": []}
         with patch.object(diag, "collect_evidence", return_value=report), patch.object(pathlib.Path, "write_text", side_effect=OSError("secret path")), patch("sys.stderr") as stderr:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
                 "--output", "/private/tmp/secret-report.json",
@@ -491,6 +546,7 @@ class B152DiagnosticTests(unittest.TestCase):
         available = [{"job_id": 42, "available": True, "status": "available", "causal": False, "error": None}]
         with patch.object(diag, "collect_evidence", return_value=report), patch.object(diag, "fetch_logs", return_value=available), patch("sys.stdout") as stdout:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
                 "--fetch-logs",
@@ -504,6 +560,7 @@ class B152DiagnosticTests(unittest.TestCase):
             "failed_jobs": [], "window_jobs": []
         }), patch.object(diag, "collect_runs", return_value=[]):
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
                 "--known-run", "7",

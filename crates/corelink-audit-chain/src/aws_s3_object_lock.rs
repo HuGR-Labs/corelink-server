@@ -34,6 +34,7 @@ pub struct AwsS3ObjectLockAdapter {
     delete_probe: Option<Client>,
     delete_probe_sts: Option<StsClient>,
     delete_probe_target: Option<DeleteProbeTarget>,
+    delete_probe_permission_verifier: Option<Arc<dyn DeleteProbePermissionVerifier>>,
     config: AwsS3ComplianceArchiveConfig,
     residency: ArchiveResidency,
     audit: Arc<dyn ComplianceArchiveAuditSink>,
@@ -228,14 +229,12 @@ pub struct ComplianceArchiveAuditEvent {
 }
 
 /// Exact already-locked synthetic object version used during protected
-/// capability negotiation. The workflow must independently demonstrate the
-/// listed principal's effective delete permission for this exact version.
+/// capability negotiation.
 #[derive(Clone, PartialEq, Eq)]
 pub struct DeleteProbeTarget {
     object_key: String,
     version_id: String,
     expected_principal_arn: String,
-    effective_permission_receipt: String,
 }
 
 impl core::fmt::Debug for DeleteProbeTarget {
@@ -245,7 +244,6 @@ impl core::fmt::Debug for DeleteProbeTarget {
             .field("object_key", &"[redacted]")
             .field("version_id", &"[redacted]")
             .field("expected_principal_arn", &"[redacted]")
-            .field("effective_permission_receipt", &"[redacted]")
             .finish()
     }
 }
@@ -256,30 +254,110 @@ impl DeleteProbeTarget {
         object_key: impl Into<String>,
         version_id: impl Into<String>,
         expected_principal_arn: impl Into<String>,
-        effective_permission_receipt: impl Into<String>,
     ) -> Result<Self, ObjectLockArchiveError> {
         let object_key = object_key.into();
         let version_id = version_id.into();
         let expected_principal_arn = expected_principal_arn.into();
-        let effective_permission_receipt = effective_permission_receipt.into();
         AwsS3ObjectLockAdapter::validate_object_key(&object_key)?;
         if version_id.trim().is_empty()
             || version_id.trim() != version_id.as_str()
             || expected_principal_arn.trim().is_empty()
-            || effective_permission_receipt.trim().is_empty()
         {
             return Err(ObjectLockArchiveError::CapabilityNegotiationFailed(
-                "delete probe requires an exact object version, STS principal, and effective-permission receipt"
-                    .to_string(),
+                "delete probe requires an exact object version and STS principal".to_string(),
             ));
         }
         Ok(Self {
             object_key,
             version_id,
             expected_principal_arn,
-            effective_permission_receipt,
         })
     }
+}
+
+/// Immutable request that a protected authority must verify before a delete
+/// denial can count as Object Lock evidence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeleteProbePermissionRequest {
+    /// STS principal that will issue the delete request.
+    pub principal_arn: String,
+    /// Exact approved bucket containing the synthetic locked object.
+    pub bucket: String,
+    /// Exact synthetic object key.
+    pub object_key: String,
+    /// Exact locked object version.
+    pub version_id: String,
+    /// IAM action that must be effectively allowed before Object Lock denies it.
+    pub action: &'static str,
+}
+
+/// Durable result from a protected effective-permission authority.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeleteProbePermissionEvidence {
+    /// Principal checked by the authority.
+    pub principal_arn: String,
+    /// Bucket checked by the authority.
+    pub bucket: String,
+    /// Object key checked by the authority.
+    pub object_key: String,
+    /// Object version bound to the authority's evidence.
+    pub version_id: String,
+    /// IAM action checked by the authority.
+    pub action: String,
+    /// Non-secret durable evidence identifier returned by the authority.
+    pub receipt_id: String,
+}
+
+impl DeleteProbePermissionEvidence {
+    /// Construct evidence returned by an independently trusted authority.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        principal_arn: impl Into<String>,
+        bucket: impl Into<String>,
+        object_key: impl Into<String>,
+        version_id: impl Into<String>,
+        action: impl Into<String>,
+        receipt_id: impl Into<String>,
+    ) -> Result<Self, ObjectLockArchiveError> {
+        let principal_arn = principal_arn.into();
+        let bucket = bucket.into();
+        let object_key = object_key.into();
+        let version_id = version_id.into();
+        let action = action.into();
+        let receipt_id = receipt_id.into();
+        AwsS3ObjectLockAdapter::validate_object_key(&object_key)?;
+        if principal_arn.trim().is_empty()
+            || bucket.trim().is_empty()
+            || version_id.trim().is_empty()
+            || action.trim().is_empty()
+            || receipt_id.trim().is_empty()
+        {
+            return Err(ObjectLockArchiveError::CapabilityNegotiationFailed(
+                "delete permission evidence was incomplete".to_string(),
+            ));
+        }
+        Ok(Self {
+            principal_arn,
+            bucket,
+            object_key,
+            version_id,
+            action,
+            receipt_id,
+        })
+    }
+}
+
+/// Protected authority for independently verified delete permission evidence.
+///
+/// This port must reject caller-provided IAM claims and return evidence bound
+/// to the exact principal, bucket, key, version, and action. A non-empty
+/// string supplied by archive configuration is never sufficient.
+pub trait DeleteProbePermissionVerifier: Send + Sync + core::fmt::Debug {
+    /// Verify effective permission for the exact pre-expiry delete request.
+    fn verify(
+        &self,
+        request: &DeleteProbePermissionRequest,
+    ) -> Result<DeleteProbePermissionEvidence, ObjectLockArchiveError>;
 }
 
 impl core::fmt::Debug for AwsS3ObjectLockAdapter {
@@ -289,6 +367,10 @@ impl core::fmt::Debug for AwsS3ObjectLockAdapter {
             .field("writer", &"[AWS SDK client redacted]")
             .field("delete_probe", &self.delete_probe.is_some())
             .field("delete_probe_sts", &self.delete_probe_sts.is_some())
+            .field(
+                "delete_probe_permission_verifier",
+                &self.delete_probe_permission_verifier.is_some(),
+            )
             .field("bucket", &"[configured target]")
             .field("expected_bucket_owner", &"[REDACTED]")
             .field("region", &self.config.region)
@@ -312,6 +394,7 @@ impl AwsS3ObjectLockAdapter {
         writer_config: aws_types::SdkConfig,
         delete_probe_config: Option<aws_types::SdkConfig>,
         delete_probe_target: Option<DeleteProbeTarget>,
+        delete_probe_permission_verifier: Option<Arc<dyn DeleteProbePermissionVerifier>>,
         config: AwsS3ComplianceArchiveConfig,
         residency: ArchiveResidency,
         audit: Arc<dyn ComplianceArchiveAuditSink>,
@@ -323,6 +406,7 @@ impl AwsS3ObjectLockAdapter {
             delete_probe,
             delete_probe_sts,
             delete_probe_target,
+            delete_probe_permission_verifier,
             config,
             residency,
             audit,
@@ -478,12 +562,14 @@ impl AwsS3ObjectLockAdapter {
     fn delete_probe_target(&self) -> Result<&DeleteProbeTarget, ObjectLockArchiveError> {
         Self::validate_delete_probe_configuration(
             self.delete_probe.is_some() && self.delete_probe_sts.is_some(),
+            self.delete_probe_permission_verifier.is_some(),
             self.delete_probe_target.as_ref(),
         )
     }
 
     fn validate_delete_probe_configuration(
         has_probe_identity: bool,
+        has_permission_verifier: bool,
         target: Option<&DeleteProbeTarget>,
     ) -> Result<&DeleteProbeTarget, ObjectLockArchiveError> {
         if !has_probe_identity {
@@ -491,8 +577,33 @@ impl AwsS3ObjectLockAdapter {
                 "delete_denial",
             ]));
         }
+        if !has_permission_verifier {
+            return Err(ObjectLockArchiveError::RequiredCapabilityMissing(vec![
+                "delete_denial",
+            ]));
+        }
         target
             .ok_or_else(|| ObjectLockArchiveError::RequiredCapabilityMissing(vec!["delete_denial"]))
+    }
+
+    fn validate_delete_probe_permission_evidence(
+        target: &DeleteProbeTarget,
+        bucket: &str,
+        evidence: &DeleteProbePermissionEvidence,
+    ) -> Result<(), ObjectLockArchiveError> {
+        if evidence.principal_arn != target.expected_principal_arn
+            || evidence.bucket != bucket
+            || evidence.object_key != target.object_key
+            || evidence.version_id != target.version_id
+            || evidence.action != "s3:DeleteObjectVersion"
+            || evidence.receipt_id.trim().is_empty()
+        {
+            return Err(ObjectLockArchiveError::ReadbackMismatch(
+                "delete permission evidence did not bind the exact principal, bucket, key, version, and action"
+                    .to_string(),
+            ));
+        }
+        Ok(())
     }
 
     fn is_structured_access_denied(code: Option<&str>) -> bool {
@@ -659,6 +770,31 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
             }
             Ok(())
         })?;
+        let permission_request = DeleteProbePermissionRequest {
+            principal_arn: delete_probe_target.expected_principal_arn.clone(),
+            bucket: self.config.bucket.clone(),
+            object_key: delete_probe_target.object_key.clone(),
+            version_id: delete_probe_target.version_id.clone(),
+            action: "s3:DeleteObjectVersion",
+        };
+        let permission_evidence = self
+            .delete_probe_permission_verifier
+            .as_ref()
+            .ok_or_else(|| {
+                ObjectLockArchiveError::RequiredCapabilityMissing(vec!["delete_denial"])
+            })?
+            .verify(&permission_request)?;
+        Self::validate_delete_probe_permission_evidence(
+            delete_probe_target,
+            &self.config.bucket,
+            &permission_evidence,
+        )?;
+        let delete_evidence_reference = format!(
+            "{}; delete probe principal={} effective-permission-receipt={}",
+            self.config.evidence_reference,
+            permission_evidence.principal_arn,
+            permission_evidence.receipt_id,
+        );
         match self.delete_exact_version(
             &delete_probe_target.object_key,
             &delete_probe_target.version_id,
@@ -672,12 +808,14 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
                         "delete denial lacked a provider request reference".to_string(),
                     ));
                 }
-                self.persist_audit(self.audit_event(
+                let mut event = self.audit_event(
                     "pre_expiry_delete_denial",
                     object_key,
                     delete_probe_target.version_id.clone(),
                     provider_request_id.to_string(),
-                ))?;
+                );
+                event.evidence_reference = delete_evidence_reference.clone();
+                self.persist_audit(event)?;
                 capabilities.delete_denial = true;
             }
             DeleteAttempt::Denied { .. } => {
@@ -699,12 +837,7 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
                 self.config.target_label.clone(),
             ),
             capabilities,
-            evidence_reference: format!(
-                "{}; delete probe principal={} effective-permission-receipt={}",
-                self.config.evidence_reference,
-                delete_probe_target.expected_principal_arn,
-                delete_probe_target.effective_permission_receipt,
-            ),
+            evidence_reference: delete_evidence_reference,
         })
     }
 
@@ -1001,21 +1134,29 @@ mod tests {
             "audit/probe",
             "version-1",
             "arn:aws:iam::123456789012:role/delete-probe",
-            "effective permission receipt",
         )
         .expect("authorized exact probe target");
-        assert!(DeleteProbeTarget::new("audit/probe", " ", "arn", "receipt").is_err());
-        assert!(DeleteProbeTarget::new("audit/probe", "version-1", " ", "receipt").is_err());
-        assert!(DeleteProbeTarget::new("audit/probe", "version-1", "arn", " ").is_err());
-        assert!(DeleteProbeTarget::new("audit/probe", " version-1", "arn", "receipt").is_err());
-        assert!(DeleteProbeTarget::new("audit/../other", "version-1", "arn", "receipt").is_err());
-        assert!(DeleteProbeTarget::new("audit/probe", "version-2", "arn", "receipt").is_ok());
+        assert!(DeleteProbeTarget::new("audit/probe", " ", "arn").is_err());
+        assert!(DeleteProbeTarget::new("audit/probe", "version-1", " ").is_err());
+        assert!(DeleteProbeTarget::new("audit/probe", " version-1", "arn").is_err());
+        assert!(DeleteProbeTarget::new("audit/../other", "version-1", "arn").is_err());
+        assert!(DeleteProbeTarget::new("audit/probe", "version-2", "arn").is_ok());
 
+        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_configuration(
+            false,
+            true,
+            Some(&target)
+        )
+        .is_err());
+        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_configuration(
+            true,
+            false,
+            Some(&target)
+        )
+        .is_err());
         assert!(
-            AwsS3ObjectLockAdapter::validate_delete_probe_configuration(false, Some(&target))
-                .is_err()
+            AwsS3ObjectLockAdapter::validate_delete_probe_configuration(true, true, None).is_err()
         );
-        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_configuration(true, None).is_err());
 
         let versions = BTreeMap::from([("audit/probe".to_string(), "version-1".to_string())]);
         assert_eq!(
@@ -1025,6 +1166,51 @@ mod tests {
         assert_eq!(
             AwsS3ObjectLockAdapter::version_for_key(&versions, "audit/other"),
             None
+        );
+    }
+
+    #[test]
+    fn delete_probe_permission_evidence_must_bind_exact_identity_and_version() {
+        let target = DeleteProbeTarget::new(
+            "audit/probe",
+            "version-1",
+            "arn:aws:iam::123456789012:role/delete-probe",
+        )
+        .expect("exact delete probe target");
+        let exact = DeleteProbePermissionEvidence::new(
+            "arn:aws:iam::123456789012:role/delete-probe",
+            "approved-bucket",
+            "audit/probe",
+            "version-1",
+            "s3:DeleteObjectVersion",
+            "durable-permission-receipt",
+        )
+        .expect("complete permission evidence");
+        assert!(
+            AwsS3ObjectLockAdapter::validate_delete_probe_permission_evidence(
+                &target,
+                "approved-bucket",
+                &exact,
+            )
+            .is_ok()
+        );
+
+        let wrong_version = DeleteProbePermissionEvidence::new(
+            "arn:aws:iam::123456789012:role/delete-probe",
+            "approved-bucket",
+            "audit/probe",
+            "version-2",
+            "s3:DeleteObjectVersion",
+            "durable-permission-receipt",
+        )
+        .expect("well-formed but wrong permission evidence");
+        assert!(
+            AwsS3ObjectLockAdapter::validate_delete_probe_permission_evidence(
+                &target,
+                "approved-bucket",
+                &wrong_version,
+            )
+            .is_err()
         );
     }
 
