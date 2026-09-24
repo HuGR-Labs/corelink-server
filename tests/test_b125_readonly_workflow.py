@@ -141,9 +141,10 @@ def test_all_production_control_queries_are_single_read_only_selects() -> None:
         "CREATE TABLE audit_chain_head (tenant_id TEXT, region TEXT, head_signature TEXT, "
         "next_sequence INTEGER, head_hash TEXT)"
     )
-    for sql in queries.values():
+    for query_id, sql in queries.items():
         rows = connection.execute(sql).fetchall()
-        assert len(rows) == 6 if "hourly" in sql else len(rows) == 1
+        expected_rows = 6 if query_id == "hourly" else 1
+        assert len(rows) == expected_rows, f"{query_id} returned {len(rows)} rows"
 
 
 def test_failure_receipt_is_bounded_data_free_and_keeps_provider_shape(tmp_path: Path) -> None:
