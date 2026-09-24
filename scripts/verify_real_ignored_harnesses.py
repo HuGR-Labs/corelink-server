@@ -645,6 +645,18 @@ def assert_campaign_i1650_pack(workflow: str) -> None:
             fail(f"i1650 campaign job does not blank exactly one {name} input")
     if re.search(r"\b(?:cargo|pnpm)\b|actions/(?:setup-node|setup-python)|rust-toolchain|setup-protoc", job):
         fail("i1650 campaign job includes unrelated runtime setup")
+    steps = re.findall(r"(?m)^      - name: ([^\n]+)$", job)
+    if steps != ["Checkout exact dispatched tree", "Audit credentialless real integration pack"]:
+        fail("i1650 campaign job steps are not the reviewed minimal set")
+    uses = re.findall(r"(?m)^        uses: ([^\n]+)$", job)
+    if uses != ["actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0"]:
+        fail("i1650 campaign job has an unexpected action")
+    if workflow_run_lines(job) != [
+        "set -euo pipefail",
+        "python3 -S scripts/verify_real_ignored_harnesses.py",
+        "python3 -S scripts/verify_i1650_real_integration_readiness.py",
+    ]:
+        fail("i1650 campaign job commands are not the reviewed static verifier set")
 
     shared = code_text(workflow_job(workflow, "campaign"))
     if "inputs.suite != 'i1650-contract'" not in shared:
@@ -821,6 +833,22 @@ def campaign_mutation_checks(workflow: str) -> None:
     expect_campaign_rejected(
         "shared campaign receives i1650",
         workflow.replace("inputs.suite != 'i1650-contract' && ", "", 1),
+    )
+    expect_campaign_rejected(
+        "extra campaign command",
+        workflow.replace(
+            "          python3 -S scripts/verify_i1650_real_integration_readiness.py\n",
+            "          python3 -S scripts/verify_i1650_real_integration_readiness.py\n          printf unexpected\n",
+            1,
+        ),
+    )
+    expect_campaign_rejected(
+        "extra campaign step",
+        workflow.replace(
+            "\n  campaign:\n",
+            "\n      - name: Unexpected provider step\n        run: curl https://provider.example.invalid\n\n  campaign:\n",
+            1,
+        ),
     )
 
 
