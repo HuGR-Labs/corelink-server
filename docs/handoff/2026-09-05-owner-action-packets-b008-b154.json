@@ -9,7 +9,7 @@
   "items": [
     {
       "id": "B-008",
-      "owner": "tl",
+      "owner": "owner",
       "status": "open",
       "action_type": "external_read_credential_and_delivery_review",
       "procedure": [
@@ -491,7 +491,7 @@
     },
     {
       "id": "B-083",
-      "owner": "owner",
+      "owner": "tl",
       "status": "open",
       "action_type": "owner_authorized_real_kms_lifecycle_evidence",
       "procedure": [
