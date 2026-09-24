@@ -165,7 +165,10 @@ fn service(
 
 fn metadata() -> tonic::metadata::MetadataMap {
     let mut metadata = tonic::metadata::MetadataMap::new();
-    metadata.insert("authorization", "Bearer test-pat".parse().expect("metadata"));
+    metadata.insert(
+        "authorization",
+        "Bearer test-pat".parse().expect("metadata"),
+    );
     metadata
 }
 
@@ -480,7 +483,10 @@ async fn tombstone_gates_never_serve_or_persist_and_authority_faults_fail_closed
     let tombstoned = Arc::new(CasSpy::with_body(body.clone()));
     tombstoned.tombstoned.store(true, Ordering::SeqCst);
     let tombstoned_service = service(Ok(("tenant-a".into(), true)), Ok(()), tombstoned.clone());
-    let tombstoned_read = match tombstoned_service.read_request(&metadata(), read.clone()).await {
+    let tombstoned_read = match tombstoned_service
+        .read_request(&metadata(), read.clone())
+        .await
+    {
         Ok(_) => panic!("tombstoned bytes are never served"),
         Err(error) => error,
     };
