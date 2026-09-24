@@ -59,6 +59,7 @@
 )]
 
 use std::convert::Infallible;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use http::{Request, Response, StatusCode};
@@ -67,9 +68,9 @@ use rand_chacha::ChaCha20Rng;
 use tower::{Service, ServiceExt};
 use tower_layer::Layer;
 
-use corelink_worker::middleware::{
-    bootstrap_median_ci, mann_whitney_u_p_value, sidak_per_test_alpha, JitterPolicy, MissArm,
-    MissMarker, PredicateKind, TimingPaddingConfig, TimingPaddingLayer,
+use super::{
+    bootstrap_median_ci, mann_whitney_u_p_value, sidak_per_test_alpha, BootstrapMedianCi,
+    JitterPolicy, MissArm, MissMarker, PredicateKind, TimingPaddingConfig, TimingPaddingLayer,
 };
 
 /// Body type used everywhere in this test — concrete unit body keeps
@@ -85,6 +86,20 @@ const ALPHA: f64 = 0.05;
 const PER_TEST_TOTAL: usize = TRIALS * 3; // 3 trials × 3 pairs
 const MEDIAN_DIFF_LIMIT_MS: f64 = 1.0;
 const BOOTSTRAP_ITERATIONS: usize = 200;
+
+/// Build the production seeded policy with a reproducible, test-only
+/// server secret. Keeping this fixture inside the middleware module lets
+/// it initialize the private secret without adding a seed override to the
+/// production API; production constructors continue to use `OsRng`.
+fn seeded_layer_for_test(server_secret: u64) -> TimingPaddingLayer {
+    TimingPaddingLayer {
+        config: TimingPaddingConfig::canonical(),
+        policy: JitterPolicy::Seeded,
+        server_secret,
+        call_counter: Arc::new(AtomicU64::new(0)),
+        predicate_kind: PredicateKind::Any,
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 enum Arm {
@@ -267,7 +282,7 @@ fn run_gate(
     bootstrap_seed_offset: u64,
 ) -> (
     Vec<(usize, usize, f64)>,
-    Vec<(usize, usize, corelink_worker::middleware::BootstrapMedianCi)>,
+    Vec<(usize, usize, BootstrapMedianCi)>,
     usize,
     usize,
 ) {
@@ -306,12 +321,14 @@ fn run_gate(
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn three_arm_indistinguishability_with_padding() {
-    let layer = TimingPaddingLayer::new(TimingPaddingConfig::canonical(), JitterPolicy::Seeded);
-
     let mut all_arms = Vec::with_capacity(TRIALS);
     for trial in 0..TRIALS {
+        // Each trial owns an independent, fixed seed so the three trials
+        // are repeatable across hosts while preserving seeded jitter and
+        // the per-request counter used by production.
+        let layer = seeded_layer_for_test(0x2437_0000_0000_0000_u64.wrapping_add(trial as u64));
         let arms = one_trial_padded(
-            layer.clone(),
+            layer,
             (trial as u64).wrapping_mul(0xA5A5_A5A5_A5A5_A5A5),
             SAMPLES_PER_ARM,
         )

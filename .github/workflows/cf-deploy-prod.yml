@@ -65,7 +65,7 @@ jobs:
     if: >-
       github.event_name != 'workflow_run'
       || github.event.workflow_run.conclusion == 'success'
-    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -83,6 +83,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Run secrets-checklist drift verifier
         run: |
@@ -116,7 +117,7 @@ jobs:
   gate-cf-secrets-populated:
     name: gate — CF secrets populated (${{ matrix.env }})
     needs: gate-secrets-checklist
-    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.gate-secrets-checklist.outputs.matrix) }}
@@ -127,6 +128,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -223,7 +225,7 @@ jobs:
     needs:
       - gate-secrets-checklist
       - gate-cf-secrets-populated
-    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
+    runs-on: ubuntu-24.04
     environment: production
     strategy:
       fail-fast: false
@@ -240,6 +242,7 @@ jobs:
           # fail-closes (as designed). The gate also self-heals via a targeted fetch, but
           # fetching the full history here is the clean, deterministic fix.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -248,8 +251,7 @@ jobs:
 
       # The Worker (main = worker/src/index.ts) imports @clerk/backend +
       # @sentry/cloudflare; `wrangler deploy` esbuild-bundles it and needs
-      # worker/node_modules present. On the self-hosted Mac these existed from
-      # local dev; a clean ubuntu runner must install them. Repo is a pnpm
+      # worker/node_modules present. A clean Ubuntu runner must install them. Repo is a pnpm
       # workspace (pnpm@10.32.1); `--filter worker...` installs the worker + its
       # deps only (not the heavy admin-ui/docs members).
       - name: Install worker deps (pnpm workspace)
@@ -268,10 +270,8 @@ jobs:
           npm install -g "wrangler@${WRANGLER_PINNED_VERSION}"
           wrangler --version
 
-      - name: Verify jq present (baked into the corelink box image)
-        # jq is pre-baked in the corelink runner image (same as sbom-consolidated.yml).
-        # No `sudo apt-get` — the ephemeral fabric box has no passwordless sudo and
-        # apt egress is not configured; the tool is already on PATH.
+      - name: Verify jq present
+        # jq is available on the GitHub-hosted Ubuntu runner image.
         run: jq --version
 
       - name: Deploy Worker + prove healthy new writer rollout (prod)
@@ -346,13 +346,14 @@ jobs:
       && needs.deploy.result == 'success'
       && inputs.env == ''
       && !inputs.skip_pin_freshness
-    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
+    runs-on: ubuntu-24.04
     environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

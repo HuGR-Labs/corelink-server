@@ -39,9 +39,9 @@ config-variables:
   - AUDIT_WITNESS_ID
   - AUDIT_WITNESS_URL
   - AUDIT_WITNESS_PUBLIC_KEYS_JSON
+  - B103_TENANT_ID
   - BACKUP_R2_BUCKET
   - BILLING_AGGREGATE_LIVE
-  - BILLING_OVERAGE_RATE_CENTS
   - BILLING_RECONCILE_LIVE
   - BILLING_STRIPE_LEDGER_TABLE
   - BILLING_USAGE_TABLE
@@ -63,5 +63,31 @@ config-variables:
   - NEXT_PUBLIC_CORELINK_API_URL
   - NEXT_PUBLIC_SENTRY_DSN
   - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  - OBJECT_LOCK_PROBE_ACCOUNT_ID
+  - OBJECT_LOCK_PROBE_APPROVAL_REFERENCE
+  - OBJECT_LOCK_PROBE_BUCKET_PREFIX
+  - OBJECT_LOCK_PROBE_CLEANUP_OWNER
+  - OBJECT_LOCK_PROBE_CLOUDTRAIL_EVENT_DATA_STORE_ID
+  - OBJECT_LOCK_PROBE_CLOUDTRAIL_TRAIL_ARN
+  - OBJECT_LOCK_PROBE_COST_CEILING_USD_MICROS
+  - OBJECT_LOCK_PROBE_COST_OWNER
+  - OBJECT_LOCK_PROBE_JURISDICTION
+  - OBJECT_LOCK_PROBE_REGION
+  - OBJECT_LOCK_PROBE_ROLE_ARN
   - R2_TEST_BUCKET
   - STRIPE_PRICE_ID_STARTER
+
+# actionlint 1.7.12 predates GitHub's documented vulnerability-alerts token
+# scope and flags this valid read-only permission. Keep the exception on the
+# one trusted semantic job that uses it; the hosted B-254 gate tests that the
+# same diagnostic still fails in every other workflow.
+paths:
+  .github/workflows/backlog-verify.yml:
+    ignore:
+      - '^unknown permission scope "vulnerability-alerts"\.'
+  # This container workflow is byte-locked by the trusted #2176 gRPC deny
+  # contract. Its credential guard deliberately fails if either generated
+  # credential component is empty, so ShellCheck's SC2015 note is intentional.
+  .github/workflows/container-build-push-prod.yml:
+    ignore:
+      - '^shellcheck reported issue in this script: SC2015:info:10:13: Note that A && B \|\| C is not if-then-else\. C may run when A is true$'

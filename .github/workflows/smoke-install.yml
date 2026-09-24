@@ -1,4 +1,4 @@
-# i1672 — manual CoreLink-fleet boundary observation; credential-free.
+# i1672 — manual GitHub-hosted boundary observation; credential-free.
 name: smoke-install
 
 on:
@@ -15,16 +15,12 @@ permissions:
 
 jobs:
   observe:
-    name: fleet smoke observation
-    runs-on: corelink
+    name: GitHub-hosted smoke observation (not fleet evidence)
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      # GitHub schedules this job on the named fleet label. Record the runtime
-      # identity fields so the receipt cannot misdescribe a fleet run as hosted.
-      I1672_FLEET_LABEL: corelink
-      I1672_RUNNER_NAME: ${{ runner.name }}
-      I1672_RUNNER_OS: ${{ runner.os }}
-      I1672_RUNNER_ARCH: ${{ runner.arch }}
+      # Record the runtime identity fields so the receipt describes the hosted runner.
+      I1672_FLEET_LABEL: github-hosted
     steps:
       - name: Checkout tested tree
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -50,6 +46,9 @@ jobs:
         shell: bash
         env:
           I1672_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+          I1672_RUNNER_NAME: ${{ runner.name }}
+          I1672_RUNNER_OS: ${{ runner.os }}
+          I1672_RUNNER_ARCH: ${{ runner.arch }}
         run: |
           set -euo pipefail
           timeout="${I1672_TIMEOUT_SECONDS:-2}"

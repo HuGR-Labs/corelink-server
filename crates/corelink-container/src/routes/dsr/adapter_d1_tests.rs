@@ -463,6 +463,73 @@ fn sla_credit_migration_tables_remain_classified() {
     }
 }
 
+#[test]
+fn dsr_redrive_envelope_is_retained_for_bounded_accountability() {
+    let migration = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../migrations/d1/0145_dsr_dlq_redrive_authority.sql"
+    );
+    let sql = std::fs::read_to_string(migration).unwrap();
+    let found = extract_tenant_keyed_tables(&sql);
+
+    assert!(found
+        .iter()
+        .any(|table| table.as_str() == "dsr_dlq_redrive_envelopes"));
+    assert!(ALL_TENANT_KEYED_TABLES.contains(&"dsr_dlq_redrive_envelopes"));
+    assert!(RETAIN_SET.contains(&"dsr_dlq_redrive_envelopes"));
+    assert!(!TENANT_ID_TABLES.contains(&"dsr_dlq_redrive_envelopes"));
+    assert_eq!(classification_count("dsr_dlq_redrive_envelopes"), 1);
+}
+
+#[test]
+fn rebuild_next_artifact_is_excluded_while_live_tables_remain_visible() {
+    let rebuild = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../migrations/d1/0144_cas_retention_compliance_metadata.sql"
+    );
+    let sql = std::fs::read_to_string(rebuild).unwrap();
+    assert!(!extract_tenant_keyed_tables(&sql)
+        .iter()
+        .any(|table| table.as_str() == "cas_retention_next"));
+    assert!(!extract_all_created_tables(&sql)
+        .iter()
+        .any(|table| table.as_str() == "cas_retention_next"));
+
+    let migrations = concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations/d1");
+    let mut live_tables = Vec::new();
+    for entry in std::fs::read_dir(migrations).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|extension| extension.to_str()) == Some("sql") {
+            live_tables.extend(extract_tenant_keyed_tables(
+                &std::fs::read_to_string(path).unwrap(),
+            ));
+        }
+    }
+    assert!(live_tables
+        .iter()
+        .any(|table| table.as_str() == "cas_retention"));
+    assert!(live_tables
+        .iter()
+        .any(|table| table.as_str() == "dsr_dlq_redrive_envelopes"));
+
+    // A genuinely live future table still reaches the fail-closed registry
+    // gate; excluding rebuild artifacts cannot hide an ordinary tenant table.
+    let future = extract_tenant_keyed_tables(
+        "CREATE TABLE future_live_tenant_table (tenant_id TEXT NOT NULL);",
+    );
+    assert_eq!(future, vec!["future_live_tenant_table".to_owned()]);
+    assert_eq!(classification_count(&future[0]), 0);
+    assert!(ensure_classification(&[future[0].as_str()]).is_err());
+
+    let live_next_sql = "CREATE TABLE future_live_next (tenant_id TEXT NOT NULL);";
+    let live_next = extract_tenant_keyed_tables(live_next_sql);
+    assert_eq!(live_next, vec!["future_live_next".to_owned()]);
+    assert_eq!(
+        extract_all_created_tables(live_next_sql),
+        vec!["future_live_next".to_owned()]
+    );
+}
+
 /// CF-1 in-code completeness gate: every table in the hand-maintained
 /// registry is classified into EXACTLY ONE bucket (no unclassified, no
 /// ambiguous double-classification). This is the registry half of the
@@ -680,9 +747,9 @@ fn extract_all_created_tables(sql: &str) -> Vec<String> {
             .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '_')
             .collect();
-        // `*_new` are transient table-rebuild artifacts, DROP+RENAMEd to
-        // their canonical name inside the same migration.
-        if !name.is_empty() && !name.ends_with("_new") {
+        // A `*_new` or `*_next` table is transient only when this migration
+        // drops its canonical table and renames the artifact into its place.
+        if !name.is_empty() && !is_transient_rebuild_table(&clean, &name) {
             out.push(name);
         }
         rest = after;
@@ -691,8 +758,9 @@ fn extract_all_created_tables(sql: &str) -> Vec<String> {
 }
 
 /// Extract the names of `CREATE TABLE`s that have a tenant-scoping key
-/// column. Transient table-rebuild artifacts (`*_new`) are excluded — they
-/// are `DROP`+`RENAME`'d to their canonical name in the same migration.
+/// column. Transient table-rebuild artifacts (`*_new` and `*_next`) are
+/// excluded only when the same migration drops the canonical table and
+/// renames the artifact into its place.
 fn extract_tenant_keyed_tables(sql: &str) -> Vec<String> {
     const KEY_COLS: &[&str] = &[
         "tenant_id",
@@ -735,7 +803,7 @@ fn extract_tenant_keyed_tables(sql: &str) -> Vec<String> {
             None => "",
         };
         if !name.is_empty()
-            && !name.ends_with("_new")
+            && !is_transient_rebuild_table(&clean, &name)
             && KEY_COLS.iter().any(|k| contains_word(body, k))
         {
             out.push(name);
@@ -743,6 +811,27 @@ fn extract_tenant_keyed_tables(sql: &str) -> Vec<String> {
         rest = &after[name_end..];
     }
     out
+}
+
+fn is_transient_rebuild_table(sql: &str, name: &str) -> bool {
+    let Some(canonical_name) = ["_new", "_next"]
+        .iter()
+        .find_map(|suffix| name.strip_suffix(suffix))
+    else {
+        return false;
+    };
+    let normalized_sql = sql.split_whitespace().collect::<Vec<_>>().join(" ");
+    let rename = format!("ALTER TABLE {name} RENAME TO {canonical_name}");
+    let dropped_canonical = format!("DROP TABLE {canonical_name}");
+    let has_rename = normalized_sql
+        .split(';')
+        .map(str::trim)
+        .any(|statement| statement == rename);
+    let has_drop = normalized_sql
+        .split(';')
+        .map(str::trim)
+        .any(|statement| statement == dropped_canonical);
+    has_rename && has_drop
 }
 
 /// `body.contains(key)` but only as a whole identifier token, so e.g.

@@ -67,7 +67,66 @@ def assess(root: Path) -> list[str]:
         if "CANONICAL_TARGET='https://staging.corelink.humangr.com'" not in text or 'TARGET_HOST="${K6_TARGET_HOST%/}"' not in text or '[[ "$TARGET_HOST" != "$CANONICAL_TARGET" ]]' not in text:
             gaps.append(f"workflow-host:{path.name}")
     endurance = (root / WORKFLOWS[1]).read_text(encoding="utf-8")
-    if "30s|2h" not in endurance or 'DURATION: ${{ github.event.inputs.duration || \'2h\' }}' not in endurance:
+    dispatch = re.search(r"(?ms)^  workflow_dispatch:\s*\n(?P<body>.*?)(?=^\S|\Z)", endurance)
+    inputs = (
+        re.search(r"(?ms)^    inputs:\s*\n(?P<body>.*?)(?=^  \S|\Z)", dispatch.group("body"))
+        if dispatch
+        else None
+    )
+    duration_input = (
+        re.search(r"(?ms)^      duration:\s*\n(?P<body>.*?)(?=^      \S|\Z)", inputs.group("body"))
+        if inputs
+        else None
+    )
+    duration_block = duration_input.group("body") if duration_input else ""
+    option_block = re.search(
+        r"(?ms)^        options:\s*\n(?P<body>(?:^          -[^\n]*\n)+)", duration_block
+    )
+    options = (
+        set(
+            re.findall(
+                r"(?m)^          -\s*['\"]?([^'\"#\n]+?)['\"]?\s*$",
+                option_block.group("body"),
+            )
+        )
+        if option_block
+        else set()
+    )
+    input_type = re.search(r"(?m)^        type:\s*([^\s#]+)\s*$", duration_block)
+    required = re.search(r"(?m)^        required:\s*true\s*$", duration_block)
+    default = re.search(r"(?m)^        default:\s*['\"]?([^'\"#\n]+?)['\"]?\s*$", duration_block)
+    syntax_step = re.search(
+        r"(?ms)^      - name: validate script syntax\n(?P<body>.*?)(?=^      - |\Z)", endurance
+    )
+    has_bounded_syntax_duration = bool(
+        syntax_step and re.search(r"(?m)^\s*-e DURATION=30s\s*\\?$", syntax_step.group("body"))
+    )
+    preflight_step = re.search(
+        r"(?ms)^      - name: pre-flight target host check\n(?P<body>.*?)(?=^      - |\Z)",
+        endurance,
+    )
+    has_runtime_budget_guard = bool(
+        preflight_step and "test \"${DURATION}\" = '2h' || {" in preflight_step.group("body")
+    )
+    has_dispatch_duration_binding = bool(
+        preflight_step
+        and re.search(
+            r"(?m)^          DURATION:\s*\$\{\{\s*github\.event\.inputs\.duration\s*\|\|\s*['\"]2h['\"]\s*\}\}\s*$",
+            preflight_step.group("body"),
+        )
+    )
+    if (
+        not duration_input
+        or not input_type
+        or input_type.group(1) != "choice"
+        or not required
+        or not default
+        or default.group(1) != "2h"
+        or options != {"2h"}
+        or not has_bounded_syntax_duration
+        or not has_runtime_budget_guard
+        or not has_dispatch_duration_binding
+    ):
         gaps.append("workflow-duration-budget")
     if re.search(r"(?m)^\s*\[env\.staging\]\s*$", (root / "wrangler.toml").read_text(encoding="utf-8")):
         gaps.append("partial-wrangler-staging-environment")

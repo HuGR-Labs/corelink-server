@@ -53,6 +53,9 @@ on:
           - i1680-schema-contract
           - i1792-miniflare-epoch
           - i2013-migration-replay
+          - i2194
+          - i2417
+          - i2421
 
 permissions:
   contents: read
@@ -97,9 +100,39 @@ jobs:
         working-directory: apps/signup-worker
         run: pnpm exec vitest run tests/runner_entitlement_authority.test.ts
 
+  i1650-contract:
+    name: campaign i1650 credentialless real integration pack
+    if: ${{ inputs.suite == 'i1650-contract' && github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact dispatched tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Audit credentialless real integration pack
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ""
+          CF_API_TOKEN: ""
+          D1_DATABASE_ID: ""
+          R2_S3_ENDPOINT: ""
+          R2_S3_ACCESS_KEY_ID: ""
+          R2_S3_SECRET_ACCESS_KEY: ""
+          HUGR_WALLET_TOKEN: ""
+          NEON_TEST_DSN: ""
+        run: |
+          set -euo pipefail
+          python3 -S scripts/verify_real_ignored_harnesses.py
+          python3 -S scripts/verify_i1650_real_integration_readiness.py
+
   campaign:
     name: campaign ${{ inputs.suite }}
-    if: ${{ inputs.suite != 'i1639-ts' && github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    if: ${{ inputs.suite != 'i1639-ts' && inputs.suite != 'i1650-contract' && github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -115,6 +148,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache Cargo
+        if: runner.environment == 'github-hosted'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: . -> target
@@ -152,7 +186,7 @@ jobs:
         run: python -m pip install pytest pyyaml
 
       - name: Install protoc for the Rust lanes
-        if: ${{ inputs.suite == 'i1629' || inputs.suite == 'i1630' || inputs.suite == 'i1631' || inputs.suite == 'i1632' || inputs.suite == 'i1636' || inputs.suite == 'i1638' || inputs.suite == 'i1639' || inputs.suite == 'i1628' || inputs.suite == 'i1671' || inputs.suite == 'i1668' || inputs.suite == 'i1722' || inputs.suite == 'i1665' || inputs.suite == 'i1663' || inputs.suite == 'i1659-dry' || inputs.suite == 'i1809-b063-archive-replay' }}
+        if: ${{ inputs.suite == 'i1629' || inputs.suite == 'i1630' || inputs.suite == 'i1631' || inputs.suite == 'i1632' || inputs.suite == 'i1636' || inputs.suite == 'i1638' || inputs.suite == 'i1639' || inputs.suite == 'i1628' || inputs.suite == 'i1671' || inputs.suite == 'i1668' || inputs.suite == 'i1722' || inputs.suite == 'i1665' || inputs.suite == 'i1663' || inputs.suite == 'i1659-dry' || inputs.suite == 'i1809-b063-archive-replay' || inputs.suite == 'i2421' }}
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
 
       - name: Prepare bounded campaign log directory
@@ -620,15 +654,6 @@ jobs:
             tests/keyed_epoch_disposable.miniflare.test.ts \
             2>&1 | tee artifacts/campaign-ci/i1792-miniflare-epoch.log
 
-      - name: i1650 credential-free ignored-harness manifest contract
-        if: ${{ inputs.suite == 'i1650-contract' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # This verifier is static and mutation based.  It must never receive
-          # the protected real-integration environment or invoke a provider.
-          python3 -S scripts/verify_real_ignored_harnesses.py 2>&1 | tee artifacts/campaign-ci/i1650-contract.log
-
       - name: i1649 read-only Stripe contract tests
         if: ${{ inputs.suite == 'i1649-contract' }}
         shell: bash
@@ -776,7 +801,28 @@ jobs:
           set -euo pipefail
           # Static repository proof only: no D1 provider state, credentials,
           # database provisioning, or legal instrument mutation.
-          python3 -S scripts/verify_b086_d1_residency.py 2>&1 | tee artifacts/campaign-ci/i1654-d1-residency-contract.log
+          capture_commit="$(python3 -S - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          value = json.loads(
+              Path("evidence/owner-actions/B-086/d1-residency-resolution.json").read_text(
+                  encoding="utf-8"
+              )
+          ).get("capture_commit")
+          if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value):
+              raise SystemExit("B-086 capture_commit must be a 40-character lowercase SHA")
+          print(value)
+          PY
+          )"
+          # The packet verifier hashes sources at this historical, read-only
+          # capture commit. Fetch only that object for the shallow checkout.
+          git fetch --no-tags --depth=1 origin "$capture_commit"
+          {
+            python3 -S scripts/verify_b086_d1_residency.py
+            python3 -S scripts/verify_owner_action_packets.py --id B-086
+          } 2>&1 | tee artifacts/campaign-ci/i1654-d1-residency-contract.log
 
       - name: i1655 SLA credit contract (credentialless)
         if: ${{ inputs.suite == 'i1655-sla-credit-contract' }}
@@ -799,6 +845,165 @@ jobs:
               tests/test_b142_codeql_selfhost.py \
               tests/test_b142_workflow_predicate.py
           } 2>&1 | tee artifacts/campaign-ci/i1674.log
+
+      - name: Install i2194 Python verifier dependencies
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv-i2194
+          .venv-i2194/bin/python -m pip install --disable-pip-version-check --quiet --upgrade pip
+          .venv-i2194/bin/python -m pip install --disable-pip-version-check --quiet -r requirements-ci.txt
+
+      - name: Install checksum-pinned actionlint for i2194
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
+
+      - name: Lint the six Bundle 2 workflows
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml \
+            .github/workflows/alerts-validate.yml \
+            .github/workflows/api-deprecation-check.yml \
+            .github/workflows/audit-finding-coverage.yml \
+            .github/workflows/b156-published-claims.yml \
+            .github/workflows/b249-dt-webhook-sunset.yml \
+            .github/workflows/canonical-consistency.yml \
+            .github/workflows/campaign-ci.yml
+
+      - name: Install checksum-pinned promtool for i2194
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=3.5.0
+          checksum=e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
+          tarball="${RUNNER_TEMP}/prometheus-${version}.linux-amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/prometheus/prometheus/releases/download/v${version}/prometheus-${version}.linux-amd64.tar.gz" \
+            -o "${tarball}"
+          echo "${checksum}  ${tarball}" | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/promtool"
+          tar -xzf "${tarball}" -C "${RUNNER_TEMP}/promtool" \
+            --strip-components=1 "prometheus-${version}.linux-amd64/promtool"
+          chmod +x "${RUNNER_TEMP}/promtool/promtool"
+          echo "${RUNNER_TEMP}/promtool" >> "$GITHUB_PATH"
+
+      - name: Bundle 2 alerts-validate check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/validate_alert_promtool.sh 2>&1 | tee artifacts/campaign-ci/i2194-alerts.log
+          python3 scripts/validate_alert_runbook_labels.py 2>&1 | tee -a artifacts/campaign-ci/i2194-alerts.log
+
+      - name: Bundle 2 API deprecation check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv-i2194/bin/python scripts/extract-api-deprecations.py \
+            --spec openapi/corelink-v1.yaml --format text \
+            2>&1 | tee artifacts/campaign-ci/i2194-api-deprecations.log
+          .venv-i2194/bin/python scripts/extract-api-deprecations.py \
+            --spec openapi/corelink-v1.yaml --format json --no-check-lead-time \
+            > artifacts/campaign-ci/i2194-api-deprecations.json
+          # PR-only base/head checks have no pull-request event data on this protected-main dispatch.
+          echo "main-ref validation: PR-only base/head metadata checks are not applicable here"
+
+      - name: Bundle 2 audit finding coverage check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv-i2194/bin/python -m pytest \
+            tests/test_audit_finding_coverage.py -q \
+            -k b373_dependabot_census_has_one_exact_b101_decision_per_alert \
+            2>&1 | tee artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python scripts/verify_audit_finding_coverage.py --format json \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python scripts/verify_b101_proposals.py \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python -m pytest tests/test_b101_proposal_contracts.py -q \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python -m pytest tests/test_audit_finding_coverage.py -q \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+          .venv-i2194/bin/python -m pytest tests/test_verify_b028_dependabot.py -q \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-audit.log
+
+      - name: Bundle 2 B-156 published claims check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv-i2194/bin/python scripts/verify_b156_pentest_claims.py \
+            2>&1 | tee artifacts/campaign-ci/i2194-b156.log
+          .venv-i2194/bin/python scripts/published_claims_census.py \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-b156.log
+          .venv-i2194/bin/python -m pytest \
+            tests/test_b156_pentest_claims.py tests/test_published_claims_census.py -q \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-b156.log
+
+      - name: Bundle 2 B249 sunset check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_b249_dt_webhook_sunset.py --self-test \
+            2>&1 | tee artifacts/campaign-ci/i2194-b249.log
+          python3 -m unittest -v tests/test_verify_b249_dt_webhook_sunset.py \
+            2>&1 | tee -a artifacts/campaign-ci/i2194-b249.log
+
+      - name: Bundle 2 canonical consistency check
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/campaign-ci/i2194-canonical
+          python3 scripts/validate_canonical_consistency.py \
+            --out artifacts/campaign-ci/i2194-canonical/report.json \
+            | tee artifacts/campaign-ci/i2194-canonical/report.txt
+
+      - name: Verify Bundle 2 workflow contract and adversarial mutations
+        if: ${{ inputs.suite == 'i2194' }}
+        shell: bash
+        run: .venv-i2194/bin/python scripts/verify_ci_bundle_2.py
+
+      - name: Run the focused BASE backlog ID mutation suite
+        if: ${{ inputs.suite == 'i2417' }}
+        shell: bash
+        run: python3 -m pytest -q tests/test_backlog_verify_trust_boundary.py
+
+      - name: Verify DSR classification drift and adversarial cases
+        if: ${{ inputs.suite == 'i2421' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          log=artifacts/campaign-ci/i2421-dsr-classification.log
+          cargo fmt --all --check 2>&1 | tee "$log"
+          for test_name in \
+            routes::dsr::adapter_d1::tests::every_registered_tenant_keyed_table_is_classified_exactly_once \
+            routes::dsr::adapter_d1::tests::every_migrated_tenant_keyed_table_is_classified \
+            routes::dsr::adapter_d1::tests::every_registry_table_is_actually_created_by_a_migration \
+            routes::dsr::adapter_d1::tests::classification_gate_rejects_unknown_table_fail_closed \
+            routes::dsr::adapter_d1::tests::dsr_redrive_envelope_is_retained_for_bounded_accountability \
+            routes::dsr::adapter_d1::tests::rebuild_next_artifact_is_excluded_while_live_tables_remain_visible; do
+            cargo test --locked -p corelink-server --lib "$test_name" -- --exact --nocapture 2>&1 | tee -a "$log"
+            grep -F "test ${test_name} ... ok" "$log"
+          done
 
       - name: Upload compact campaign logs
         if: ${{ always() }}

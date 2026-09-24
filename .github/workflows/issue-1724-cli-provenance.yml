@@ -1,21 +1,14 @@
 name: issue-1724-cli-provenance
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/issue-1724-cli-provenance.yml"
-      - ".github/workflows/issue-2050-cli-release-dry-run.yml"
-      - "scripts/verify_i2050_release_dryrun_contract.py"
-      - ".github/workflows/release-cli.yml"
-      - ".github/workflows/release-slsa3.yml"
-      - "scripts/verify_cli_release_inventory.py"
-      - "tools/cli/tests/release_workflow_contract.rs"
-      - "tools/cli/tests/release_workflow_contract/**"
-      - "tools/cli/Cargo.toml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
+  # This is the explicit #1724 pack. A PR does not trigger it: dispatch once
+  # against the immutable candidate SHA after the diff and DCO are admitted.
   workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full 40-character commit SHA to prove
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,20 +16,33 @@ permissions:
 jobs:
   contract:
     name: validate managed CLI provenance contract
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository_id == '1232040291'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 0
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 1
           persist-credentials: false
+      - name: Bind the pack to the requested immutable candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::candidate_sha must be a lowercase 40-character SHA" >&2
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
         with:
           toolchain: 1.91.1
       - name: Reject provenance builder, identity, issuer, and subject mutations
         run: cargo test --locked -p corelink-cli --test release_workflow_contract -- --nocapture
-      - name: Verify issue 2050's nonpublishing release dry-run contract
-        run: python3 -S scripts/verify_i2050_release_dryrun_contract.py contract
       - name: Install checksum-pinned actionlint
         shell: bash
         run: |
@@ -50,5 +56,5 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/actionlint"
           tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
           "${RUNNER_TEMP}/actionlint/actionlint" -version
-      - name: Validate the dry-run trigger and workflow schema
-        run: "${RUNNER_TEMP}/actionlint/actionlint -color .github/workflows/issue-2050-cli-release-dry-run.yml"
+      - name: Validate the pack workflow schema
+        run: '"${RUNNER_TEMP}/actionlint/actionlint" -color .github/workflows/issue-1724-cli-provenance.yml'

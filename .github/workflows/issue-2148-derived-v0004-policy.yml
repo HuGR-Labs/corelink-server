@@ -1,6 +1,7 @@
 name: issue-2138 immutable ledger successor policy
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - '.github/workflows/issue-2148-derived-v0004-policy.yml'
@@ -12,13 +13,14 @@ on:
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0004.json'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0005.json'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0006.json'
+      - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0007.json'
 
 permissions:
   contents: read
 
 jobs:
   policy:
-    name: verify immutable v0004-v0006 successor policy
+    name: verify immutable v0004-v0007 successor policy
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -45,3 +47,4 @@ jobs:
           tests/test_backlog_ledger_successor.py::test_v0006_pins_source_hash_and_exact_changed_ids
           tests/test_backlog_ledger_successor.py::test_v0006_receipt_is_required_for_the_main_baseline_transition
           tests/test_backlog_ledger_successor.py::test_v0006_authorizer_rejects_wrong_immutable_main_parent
+          tests/test_backlog_ledger_successor.py::test_v0007_replays_exact_b083_lifecycle_clarification

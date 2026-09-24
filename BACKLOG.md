@@ -9086,8 +9086,10 @@ fora desta população porque é ownership de B-111.
 
 - **B-113/nightly hosted mutants receipt:** the legacy `nightly.yml`
   `mutants-workspace` job stays disabled. `.github/workflows/issue-1863-mutants-hosted.yml`
-  is the only dispatch-only GitHub-hosted scheduled-equivalent evidence path;
-  its pinned prebuilt command and protected-main guards are checked statically.
+  is the only dispatch-only GitHub-hosted scheduled-equivalent evidence path.
+  It freezes one full inventory, requires an unmutated baseline, and accepts a
+  retained aggregate only after all 27 deterministic hosted shards cover the
+  inventory exactly once; its protected-main guards are checked statically.
   This repository contract does not prove that any dispatched run succeeded.
 - **`terraform-drift.yml`**: explicitamente excluída desta população; é coberta
   por [B-111] e não é uma lane de B-113.
@@ -9127,8 +9129,8 @@ verify-means: |
   que impede este item de virar gaveta. For B-113/nightly, the dispatch-only
   GitHub-hosted scheduled-equivalent evidence path is
   `.github/workflows/issue-1863-mutants-hosted.yml`; the legacy nightly job is
-  disabled. A successful retained receipt remains external evidence and is not
-  inferred from this verifier.
+  disabled. A successful retained aggregate receipt for all 27 shards remains
+  external evidence and is not inferred from this verifier.
 last-verified: 2026-09-05
 ```
 
@@ -10675,7 +10677,8 @@ o Dockerfile embarca explicitamente `byok-aws-real`, e a ativação consulta o K
 (incluindo `check_access`) antes de qualquer escrita D1. Não há sucesso simulado, nem
 fallback plaintext/XOR. Credenciais AWS, endpoint e evidência de execução contra o KMS
 do owner continuam requisitos operacionais separados; por isso o item permanece `open`
-até o owner fornecer essa evidência e o binário ligar o `run_loop` de revogação.
+até o owner fornecer recibos do ciclo de vida, incluindo a medição de revogação do
+`run_loop` no binário de produção.
 
 Registro histórico do estado pré-D03 (verificado no código de 2026-08-30; não descreve
 os bytes atuais):
@@ -10891,8 +10894,9 @@ verify-means: |
   `tests/test_verify_b083_byok.py` executes this exact verifier in a temporary tree
   and requires the feature-removal Dockerfile mutant to fail with the named
   provider-selection error.
-  This gate intentionally does not claim owner credentials, live KMS execution, or
-  revocation-loop wiring; those remain separate closure evidence.
+  This gate intentionally does not claim owner credentials, live KMS execution, or a
+  measured production revocation p99; those remain separate closure evidence. Production
+  `run_loop` wiring is verified independently by `scripts/verify_b083_revocation_wiring.py`.
 
   The remainder of this block is retained as historical pre-D03 mutation evidence.
 
@@ -12041,9 +12045,9 @@ Isto explica parte de [B-091]: a lane `cosign-sign` dispara em tag `v*`, e nunca
 Itens menores que o mandato de impecabilidade cobre: a conta `gmhelmold` tem token
 inválido no keyring e está marcada como ativa no `gh`; e `corelink-runbook-tracker` era o
 único crate cujos lints copiados divergiam do workspace — faltavam `print_stdout` e
-`print_stderr`. A fonte dinâmica atual (verificada em 2026-09-22) reporta 95 pacotes Rust,
-75 diretórios de crate, 171 conceitos OKF e 486 specs com schema mais 11 somente com YAML
-(497 no total); esses valores estão documentados em `CLAUDE.md` e vinculados ao verificador.
+`print_stderr`. A fonte dinâmica atual (verificada em 2026-09-24) reporta 95 pacotes Rust,
+75 diretórios de crate, 174 conceitos OKF e 488 specs com schema mais 11 somente com YAML
+(499 no total); esses valores estão documentados em `CLAUDE.md` e vinculados ao verificador.
 
 ```backlog
 id: B-098
@@ -16011,10 +16015,19 @@ verify-means: |
   `duplicate_count=0`, testemunho SHA-256, proveniência sem valores brutos,
   `last_refreshed` dentro do max-age e hash/conteúdo do audit referenciado; não
   consulta API nem percorre histórico/paginação. O owner executa separadamente o
-  refresh externo autorizado para gerar ou atualizar o snapshot, preserva
-  IDs/timestamps e identifica/corrige o emitter stale pelo caminho administrativo;
-  não fechar por janela silenciosa, rerun ou workflow verde não relacionado.
-last-verified: 2026-09-05
+  refresh externo autorizado para gerar ou atualizar o snapshot. Reconciliação
+  atual (2026-09-24T17:01:32Z): PR #2217 foi mergeado em `main` no commit
+  `ac53279a5f88e7cdfb1f97a5f97085db1e0c4bf0`, concluindo a classificação
+  repo-owned por ID `303501160` mais path `BuildFailed`. A leitura atual da
+  Actions API ainda identifica esse workflow como `deleted`; a consulta
+  limitada após o último run observado (`35676257895`, 2026-09-22T01:34:26Z),
+  até 2026-09-24T17:01:32Z, retornou `total_count=0`. Esse intervalo quieto não prova
+  reparo. A ação mínima restante é GitHub Support ou um owner autorizado de
+  Actions fornecer o case/reference ID e recibo do purge/reindex do registro
+  stale, seguido de um evento novo e não mutante que resolva para o grafo live
+  e crie os jobs/checks esperados. Reter IDs/timestamps autorizados; não fechar
+  por janela silenciosa, rerun ou workflow verde não relacionado.
+last-verified: 2026-09-24
 ```
 
 ### B-251 — quota-CAS property test tinha orçamento e p99 de latência acoplados ao acaso

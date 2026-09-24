@@ -1,86 +1,270 @@
 name: issue #1863 hosted workspace mutants
 
-# Manual-only replacement for the disabled nightly mutants-workspace lane.
-# Keeping this file dispatch-only leaves nightly schedules inert.
+# Manual-only protected-main evidence lane. A new dispatch is a new campaign;
+# GitHub's "re-run failed jobs" keeps the same run_id and is the only supported
+# resume path. It reuses only same-run, digest-validated shard artifacts.
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: issue-1863-mutants-hosted
+  group: issue-1863-mutants-hosted-${{ github.sha }}
   cancel-in-progress: false
 
+env:
+  SHARD_COUNT: 27
+  SHARDING: round-robin
+  SHARD_TIMEOUT_MINUTES: 45
+  TOTAL_RUNNER_MINUTE_CAP: 1270
+
 jobs:
-  mutants-workspace:
-    name: cargo-mutants workspace (fail-on-any-survivor)
+  inventory:
+    name: frozen cargo-mutants workspace inventory
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
       - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
-        timeout-minutes: 10
+        timeout-minutes: 5
         run: bash scripts/ci-assert-pinned-toolchain.sh
-
-      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+      - if: runner.environment == 'github-hosted'
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
-
       - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
         timeout-minutes: 8
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install cargo-mutants (pinned, prebuilt)
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         timeout-minutes: 10
         with:
           tool: cargo-mutants@27.0.0
           fallback: cargo-binstall
-
-      - name: cargo-mutants workspace
-        timeout-minutes: 225
-        run: cargo mutants --workspace --no-shuffle --minimum-test-timeout=600
-
-      - name: Write hosted mutants receipt
-        if: always()
-        env:
-          JOB_STATUS: ${{ job.status }}
-          RECEIPT_PATH: ${{ runner.temp }}/mutants-receipt.json
+      - name: Freeze the complete unsharded inventory
+        timeout-minutes: 8
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
+          cargo mutants --version | grep -Fx 'cargo-mutants 27.0.0'
+          # cargo-mutants 27 requires --shard even for --list.  0/1 is the
+          # sole shard of a denominator-one partition, so this enumerates the
+          # complete workspace inventory rather than a sample of the 27 lanes.
+          cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > "${RUNNER_TEMP}/full-inventory.json"
+          python3 scripts/verify_i2457_mutants_shards.py build-inventory \
+            --raw "${RUNNER_TEMP}/full-inventory.json" \
+            --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --out "${RUNNER_TEMP}/inventory-manifest.json"
+      - name: Upload redacted campaign inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-campaign-inventory-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inventory-manifest.json
+          if-no-files-found: error
+          retention-days: 30
 
-          receipt = {
-              "schema": "corelink.hosted-mutants-receipt.v1",
-              "run_id": os.environ["GITHUB_RUN_ID"],
-              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-              "sha": os.environ["GITHUB_SHA"],
-              "ref": os.environ["GITHUB_REF"],
-              "runner_name": os.environ["RUNNER_NAME"],
-              "runner_os": os.environ["RUNNER_OS"],
-              "status": os.environ["JOB_STATUS"],
-              "mutation_output": "mutants.out/",
-          }
-          Path(os.environ["RECEIPT_PATH"]).write_text(
-              json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
-          )
-          PY
-
-      - name: Upload hosted mutants evidence
+  baseline:
+    name: unmutated workspace baseline
+    needs: inventory
+    if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Download the frozen inventory from this run lineage
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: mutants-campaign-inventory-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/campaign-inputs
+      - name: Select the latest unique inventory attempt
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_i2457_mutants_shards.py select-latest \
+            --artifacts "${RUNNER_TEMP}/campaign-inputs" --filename inventory-manifest.json \
+            --out "${RUNNER_TEMP}/inventory-manifest.json"
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        timeout-minutes: 5
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+      - if: runner.environment == 'github-hosted'
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        timeout-minutes: 8
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run the unmutated baseline before every shard
+        timeout-minutes: 30
+        run: |
+          set +e
+          cargo test --workspace --locked
+          result=$?
+          printf '%s\n' "$result" > "${RUNNER_TEMP}/baseline-exit-code"
+          exit 0
+      - name: Write baseline receipt
+        if: always()
+        run: |
+          set -euo pipefail
+          result=125
+          if [[ -f "${RUNNER_TEMP}/baseline-exit-code" ]]; then result="$(cat "${RUNNER_TEMP}/baseline-exit-code")"; fi
+          python3 scripts/verify_i2457_mutants_shards.py write-baseline \
+            --inventory "${RUNNER_TEMP}/inventory-manifest.json" \
+            --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --exit-code "$result" --out "${RUNNER_TEMP}/baseline-receipt.json"
+      - name: Upload baseline receipt
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mutants-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: mutants-baseline-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/baseline-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Fail closed when the unmutated baseline failed
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f "${RUNNER_TEMP}/baseline-exit-code"
+          test "$(cat "${RUNNER_TEMP}/baseline-exit-code")" = 0
+
+  mutants-workspace:
+    name: cargo-mutants shard ${{ matrix.shard }}/27 (fail-on-any-survivor)
+    needs: [inventory, baseline]
+    if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 9
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Download validated same-run inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: mutants-*-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/campaign-inputs
+      - name: Select latest unique inventory and baseline attempts
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_i2457_mutants_shards.py select-latest \
+            --artifacts "${RUNNER_TEMP}/campaign-inputs" --filename inventory-manifest.json \
+            --out "${RUNNER_TEMP}/inventory-manifest.json"
+          python3 scripts/verify_i2457_mutants_shards.py select-latest \
+            --artifacts "${RUNNER_TEMP}/campaign-inputs" --filename baseline-receipt.json \
+            --out "${RUNNER_TEMP}/baseline-receipt.json"
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        timeout-minutes: 5
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+      - if: runner.environment == 'github-hosted'
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        timeout-minutes: 8
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install cargo-mutants (pinned, prebuilt)
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        timeout-minutes: 10
+        with:
+          tool: cargo-mutants@27.0.0
+          fallback: cargo-binstall
+      - name: Enumerate and run this deterministic shard after the green baseline
+        timeout-minutes: 40
+        run: |
+          set +e
+          output="${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}"
+          mkdir -p "$output"
+          cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json > "${RUNNER_TEMP}/expected-shard.json"
+          list_result=$?
+          if [[ "$list_result" -eq 0 ]]; then
+            cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output "$output"
+            mutant_result=$?
+          else
+            mutant_result=125
+          fi
+          printf '%s\n' "$mutant_result" > "${RUNNER_TEMP}/mutant-exit-code"
+          exit 0
+      - name: Write shard receipt even after a survivor or runner-side failure
+        if: always()
+        run: |
+          set -euo pipefail
+          result=125
+          if [[ -f "${RUNNER_TEMP}/mutant-exit-code" ]]; then result="$(cat "${RUNNER_TEMP}/mutant-exit-code")"; fi
+          python3 scripts/verify_i2457_mutants_shards.py write-shard \
+            --inventory "${RUNNER_TEMP}/inventory-manifest.json" \
+            --baseline "${RUNNER_TEMP}/baseline-receipt.json" \
+            --expected "${RUNNER_TEMP}/expected-shard.json" \
+            --observed "${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}/mutants.out/mutants.json" \
+            --evidence "${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}/mutants.out" \
+            --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --shard "${{ matrix.shard }}" --exit-code "$result" \
+            --out "${RUNNER_TEMP}/shard-receipt.json"
+      - name: Upload shard evidence and receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/mutants-receipt.json
-            mutants.out/
+            ${{ runner.temp }}/shard-receipt.json
+            ${{ runner.temp }}/expected-shard.json
+            ${{ runner.temp }}/mutants-shard-${{ matrix.shard }}/mutants.out/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Fail closed on a missed, timed-out, cancelled, or incomplete shard
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f "${RUNNER_TEMP}/mutant-exit-code"
+          test "$(cat "${RUNNER_TEMP}/mutant-exit-code")" = 0
+          python3 - <<'PY'
+          import json, os
+          receipt = json.load(open(os.environ["RUNNER_TEMP"] + "/shard-receipt.json", encoding="utf-8"))
+          assert receipt["status"] == "success"
+          assert receipt["outcomes_complete"] is True
+          PY
+
+  aggregate:
+    name: aggregate exact 27-shard mutation coverage
+    needs: [inventory, baseline, mutants-workspace]
+    if: always() && github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Download only this workflow run's retained receipts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: mutants-*-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/mutants-artifacts
+      - name: Reject incomplete, mixed, or duplicate shard evidence
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_i2457_mutants_shards.py aggregate \
+            --artifacts "${RUNNER_TEMP}/mutants-artifacts" \
+            --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --out "${RUNNER_TEMP}/mutants-aggregate-receipt.json"
+      - name: Upload aggregate receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mutants-aggregate-receipt.json
           if-no-files-found: error
           retention-days: 30

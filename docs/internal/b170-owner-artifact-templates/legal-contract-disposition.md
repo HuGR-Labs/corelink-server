@@ -29,6 +29,11 @@ signature_status: pending
 
 - The owner packet identifies historical DPA Object Lock and SLA/BYOK language as
   requiring review against the executed instruments.
+- The owner packet records the `docs/customer/dpa-onboarding.md` statement that
+  CoreLink has executed a DPA with a lighthouse enterprise customer; Legal/owner
+  must reconcile that repository claim against an authoritative executed-copy
+  reference. The page itself does not establish a customer identity, signature,
+  or receipt.
 - `legal/dpa/v1.0.0.en-US.md` and `legal/sla/v1.0.0.md` are repository versions;
   their presence does not identify an executed customer copy.
 - `legal/dpa-residency-amendment.md` is a template marked pending review, and the

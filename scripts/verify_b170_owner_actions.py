@@ -32,6 +32,8 @@ PACKET_MARKERS = (
     "`reports/owner-actions/b170-recipient-notification-decision.md` — Sales/Legal",
     "no notification is claimed here",
     "executed DPA/SLA claims and the pending residency template",
+    "docs/customer/dpa-onboarding.md",
+    "has executed its DPA with a lighthouse enterprise customer",
     *tuple(path.as_posix() for path in EVIDENCE),
 )
 

@@ -6,7 +6,9 @@ on:
       - ".github/workflows/issue-1863-mutants-hosted.yml"
       - ".github/workflows/issue-1666-mutants-evidence-contract.yml"
       - "scripts/verify_i1666_mutants_evidence.py"
+      - "scripts/verify_i2457_mutants_shards.py"
       - "tests/test_verify_i1666_mutants_evidence.py"
+      - "tests/test_i2457_mutants_shards.py"
       - ".github/workflows/endurance-2h-nightly.yml"
       - "scripts/verify_b113_lane_population.py"
       - "tests/load/k6/scenarios/endurance-24h.js"
@@ -38,7 +40,10 @@ jobs:
       - name: Verify hosted mutants evidence contract
         run: python3 scripts/verify_i1666_mutants_evidence.py
       - name: Run focused adversarial checks
-        run: python3 tests/test_verify_i1666_mutants_evidence.py
+        run: |
+          set -euo pipefail
+          python3 tests/test_verify_i1666_mutants_evidence.py
+          python3 -m unittest -q tests/test_i2457_mutants_shards.py
       - name: Verify endurance hosted guards and run-scoped attribution
         run: |
           python3 scripts/verify_i1687_endurance_lane.py

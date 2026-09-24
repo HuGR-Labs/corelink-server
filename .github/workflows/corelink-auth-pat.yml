@@ -54,9 +54,8 @@ env:
 jobs:
   pr-gate:
     name: PR gate (clippy + tests — corelink-auth, corelink-pat)
-    # CoreLink's ephemeral Linux fabric keeps this Argon2-bearing lane off the
-    # shared-home founder Mac. No cache action runs on a self-hosted runner.
-    runs-on: corelink
+    # GitHub-hosted Linux isolates this Argon2-bearing lane from shared homes.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0

@@ -23,8 +23,8 @@
 # explicitamente que o tempo decorrido tenha passado dos 900 s, para que um
 # `minutes` mal configurado não produza um verde falso.
 #
-# Manual-only e de propósito: gasta minutos de box sem exercitar código do
-# produto, então roda quando alguém quer a prova, não em todo push.
+# This migrated hosted soak does not prove CoreLink-fabric box lifetime. Keep
+# it manual-only; CoreLink runtime evidence remains a separate requirement.
 name: fabric-soak-proof
 
 concurrency:
@@ -47,7 +47,8 @@ permissions:
 
 jobs:
   soak:
-    runs-on: corelink
+    name: GitHub-hosted soak control (not fabric evidence)
+    runs-on: ubuntu-24.04
     # Bem acima do soak: se o teto do job disparar antes da box morrer, o teste
     # mede o teto e não o fusível — e reportaria verde sem ter provado nada.
     timeout-minutes: 45
