@@ -71,13 +71,13 @@ function parseCanonicalMs(value: string): number {
   return parsed;
 }
 
-function hexBytes(value: string): Uint8Array {
+function hexBytes(value: string): ArrayBuffer {
   if (!lowerHex(value, 64)) reject();
   const bytes = new Uint8Array(32);
   for (let index = 0; index < value.length; index += 2) {
     bytes[index / 2] = Number.parseInt(value.slice(index, index + 2), 16);
   }
-  return bytes;
+  return bytes.buffer;
 }
 
 function bytesToHex(value: ArrayBuffer): string {
@@ -98,7 +98,17 @@ export async function verifyStagingOwnershipEnvelope(
 
   const fields = encoded.split(".");
   if (fields.length !== 9) reject();
-  const [version, runId, scenarioRaw, environment, sha, issuedRaw, expiresRaw, requestId, tag] = fields;
+  const [version, runId, scenarioRaw, environment, sha, issuedRaw, expiresRaw, requestId, tag] = fields as [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
   if (
     version !== "v1" ||
     environment !== "staging" ||

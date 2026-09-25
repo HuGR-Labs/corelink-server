@@ -22,6 +22,7 @@ required = {
     "worker D1 statement composition": "ownershipInsertStatement(" in TS and "D1PreparedStatement" in TS,
     "R2 immutable intent": "trg_staging_load_test_r2_intent_identity_immutable" in MIGRATION,
     "R2 resource-before-commit": "trg_staging_load_test_r2_intent_commit_requires_resource" in MIGRATION,
+    "R2 resolved-before-seal": "trg_staging_load_test_run_seal_requires_resolved_r2" in MIGRATION,
     "R2 append-only": "trg_staging_load_test_r2_intent_no_delete" in MIGRATION,
 }
 missing = [name for name, present in required.items() if not present]

@@ -67,10 +67,12 @@ describe("staging ownership envelope", () => {
     const { db, statements } = fakeDb();
     await ownershipInsertStatement(db, context!, "signup_artifact", "disposable", "opaque-1", ISSUED + 2);
     expect(statements).toHaveLength(1);
-    expect(statements[0].sql).toContain("ON CONFLICT (run_id, scenario, resource_class, receipt_ref) DO NOTHING");
-    expect(statements[0].args.slice(0, 3)).toEqual([RUN, "signup", "signup_artifact"]);
-    expect(statements[0].args[3]).toMatch(/^[0-9a-f]{64}$/);
-    expect(statements[0].args.slice(4)).toEqual(["opaque-1", "disposable", ISSUED + 2]);
+    const statement = statements[0];
+    if (!statement) throw new Error("ownership statement missing");
+    expect(statement.sql).toContain("ON CONFLICT (run_id, scenario, resource_class, receipt_ref) DO NOTHING");
+    expect(statement.args.slice(0, 3)).toEqual([RUN, "signup", "signup_artifact"]);
+    expect(statement.args[3]).toMatch(/^[0-9a-f]{64}$/);
+    expect(statement.args.slice(4)).toEqual(["opaque-1", "disposable", ISSUED + 2]);
   });
 
   it("fails closed for tamper, mismatch, expiry, weak keys, and forged objects", async () => {

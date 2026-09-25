@@ -94,6 +94,23 @@ BEGIN
     SELECT RAISE(ABORT, 'R2 ownership intent cannot commit without registration');
 END;
 
+-- A prepared or quarantined operation may already have created an R2 object.
+-- Do not freeze the run inventory around that unresolved external state. The
+-- operator may move the run to `failed`, but sealing requires every intent to
+-- have reached `committed`, whose trigger above proves the resource row exists.
+CREATE TRIGGER IF NOT EXISTS trg_staging_load_test_run_seal_requires_resolved_r2
+BEFORE UPDATE OF state ON staging_load_test_runs
+FOR EACH ROW
+WHEN OLD.state = 'open' AND NEW.state = 'sealed' AND EXISTS (
+    SELECT 1 FROM staging_load_test_r2_intents
+    WHERE run_id = OLD.run_id
+      AND scenario = OLD.scenario
+      AND state <> 'committed'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'load-test run cannot seal with unresolved R2 ownership intent');
+END;
+
 CREATE TRIGGER IF NOT EXISTS trg_staging_load_test_r2_intent_no_delete
 BEFORE DELETE ON staging_load_test_r2_intents
 FOR EACH ROW

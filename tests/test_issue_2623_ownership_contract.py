@@ -54,6 +54,29 @@ class R2IntentContractTests(unittest.TestCase):
             with self.subTest(index=index), self.assertRaises(sqlite3.IntegrityError):
                 db.execute("INSERT INTO staging_load_test_r2_intents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", values)
 
+    def test_run_cannot_seal_around_unresolved_r2_intent(self) -> None:
+        db = database()
+        db.execute("INSERT INTO staging_load_test_r2_intents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", INTENT)
+        classes = (
+            "cas_reference",
+            "webhook_inbox",
+            "webhook_effect",
+            "dsr_artifact",
+            "dsr_obligation",
+            "audit_evidence",
+            "billing_audit",
+            "signup_artifact",
+            "byok_artifact",
+        )
+        db.executemany(
+            "INSERT INTO staging_load_test_resource_scans VALUES ('123', 'cas', ?, 'complete', 0, 102)",
+            ((resource_class,) for resource_class in classes),
+        )
+        with self.assertRaises(sqlite3.IntegrityError):
+            db.execute("UPDATE staging_load_test_runs SET state='sealed' WHERE run_id='123' AND scenario='cas'")
+        db.execute("UPDATE staging_load_test_runs SET state='failed' WHERE run_id='123' AND scenario='cas'")
+        self.assertEqual(db.execute("SELECT state FROM staging_load_test_runs").fetchone(), ("failed",))
+
 
 if __name__ == "__main__":
     unittest.main()
