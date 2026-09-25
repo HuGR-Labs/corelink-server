@@ -17,10 +17,15 @@ concurrency:
 env:
   SHARD_COUNT: 27
   SHARDING: round-robin
-  SHARD_TIMEOUT_MINUTES: 45
-  # Inventory/aggregate control jobs plus 27 bounded baseline and mutation
-  # lanes have a 2,505-minute worst-case timeout sum; the cap leaves 45 minutes.
-  TOTAL_RUNNER_MINUTE_CAP: 2550
+  # Cargo-mutants v27 runs one worker unless --jobs is explicit.  The complete
+  # 24,463-member inventory needs eight bounded workers per shard: each cargo
+  # build and test is capped at 60 seconds, while the 240-minute step still
+  # leaves setup/receipt time inside the 255-minute job envelope.
+  #
+  # Inventory + plan + 27x45-minute baseline + two aggregation jobs consume
+  # 1,280 minutes.  The 27 mutation jobs cap at 27x255 = 6,885; 8,165 total
+  # leaves 35 minutes inside this reviewed external-capacity budget.
+  TOTAL_RUNNER_MINUTE_CAP: 8200
 
 jobs:
   inventory:
@@ -29,6 +34,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - name: Assert the reviewed campaign runner-minute budget
+        run: |
+          set -euo pipefail
+          test "$SHARD_COUNT" = 27
+          test "$TOTAL_RUNNER_MINUTE_CAP" -ge "$((10 + 35 + SHARD_COUNT * 45 + 10 + SHARD_COUNT * 255 + 10))"
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
@@ -241,7 +251,7 @@ jobs:
     needs: [inventory, baseline-aggregate]
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 255
     strategy:
       fail-fast: false
       max-parallel: 9
@@ -284,7 +294,7 @@ jobs:
           tool: cargo-mutants@27.0.0
           fallback: cargo-binstall
       - name: Enumerate and run this deterministic shard after the green baseline
-        timeout-minutes: 40
+        timeout-minutes: 240
         run: |
           set +e
           output="${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}"
@@ -292,7 +302,7 @@ jobs:
           cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json > "${RUNNER_TEMP}/expected-shard.json"
           list_result=$?
           if [[ "$list_result" -eq 0 ]]; then
-            cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output "$output"
+            cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --jobs=8 --build-timeout=60 --timeout=60 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output "$output"
             mutant_result=$?
           else
             mutant_result=125
@@ -310,6 +320,7 @@ jobs:
             --baseline "${RUNNER_TEMP}/baseline-receipt.json" \
             --expected "${RUNNER_TEMP}/expected-shard.json" \
             --observed "${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}/mutants.out/mutants.json" \
+            --outcomes "${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}/mutants.out/outcomes.json" \
             --evidence "${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}/mutants.out" \
             --redacted-evidence "${RUNNER_TEMP}/redacted-evidence" \
             --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -369,3 +380,12 @@ jobs:
           path: ${{ runner.temp }}/mutants-aggregate-receipt.json
           if-no-files-found: error
           retention-days: 30
+      - name: Fail closed after retaining a complete terminal mutation result
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          receipt = json.load(open(os.environ["RUNNER_TEMP"] + "/mutants-aggregate-receipt.json", encoding="utf-8"))
+          assert receipt["status"] == "success"
+          PY

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 from argparse import Namespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -97,6 +98,7 @@ class MutantsShardAggregateTests(unittest.TestCase):
                 "status": "success",
                 "cargo_exit_code": 0,
                 "outcomes_complete": True,
+                "outcome_counts": {"caught": len(membership(self.inventory["mutant_ids"], index)), "missed": 0, "success": 0, "timeout": 0, "unviable": 0},
             }
             for index in range(SHARD_COUNT)
         ]
@@ -217,6 +219,7 @@ class MutantsShardAggregateTests(unittest.TestCase):
             baseline = root / "baseline.json"
             expected = root / "expected.json"
             observed = root / "observed.json"
+            outcomes = root / "outcomes.json"
             evidence = root / "raw-evidence"
             redacted = root / "redacted-evidence"
             output = root / "receipt.json"
@@ -224,7 +227,17 @@ class MutantsShardAggregateTests(unittest.TestCase):
             baseline.write_text(json.dumps(self.baseline), encoding="utf-8")
             expected.write_text(json.dumps(expected_raw), encoding="utf-8")
             evidence.mkdir()
-            (evidence / "outcomes.json").write_text("{}", encoding="utf-8")
+            def terminal_outcomes(summary: str = "CaughtMutant") -> dict:
+                return {
+                    "cargo_mutants_version": "27.0.0",
+                    "end_time": "2026-09-25T00:00:00Z",
+                    "total_mutants": len(expected_raw),
+                    "outcomes": [
+                        {"scenario": {"Mutant": {"name": item["name"]}}, "summary": summary}
+                        for item in expected_raw
+                    ],
+                }
+            outcomes.write_text(json.dumps(terminal_outcomes()), encoding="utf-8")
 
             def write(observed_raw: list[dict]) -> None:
                 observed.write_text(json.dumps(observed_raw), encoding="utf-8")
@@ -234,6 +247,7 @@ class MutantsShardAggregateTests(unittest.TestCase):
                         baseline=baseline,
                         expected=expected,
                         observed=observed,
+                        outcomes=outcomes,
                         evidence=evidence,
                         redacted_evidence=redacted,
                         sha=self.sha,
@@ -248,10 +262,27 @@ class MutantsShardAggregateTests(unittest.TestCase):
             write(expected_raw)
             redacted_text = (redacted / "shard-evidence-manifest.json").read_text(encoding="utf-8")
             self.assertNotIn(expected_raw[0]["file"], redacted_text)
-            with self.assertRaisesRegex(VerificationError, "list/output disagrees"):
-                write(expected_raw[1:])
-            with self.assertRaisesRegex(VerificationError, "list/output disagrees"):
-                write(expected_raw + [copy.deepcopy(expected_raw[0])])
+            write(expected_raw[1:])
+            incomplete = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(incomplete["status"], "incomplete")
+            self.assertFalse(incomplete["outcomes_complete"])
+            write(expected_raw + [copy.deepcopy(expected_raw[0])])
+            incomplete = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(incomplete["status"], "incomplete")
+
+            observed.write_text(json.dumps(expected_raw), encoding="utf-8")
+            outcomes.write_text(json.dumps(terminal_outcomes("MissedMutant")), encoding="utf-8")
+            command_write_shard(
+                Namespace(
+                    inventory=inventory, baseline=baseline, expected=expected, observed=observed,
+                    outcomes=outcomes, evidence=evidence, redacted_evidence=redacted, sha=self.sha,
+                    run_id=self.run_id, run_attempt=1, shard=0, exit_code=1, out=output,
+                )
+            )
+            terminal_failure = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(terminal_failure["status"], "failure")
+            self.assertTrue(terminal_failure["outcomes_complete"])
+            self.assertEqual(terminal_failure["outcome_counts"]["missed"], len(expected_raw))
 
     def test_rejects_mixed_sha_tool_configuration_or_run(self) -> None:
         for field, value, expected in (
@@ -266,13 +297,18 @@ class MutantsShardAggregateTests(unittest.TestCase):
                 with self.assertRaisesRegex(VerificationError, expected):
                     self.aggregate(shards=shards)
 
-    def test_rejects_failed_cancelled_timeout_or_nonterminal_shards(self) -> None:
-        for status, code in (("failure", 1), ("cancelled", 125), ("timeout", 124), ("in_progress", 0)):
+    def test_rejects_nonterminal_shards_and_retains_complete_failure(self) -> None:
+        failure = copy.deepcopy(self.shards)
+        failure[4]["status"] = "failure"
+        failure[4]["cargo_exit_code"] = 1
+        failure[4]["outcome_counts"] = {"caught": 0, "missed": len(failure[4]["mutant_ids"]), "success": 0, "timeout": 0, "unviable": 0}
+        self.assertEqual(self.aggregate(shards=failure)["status"], "failure")
+        for status, code in (("cancelled", 125), ("timeout", 124), ("in_progress", 0)):
             with self.subTest(status=status):
                 shards = copy.deepcopy(self.shards)
                 shards[4]["status"] = status
                 shards[4]["cargo_exit_code"] = code
-                with self.assertRaisesRegex(VerificationError, "did not complete successfully"):
+                with self.assertRaisesRegex(VerificationError, "terminal status"):
                     self.aggregate(shards=shards)
 
     def test_rejects_failed_baseline_and_bad_attempt_lineage(self) -> None:
@@ -348,7 +384,11 @@ class MutantsShardAggregateTests(unittest.TestCase):
                             "expected_mutant_counts": shard["mutant_counts"],
                             "observed_mutant_ids": shard["mutant_ids"],
                             "observed_mutant_counts": shard["mutant_counts"],
-                            "raw_outcomes_present": True,
+                            "terminal_outcomes": [
+                                {"identity": identity, "outcome": "caught"}
+                                for identity in shard["mutant_ids"]
+                            ],
+                            "outcome_counts": shard["outcome_counts"],
                         }
                     ),
                     encoding="utf-8",
@@ -366,11 +406,14 @@ class MutantsShardAggregateTests(unittest.TestCase):
             aggregate = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(len(aggregate["shard_artifact_digests"]), SHARD_COUNT)
 
-            (evidence_paths[8] / "shard-evidence-manifest.json").unlink()
-            with self.assertRaisesRegex(VerificationError, "downloaded evidence bytes"):
-                command_aggregate(
-                    Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output)
-                )
+            shutil.rmtree(evidence_paths[8].parent)
+            command_aggregate(
+                Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output)
+            )
+            incomplete = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(incomplete["status"], "failure")
+            self.assertFalse(incomplete["outcomes_complete"])
+            self.assertEqual(incomplete["missing_shards"], [8])
 
 
 if __name__ == "__main__":

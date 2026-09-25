@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from scripts.verify_i1666_mutants_evidence import verify as verify_workflow
-from scripts.verify_i2457_mutants_shards import AGGREGATE_SCHEMA, SHARD_COUNT, TOOL_VERSION, config_digest, digest
+from scripts.verify_i2457_mutants_shards import AGGREGATE_SCHEMA, OUTCOME_COUNT_FIELDS, SHARD_COUNT, TOOL_VERSION, config_digest, digest
 
 
 WORKFLOW = Path(".github/workflows/issue-1863-mutants-hosted.yml")
@@ -111,6 +111,17 @@ def validate_successful_receipt(
         {"mutant_counts": covered_counts, "per_shard_occurrence_counts": per_shard_counts}
     ):
         raise ValueError("aggregate receipt coverage digest does not bind multiplicity")
+    outcome_counts = receipt.get("outcome_counts")
+    if not isinstance(outcome_counts, dict) or set(outcome_counts) != set(OUTCOME_COUNT_FIELDS):
+        raise ValueError("aggregate receipt terminal outcome summary is invalid")
+    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in outcome_counts.values()):
+        raise ValueError("aggregate receipt terminal outcome summary is invalid")
+    if sum(outcome_counts.values()) != receipt["covered_mutants"]:
+        raise ValueError("aggregate receipt terminal outcome summary does not cover the inventory")
+    if outcome_counts["missed"] != 0 or outcome_counts["timeout"] != 0:
+        raise ValueError("aggregate receipt successful status hides missed or timed-out mutants")
+    if receipt.get("outcome_digest") != digest(outcome_counts):
+        raise ValueError("aggregate receipt outcome digest is invalid")
 
 
 def validate_receipt_files(receipt_path: Path, run_path: Path, expected_sha: str) -> None:
