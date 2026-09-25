@@ -55,6 +55,16 @@ collect2: error: ld returned 1 exit status
         self.assertNotIn('cp "$enospc_log" "$GITHUB_WORKSPACE/issue-1670-enospc.log"', workflow)
         self.assertNotIn('cp "$linker_log" "$GITHUB_WORKSPACE/issue-1670-linker.log"', workflow)
 
+    def test_hosted_receipt_and_summary_omit_runner_identity(self) -> None:
+        workflow = (ROOT / ".github/workflows/issue-1670-hosted-classification.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn('"runner":', workflow)
+        self.assertNotIn('echo "- runner:', workflow)
+        self.assertIn('assert "runner" not in report', workflow)
+        self.assertIn('assert "runner" not in summary.casefold()', workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
