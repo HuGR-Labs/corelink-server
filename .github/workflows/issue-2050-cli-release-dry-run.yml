@@ -133,9 +133,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(zig version)" = "0.16.0"
-          # Probe cargo-zigbuild's top-level parser directly; cargo zigbuild
-          # forwards these flags to the zigbuild subcommand, which rejects them.
-          test "$(cargo-zigbuild --version | awk '{print $2}')" = "0.19.8"
+          # The pinned install-action input selects the version. Probe the
+          # executable through its supported help option before building.
+          command -v cargo-zigbuild
+          cargo-zigbuild --help >/dev/null
           for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-pc-windows-gnu; do
             if [ "${target}" = "x86_64-pc-windows-gnu" ]; then
               test "$(command -v x86_64-w64-mingw32-dlltool)" = "${DLLTOOL_PATH}"

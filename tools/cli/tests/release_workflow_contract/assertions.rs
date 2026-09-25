@@ -33,8 +33,18 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "description: \"Existing cli-vMAJOR.MINOR.PATCH tag to build and publish\"",
         "HuGR-Labs/corelink-cli",
         "EXPECTED_ZIG_VERSION=0.16.0",
-        "EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8",
+        "tool: cargo-zigbuild@0.19.8",
+        "command -v cargo-zigbuild",
+        "cargo-zigbuild --help >/dev/null",
         "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-gnu",
+        "- name: Enable Git long paths for Windows checkout",
+        "run: git config --global core.longpaths true",
+        "- name: Checkout",
         "corelink-package-${TARGET_NAME}",
         "Validate matrix target values before shell use",
         "zip -q -X \"$ARCHIVE_PATH\" corelink.exe",
@@ -89,6 +99,23 @@ pub(super) fn assert_release_contract(workflow: &str) {
     assert!(
         !workflow.contains("ditto -c -k --sequesterRsrc --keepParent"),
         "the Windows archive must not nest corelink.exe below a ditto parent directory"
+    );
+    for unsupported in [
+        "cargo-zigbuild --version",
+        "cargo-zigbuild -V",
+        "cargo zigbuild --version",
+        "cargo zigbuild -V",
+    ] {
+        assert!(
+            !workflow.contains(unsupported),
+            "the release workflow must not use an unsupported cargo-zigbuild probe: {unsupported}"
+        );
+    }
+    let longpaths = workflow.find("- name: Enable Git long paths for Windows checkout").unwrap();
+    let checkout = workflow.find("- name: Checkout").unwrap();
+    assert!(
+        longpaths < checkout,
+        "Windows long paths must be enabled before checkout"
     );
 }
 

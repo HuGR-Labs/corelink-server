@@ -73,7 +73,16 @@ fn assert_issue_1724_ci_pack(workflow: &str) {
         "test \"$(git rev-parse HEAD)\" = \"${CANDIDATE_SHA}\"",
         "cargo test --locked -p corelink-cli --test release_workflow_contract -- --nocapture",
         "actionlint_1.7.12_linux_amd64.tar.gz",
-        "actionlint\" -color .github/workflows/issue-1724-cli-provenance.yml",
+        "Install Python contract dependencies",
+        "python3 -m pip install --requirement requirements-ci.txt",
+        "Verify B-112 release build and signing gates",
+        "python3 scripts/verify_b112_release_root_cause.py --root .",
+        "Verify issue-2050 CLI release dry-run contract",
+        "python3 scripts/verify_i2050_release_dryrun_contract.py contract",
+        "Validate the CLI release workflow schemas",
+        ".github/workflows/issue-1724-cli-provenance.yml",
+        ".github/workflows/issue-2050-cli-release-dry-run.yml",
+        ".github/workflows/release-cli.yml",
         "timeout-minutes: 15",
         "runs-on: ubuntu-24.04",
     ] {
@@ -88,6 +97,11 @@ fn assert_issue_1724_ci_pack(workflow: &str) {
             "#1724 CI pack must remain structural and non-publishing: {forbidden}"
         );
     }
+    assert!(
+        !workflow.contains("python3 -S scripts/verify_b112_release_root_cause.py")
+            && !workflow.contains("python3 -S scripts/verify_i2050_release_dryrun_contract.py"),
+        "PyYAML dependent release verifiers must run with normal site packages enabled"
+    );
 }
 
 #[test]

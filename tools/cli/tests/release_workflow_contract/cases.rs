@@ -9,6 +9,40 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
     assert_publication_inventory_contract(&workflow);
     assert_retry_manifest_contract(&workflow);
 
+    for (mutant, label) in [
+        (
+            workflow.replace("tool: cargo-zigbuild@0.19.8", "tool: cargo-zigbuild@0.19.7"),
+            "cargo-zigbuild pin downgrade",
+        ),
+        (
+            workflow.replace("command -v cargo-zigbuild", "command lookup removed"),
+            "cargo-zigbuild PATH check removal",
+        ),
+        (
+            workflow.replace(
+                "cargo-zigbuild --help >/dev/null",
+                "cargo-zigbuild --version",
+            ),
+            "unsupported cargo-zigbuild version probe",
+        ),
+        (
+            workflow.replace("x86_64-pc-windows-gnu", "windows target removed"),
+            "Windows target removal",
+        ),
+        (
+            workflow.replace(
+                "run: git config --global core.longpaths true",
+                "run: true",
+            ),
+            "Windows long paths setup removal",
+        ),
+    ] {
+        assert!(
+            std::panic::catch_unwind(|| assert_release_contract(&mutant)).is_err(),
+            "release structural contract accepted {label}"
+        );
+    }
+
     let unvalidated_release_command = workflow.replace(
         "gh release upload \"${TAG}\"",
         "gh release upload \"${{ inputs.release_tag }}\"",

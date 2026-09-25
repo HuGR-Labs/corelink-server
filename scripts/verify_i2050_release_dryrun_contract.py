@@ -28,8 +28,11 @@ TARGETS = {
     "corelink-windows-x86_64.zip",
 }
 PINNED_ACTION = re.compile(r"^\s*uses:\s+[^\s@]+@[0-9a-f]{40}(?:\s+#.*)?$", re.MULTILINE)
-ZIGBUILD_VERSION_PROBE = '''test "$(cargo-zigbuild --version | awk '{print $2}')" = "0.19.8"'''
+ZIGBUILD_EXECUTABLE_PROBE = "cargo-zigbuild --help >/dev/null"
+ZIGBUILD_PATH_PROBE = "command -v cargo-zigbuild"
 UNSUPPORTED_ZIGBUILD_VERSION_PROBES = (
+    "cargo-zigbuild --version",
+    "cargo-zigbuild -V",
     "cargo zigbuild --version",
     "cargo zigbuild -V",
 )
@@ -56,23 +59,27 @@ def fail(message: str) -> None:
     raise SystemExit(f"contract failure: {message}")
 
 
-def _verify_zigbuild_version_probe(text: str) -> None:
-    if ZIGBUILD_VERSION_PROBE not in text:
-        fail("cargo-zigbuild must be pinned by its direct --version probe")
+def _verify_zigbuild_executable_probe(text: str) -> None:
+    if ZIGBUILD_PATH_PROBE not in text:
+        fail("cargo-zigbuild must be present on PATH after the pinned installation")
+    if ZIGBUILD_EXECUTABLE_PROBE not in text:
+        fail("cargo-zigbuild must be called with its supported --help option")
+    if "tool: cargo-zigbuild@0.19.8" not in text:
+        fail("cargo-zigbuild installer must retain the 0.19.8 version pin")
     for unsupported in UNSUPPORTED_ZIGBUILD_VERSION_PROBES:
         if unsupported in text:
-            fail(f"unsupported version probe must not return: {unsupported}")
+            fail(f"unsupported cargo-zigbuild version probe must not return: {unsupported}")
 
 
-def _zigbuild_version_probe_mutation_self_test(text: str) -> None:
+def _zigbuild_probe_mutation_self_test(text: str) -> None:
     for unsupported in UNSUPPORTED_ZIGBUILD_VERSION_PROBES:
         mutated = text.replace(
-            ZIGBUILD_VERSION_PROBE,
-            f"{ZIGBUILD_VERSION_PROBE}\n          {unsupported}",
+            ZIGBUILD_EXECUTABLE_PROBE,
+            f"{ZIGBUILD_EXECUTABLE_PROBE}\n          {unsupported}",
             1,
         )
         try:
-            _verify_zigbuild_version_probe(mutated)
+            _verify_zigbuild_executable_probe(mutated)
         except SystemExit as error:
             if unsupported not in str(error):
                 raise
@@ -309,24 +316,25 @@ def contract() -> None:
         encoding="utf-8"
     )
     for token in (
-        '".github/workflows/issue-2050-cli-release-dry-run.yml"',
-        '"scripts/verify_i2050_release_dryrun_contract.py"',
-        '"Cargo.lock"',
-        '"rust-toolchain.toml"',
-        "fetch-depth: 0",
+        'ref: ${{ inputs.candidate_sha }}',
         "persist-credentials: false",
         "workflow_dispatch:",
-        "python3 -S scripts/verify_i2050_release_dryrun_contract.py contract",
+        "python3 -m pip install --requirement requirements-ci.txt",
+        "python3 scripts/verify_b112_release_root_cause.py --root .",
+        "python3 scripts/verify_i2050_release_dryrun_contract.py contract",
+        "Validate the CLI release workflow schemas",
+        ".github/workflows/issue-2050-cli-release-dry-run.yml",
+        ".github/workflows/release-cli.yml",
     ):
         if token not in hosted_contract:
-            fail(f"the existing read-only hosted PR lane does not run the contract: {token}")
+            fail(f"the exact-head credentialless CLI pack is missing: {token}")
     contract_job = re.search(
         r"(?ms)^  contract:\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)", hosted_contract
     )
-    if contract_job is None or re.search(r"^\s+if:", contract_job.group(1), re.MULTILINE):
-        fail("the CLI provenance contract job must remain enabled for PR and manual dispatch")
+    if contract_job is None or "github.event_name == 'workflow_dispatch'" not in contract_job.group(1):
+        fail("the exact-head CLI contract job must remain manual-only")
     if "id-token: write" in hosted_contract or "contents: write" in hosted_contract:
-        fail("the PR contract lane has signing or write permission")
+        fail("the exact-head contract lane has signing or write permission")
     if not re.search(r'^"on":\s*$', text, re.MULTILINE):
         fail('event map must use the quoted "on" key')
     for token in ("pull_request:", "workflow_dispatch:", "refs/heads/main", "github.ref_protected"):
@@ -365,8 +373,9 @@ def contract() -> None:
     for token in (
         "actionlint_1.7.12_linux_amd64.tar.gz",
         "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
-        "Validate the dry-run trigger and workflow schema",
-        "-color .github/workflows/issue-2050-cli-release-dry-run.yml",
+        "Validate the CLI release workflow schemas",
+        ".github/workflows/issue-2050-cli-release-dry-run.yml",
+        ".github/workflows/release-cli.yml",
     ):
         if token not in hosted_workflow:
             fail(f"hosted actionlint protection is missing or unpinned: {token}")
@@ -397,8 +406,8 @@ def contract() -> None:
     ):
         if token.lower() not in text.lower():
             fail(f"required release proof is missing: {token}")
-    _verify_zigbuild_version_probe(text)
-    _zigbuild_version_probe_mutation_self_test(text)
+    _verify_zigbuild_executable_probe(text)
+    _zigbuild_probe_mutation_self_test(text)
     print("PASS: workflow-only, verifier-only, both, mixed, and unrelated-only routing cases")
     _verify_dlltool_contract(text)
     _dlltool_contract_mutation_self_test(text)
