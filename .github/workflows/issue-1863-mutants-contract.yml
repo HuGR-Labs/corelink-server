@@ -31,5 +31,5 @@ jobs:
       - name: Verify hosted mutants contract
         run: |
           set -euo pipefail
-          python3 scripts/verify_i1863_mutants_hosted.py
+          python3 -m scripts.verify_i1863_mutants_hosted
           python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py tests/test_i2457_mutants_shards.py
