@@ -1,0 +1,55 @@
+name: B-057 v0009 trusted-policy proof
+
+on:
+  pull_request:
+    paths:
+      - scripts/backlog_ledger_successor.py
+      - scripts/backlog_verify.py
+      - tests/test_backlog_ledger_successor.py
+      - .github/workflows/issue-2475-v0009-policy.yml
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact protected-main commit to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2475-v0009-policy-${{ github.event.pull_request.head.sha || inputs.expected_sha }}
+  cancel-in-progress: false
+
+jobs:
+  trusted-policy:
+    name: v0009 trusted-policy contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind checkout to the exact candidate
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            test "$GITHUB_SHA" = "$EXPECTED_SHA"
+          else
+            test "$PR_HEAD_SHA" = "$EXPECTED_SHA"
+          fi
+
+      - name: Prove the bounded v0009 policy and its negative controls
+        timeout-minutes: 5
+        run: python3 -m pytest -q tests/test_backlog_ledger_successor.py
