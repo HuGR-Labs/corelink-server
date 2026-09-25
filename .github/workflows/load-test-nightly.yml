@@ -255,20 +255,12 @@ jobs:
           printf '{"scenario":"%s","outcome":"%s"}\n' "${SCENARIO}" "${OUTCOME}" \
             > "tests/load/results/${SCENARIO}/status.json"
 
-      - name: upload results
-        if: steps.filter.outputs.enabled == 'true' && always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: k6-${{ matrix.scenario.id }}-${{ github.run_id }}
-          path: tests/load/results/
-          retention-days: 30
-          if-no-files-found: error
-
       - name: teardown synthetic staging state
         if: steps.filter.outputs.enabled == 'true' && steps.target_host.outcome == 'success' && always()
         env:
           K6_TARGET_HOST: ${{ steps.target_host.outputs.target_host }}
           K6_STAGING_TEARDOWN_TOKEN: ${{ secrets.K6_STAGING_TEARDOWN_TOKEN }}
+          TARGET_DEPLOYMENT_SHA: ${{ steps.target_host.outputs.deployment_sha }}
           SCENARIO: ${{ matrix.scenario.id }}
         timeout-minutes: 1
         run: |
@@ -278,13 +270,34 @@ jobs:
             exit 1
           }
           payload=$(printf '{"run_id":"%s","scenario":"%s"}' "$GITHUB_RUN_ID" "$SCENARIO")
-          timeout 30s curl --fail --silent --show-error --location \
+          RAW_RECEIPT="${RUNNER_TEMP}/load-teardown-${GITHUB_RUN_ID}-${SCENARIO}.json"
+          HTTP_STATUS=$(timeout 30s curl --silent --show-error \
             --request POST \
             --header "Authorization: Bearer ${K6_STAGING_TEARDOWN_TOKEN}" \
             --header 'Content-Type: application/json' \
             --data "$payload" \
             "${K6_TARGET_HOST}/_internal/load-test/teardown" \
-            --output /dev/null
+            --output "${RAW_RECEIPT}" \
+            --write-out '%{http_code}')
+          test "${HTTP_STATUS}" = '200' || {
+            echo "::error::teardown must return HTTP 200 with the exact receipt"
+            exit 1
+          }
+          python3 scripts/validate_load_teardown_receipt.py \
+            --receipt "${RAW_RECEIPT}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --scenario "${SCENARIO}" \
+            --deployment-sha "${TARGET_DEPLOYMENT_SHA}" \
+            --output "tests/load/results/${SCENARIO}/teardown-receipt-${GITHUB_RUN_ID}.json"
+
+      - name: upload results and exact teardown receipt
+        if: steps.filter.outputs.enabled == 'true' && always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: k6-${{ matrix.scenario.id }}-${{ github.run_id }}
+          path: tests/load/results/
+          retention-days: 30
+          if-no-files-found: error
 
   baseline-regression:
     name: baseline regression check (median ≤ +20% vs stored baseline)
@@ -341,6 +354,17 @@ jobs:
           }
           echo 'full=true' >> "$GITHUB_OUTPUT"
           echo "complete five-scenario population: ${REQUESTED}"
+
+      - name: require successful scenarios and teardown
+        if: steps.population.outputs.full == 'true'
+        env:
+          K6_JOB_RESULT: ${{ needs.k6-staging.result }}
+        run: |
+          set -euo pipefail
+          test "${K6_JOB_RESULT}" = success || {
+            echo "::error::load scenarios, artifact upload, and exact teardown must all succeed before baseline handling"
+            exit 1
+          }
 
       - name: download current run artifacts
         if: steps.population.outputs.full == 'true'

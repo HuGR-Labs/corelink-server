@@ -131,10 +131,11 @@ class B029LoadGateTests(unittest.TestCase):
     def _assess_workflow(self, workflow: str) -> list[str]:
         contract = self.root / "workflow-contract"
         (contract / ".github/workflows").mkdir(parents=True, exist_ok=True)
-        (contract / "scripts").mkdir()
+        (contract / "scripts").mkdir(exist_ok=True)
         (contract / "tests/load").mkdir(parents=True)
         shutil.copy(ROOT / "scripts/load-test-baseline-check.py", contract / "scripts")
         shutil.copy(ROOT / "scripts/sanitize_k6_summary.py", contract / "scripts")
+        shutil.copy(ROOT / "scripts/validate_load_teardown_receipt.py", contract / "scripts")
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
         self._copy_hostname_sources(contract)
         shutil.copy(ROOT / verifier.FOCUSED_PACK, contract / verifier.FOCUSED_PACK)
@@ -146,6 +147,9 @@ class B029LoadGateTests(unittest.TestCase):
             destination = contract / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ROOT / relative, destination)
+        teardown_validator = contract / verifier.TEARDOWN_RECEIPT_VALIDATOR
+        teardown_validator.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / verifier.TEARDOWN_RECEIPT_VALIDATOR, teardown_validator)
 
     def _workflow_and_invocation(self) -> tuple[str, str]:
         workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
@@ -433,6 +437,24 @@ class B029LoadGateTests(unittest.TestCase):
                 gaps = self._assess_workflow(mutated)
                 self.assertIn(
                     "both load jobs must require the canonical protected manual dispatch",
+                    gaps,
+                )
+
+    def test_load_teardown_receipt_and_baseline_gate_mutations_are_rejected(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(self._assess_workflow(workflow), [])
+        mutations = (
+            ("--deployment-sha \"${TARGET_DEPLOYMENT_SHA}\" \\\n", ""),
+            ("--write-out '%{http_code}'", "--write-out '%{http_code}' --location"),
+            ("test \"${K6_JOB_RESULT}\" = success", "test \"${K6_JOB_RESULT}\" = skipped"),
+            ("python3 scripts/validate_load_teardown_receipt.py", "true # python3 scripts/validate_load_teardown_receipt.py"),
+        )
+        for source, replacement in mutations:
+            with self.subTest(source=source):
+                self.assertIn(source, workflow)
+                gaps = self._assess_workflow(workflow.replace(source, replacement, 1))
+                self.assertTrue(
+                    any("teardown" in gap or "baseline" in gap for gap in gaps),
                     gaps,
                 )
 

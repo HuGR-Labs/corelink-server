@@ -27,6 +27,7 @@ FOCUSED_PACK = ".github/workflows/b029-load-gate.yml"
 COMPARATOR = "scripts/load-test-baseline-check.py"
 SANITIZER = "scripts/sanitize_k6_summary.py"
 TARGET_RECEIPT_VALIDATOR = "scripts/validate_load_target_receipt.py"
+TEARDOWN_RECEIPT_VALIDATOR = "scripts/validate_load_teardown_receipt.py"
 OPERATOR_README = "tests/load/README.md"
 COMPARE_STEP = "compare median vs stored baseline"
 POPULATION_STEP = "classify scenario population"
@@ -50,6 +51,7 @@ FOCUSED_PACK_REQUIRED_PATHS = (
     COMPARATOR,
     SANITIZER,
     TARGET_RECEIPT_VALIDATOR,
+    TEARDOWN_RECEIPT_VALIDATOR,
     "scripts/verify_b029_load_gate.py",
     "tests/test_b029_load_gate.py",
 )
@@ -646,6 +648,7 @@ def assess(root: Path, *, expect: str) -> list[str]:
         comparator = comparator_path.read_text(encoding="utf-8")
         sanitizer = (root / SANITIZER).read_text(encoding="utf-8")
         readme = readme_path.read_text(encoding="utf-8")
+        teardown_validator = (root / TEARDOWN_RECEIPT_VALIDATOR).read_text(encoding="utf-8")
     except OSError as exc:
         return [f"instrument error: {exc}"]
 
@@ -683,6 +686,42 @@ def assess(root: Path, *, expect: str) -> list[str]:
     if "actions/cache/restore@" not in workflow or "restore-keys:" not in workflow:
         gaps.append("previous baseline is not restored by cache prefix")
     steps = _yaml_steps(workflow)
+    teardown_steps = [step for step in steps if step.name == "teardown synthetic staging state"]
+    if len(teardown_steps) != 1 or len(teardown_steps[0].runs) != 1:
+        gaps.append("load matrix must contain exactly one executable teardown step")
+    else:
+        teardown_step = teardown_steps[0]
+        teardown_run = teardown_step.runs[0]
+        for needle in (
+            "--write-out '%{http_code}'",
+            "test \"${HTTP_STATUS}\" = '200'",
+            "python3 scripts/validate_load_teardown_receipt.py",
+            "--run-id \"${GITHUB_RUN_ID}\"",
+            "--scenario \"${SCENARIO}\"",
+            "--deployment-sha \"${TARGET_DEPLOYMENT_SHA}\"",
+            "teardown-receipt-${GITHUB_RUN_ID}.json",
+        ):
+            if needle not in teardown_run:
+                gaps.append(f"load teardown does not enforce exact receipt contract: {needle}")
+        if "--location" in teardown_run or "--output /dev/null" in teardown_run:
+            gaps.append("load teardown must retain its response and must not forward bearer auth across redirects")
+        upload_steps = [step for step in steps if step.name == "upload results and exact teardown receipt"]
+        if len(upload_steps) != 1 or upload_steps[0].line < teardown_step.line:
+            gaps.append("load artifacts must be uploaded after exact teardown validation")
+    if "REQUIRED_FIELDS" not in teardown_validator or "target_deployment_sha" not in teardown_validator:
+        gaps.append("load teardown receipt validator is missing the exact identity-bound schema")
+    require_success_steps = [step for step in steps if step.name == "require successful scenarios and teardown"]
+    if len(require_success_steps) != 1 or len(require_success_steps[0].runs) != 1:
+        gaps.append("baseline job must gate all baseline handling on successful scenario teardown")
+    else:
+        guard = require_success_steps[0]
+        guard_run = guard.runs[0]
+        if "needs.k6-staging.result" not in workflow or 'test "${K6_JOB_RESULT}" = success' not in guard_run:
+            gaps.append("baseline job does not fail closed on a failed load or teardown job")
+        if not any(step.name == COMPARE_STEP and step.line > guard.line for step in steps):
+            gaps.append("baseline comparison can run before load and teardown success is established")
+        if not any(step.name == "seed missing baseline from a complete successful population" and step.line > guard.line for step in steps):
+            gaps.append("baseline bootstrap can run before load and teardown success is established")
     population_steps = [step for step in steps if step.name == POPULATION_STEP]
     if len(population_steps) != 1 or len(population_steps[0].runs) != 1:
         gaps.append("workflow must contain exactly one literal scenario population classifier")

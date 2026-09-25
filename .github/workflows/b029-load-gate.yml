@@ -8,6 +8,7 @@ on:
       - "scripts/load-test-baseline-check.py"
       - "scripts/sanitize_k6_summary.py"
       - "scripts/validate_load_target_receipt.py"
+      - "scripts/validate_load_teardown_receipt.py"
       - "scripts/verify_b029_load_gate.py"
       - "tests/test_b029_load_gate.py"
   workflow_dispatch:
