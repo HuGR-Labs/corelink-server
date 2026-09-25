@@ -365,7 +365,7 @@ jobs:
   # -------------------------------------------------------------------
   release:
     name: create release (HuGR-Labs/corelink-cli)
-    needs: build
+    needs: [build, release-readiness]
     if: github.repository_id == '1232040291' && github.ref == format('refs/tags/{0}', inputs.release_tag)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -606,8 +606,8 @@ jobs:
       GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
 
   release-readiness:
-    name: decide signed-release readiness
-    needs: release
+    name: decide signed-release preflight
+    needs: build
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout credentialless signing readiness verifier
@@ -615,12 +615,12 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
-      - name: Validate credentialless signing readiness packet
+      - name: Validate credentialless signing preflight packet
         id: packet
         shell: bash
         run: |
           set -euo pipefail
-          PACKET_READY="$(python3 scripts/verify_i1664_signing_readiness.py --emit-ready)"
+          PACKET_READY="$(python3 scripts/verify_i1664_signing_readiness.py --emit-preflight-ready)"
           case "${PACKET_READY}" in
             true|false) printf 'packet_ready=%s\n' "${PACKET_READY}" >> "${GITHUB_OUTPUT}" ;;
             *) echo "::error::signing readiness verifier returned an invalid state" >&2; exit 1 ;;
@@ -651,7 +651,7 @@ jobs:
              [ -n "${APPLE_NOTARY_KEY}" ] && [ -n "${APPLE_NOTARY_KEY_ID}" ] && [ -n "${APPLE_NOTARY_ISSUER}" ]; then
             exit 0
           else
-            echo "::error::release signing material is incomplete; publication is blocked." >&2
+            echo "::error::release signing preflight is incomplete; publication is blocked." >&2
             exit 1
           fi
 
@@ -688,7 +688,9 @@ jobs:
 
   final-manifest:
     name: bind final signed inventory
-    needs: [notarize-macos, release-readiness, release]
+    # Successful signer jobs are post-run verification receipts for this exact
+    # tag and inventory. The packet gates preflight before release staging.
+    needs: [sign-linux, sign-windows, notarize-macos, release-readiness, release]
     runs-on: ubuntu-24.04
     outputs:
       sha256: ${{ steps.manifest.outputs.sha256 }}
