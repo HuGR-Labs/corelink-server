@@ -1,0 +1,81 @@
+name: Issue 2161 staging ownership adapter (scoped, credentialless)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/issue-2161-staging-ownership.yml
+      - crates/corelink-container/src/storage.rs
+      - crates/corelink-container/src/storage/d1_http.rs
+      - crates/corelink-container/src/storage/staging_load_test_ownership.rs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2161-staging-ownership-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  staging-ownership:
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.repository_id == '1232040291' && github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact pull request head as data
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind check to exact pull request head and base
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGET_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_SHA" == "$(git rev-parse HEAD)" ]]
+          [[ "$TARGET_BASE_SHA" == "$(git merge-base "$TARGET_BASE_SHA" "$CANDIDATE_SHA")" ]]
+
+      - name: Install repository Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Install pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+
+      - name: Validate scoped workflow syntax
+        run: '"${RUNNER_TEMP}/actionlint/actionlint" -color .github/workflows/issue-2161-staging-ownership.yml'
+
+      - name: Run existing D1 ownership-ledger contract tests
+        run: python3 -m unittest -q tests.test_issue_2161_staging_teardown_attribution
+
+      - name: Install pinned Protobuf compiler required by corelink-reapi
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+
+      - name: Check formatting for changed Rust files
+        run: rustfmt --check --edition 2021 crates/corelink-container/src/storage.rs crates/corelink-container/src/storage/d1_http.rs crates/corelink-container/src/storage/staging_load_test_ownership.rs
+
+      - name: Run focused adapter contract tests without D1 credentials
+        timeout-minutes: 10
+        run: "timeout 600s cargo test --locked --package corelink-server --lib staging_load_test_ownership::tests:: -- --nocapture"
