@@ -8,7 +8,10 @@ on:
       - ".github/workflows/issue-1720-cloudflare-drift-audit.yml"
       - ".github/workflows/issue-1720-cloudflare-drift-contract.yml"
       - ".github/workflows/terraform-drift.yml"
+      - "docs/internal/secrets-checklist.md"
+      - "infra/terraform/README.md"
       - "scripts/test_issue_1720_cloudflare_drift_audit.py"
+      - "scripts/test_terraform_drift_auth_contract.py"
   workflow_dispatch: {}
 
 permissions:
@@ -30,4 +33,6 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
       - name: Run static and adversarial checks
-        run: python3 -S scripts/test_issue_1720_cloudflare_drift_audit.py
+        run: |
+          python3 -S scripts/test_issue_1720_cloudflare_drift_audit.py
+          python3 -S scripts/test_terraform_drift_auth_contract.py

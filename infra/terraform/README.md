@@ -110,12 +110,12 @@ Credentials are supplied at runtime; secret values are not stored in Terraform:
 - Cloudflare Terraform drift: the dedicated `CF_TERRAFORM_DRIFT_API_TOKEN`
   and `CF_ACCOUNT_ID` GitHub repository secrets are mapped to the provider and
   `cf_account_id` at runtime. `CF_ZONE_ID` is a non-secret GitHub repository
-  variable for the `api.humangr.com` zone, mapped to `cf_zone_id` in the plan
+  variable for the `humangr.com` zone, mapped to `cf_zone_id` in the plan
   step. Before running drift detection, provision the dedicated token with
   exactly these Cloudflare permissions: account scope restricted to the one
   `CF_ACCOUNT_ID` with `Workers R2 Storage Read`, `D1 Read`,
   `Workers KV Storage Read`, and `Workers Scripts Read`; zone scope restricted
-  to `CF_ZONE_ID` (`api.humangr.com`) with `DNS Read` and `Workers Routes Read`.
+  to `CF_ZONE_ID` (`humangr.com`) with `DNS Read` and `Workers Routes Read`.
   Grant no Edit/Write, `API Tokens Read` or `API Tokens Write` (token
   management), Access, Pages, or user permissions.
   Cloudflare's `Workers R2 Storage Read` is account-scoped and cannot be
