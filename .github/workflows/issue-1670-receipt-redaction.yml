@@ -1,0 +1,24 @@
+name: issue-1670 receipt path redaction
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/issue-1670-hosted-classification.yml
+      - .github/workflows/issue-1670-receipt-redaction.yml
+      - scripts/redact_i1670_classification_log.py
+      - tests/test_i1670_classification_log_redaction.py
+
+permissions:
+  contents: read
+
+jobs:
+  verify-receipt-redaction:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Run B-128 receipt redaction tests
+        run: python3 -m unittest -q tests/test_i1670_classification_log_redaction.py
