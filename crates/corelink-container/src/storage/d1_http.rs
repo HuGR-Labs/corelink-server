@@ -135,6 +135,20 @@ impl D1HttpClient {
         Self::from_d1_parts(account_id, database_id, api_token, true)
     }
 
+    /// Construct the narrow staging load-test ledger writer without requiring
+    /// or loading any R2 credentials. This is crate-private; callers receive
+    /// the typed append-only adapter rather than an unrestricted public D1
+    /// write client.
+    pub(crate) fn for_staging_load_test_ownership_writes() -> Result<Self, String> {
+        let account_id = super::non_empty_env("CLOUDFLARE_ACCOUNT_ID")
+            .ok_or_else(|| "CLOUDFLARE_ACCOUNT_ID is required".to_owned())?;
+        let database_id = super::non_empty_env("D1_DATABASE_ID")
+            .ok_or_else(|| "D1_DATABASE_ID is required".to_owned())?;
+        let api_token = super::non_empty_env("CF_API_TOKEN")
+            .ok_or_else(|| "CF_API_TOKEN is required".to_owned())?;
+        Self::from_d1_parts(account_id, database_id, api_token, false)
+    }
+
     /// Construct a new [`D1HttpClient`] from a validated [`StorageEnv`].
     ///
     /// # Errors

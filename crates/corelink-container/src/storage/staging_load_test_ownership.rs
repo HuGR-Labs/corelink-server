@@ -1,0 +1,324 @@
+//! Append-only resource registration for the #2161 staging teardown ledger.
+//!
+//! This is a persistence seam only. It does not authenticate a caller, prove
+//! that a resource was created by the named scenario, scan inventory, or
+//! delete resources. Callers must obtain the run identity from a trusted
+//! admission path before invoking it.
+
+use serde_json::json;
+use sha2::{Digest, Sha256};
+
+use super::d1_http::D1HttpClient;
+
+/// One of the scenarios admitted by migration 0147.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StagingLoadTestScenario {
+    Signup,
+    Webhook,
+    Dsr,
+    Cas,
+    Byok,
+    Endurance2h,
+    B103CargoWrite,
+}
+
+impl StagingLoadTestScenario {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Signup => "signup",
+            Self::Webhook => "webhook",
+            Self::Dsr => "dsr",
+            Self::Cas => "cas",
+            Self::Byok => "byok",
+            Self::Endurance2h => "endurance-2h",
+            Self::B103CargoWrite => "b103-cargo-write",
+        }
+    }
+}
+
+/// Resource classes admitted by migration 0147.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StagingLoadTestResourceClass {
+    CasReference,
+    WebhookInbox,
+    WebhookEffect,
+    DsrArtifact,
+    DsrObligation,
+    AuditEvidence,
+    BillingAudit,
+    SignupArtifact,
+    ByokArtifact,
+}
+
+impl StagingLoadTestResourceClass {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::CasReference => "cas_reference",
+            Self::WebhookInbox => "webhook_inbox",
+            Self::WebhookEffect => "webhook_effect",
+            Self::DsrArtifact => "dsr_artifact",
+            Self::DsrObligation => "dsr_obligation",
+            Self::AuditEvidence => "audit_evidence",
+            Self::BillingAudit => "billing_audit",
+            Self::SignupArtifact => "signup_artifact",
+            Self::ByokArtifact => "byok_artifact",
+        }
+    }
+
+    const fn is_retained(self) -> bool {
+        matches!(
+            self,
+            Self::DsrObligation | Self::AuditEvidence | Self::BillingAudit
+        )
+    }
+}
+
+/// Exact staging run identity and opaque resource handle to register.
+///
+/// `opaque_handle` is intentionally omitted from `Debug` and is never emitted
+/// by this adapter. It must be a non-empty, bounded identifier without
+/// control characters; callers remain responsible for ensuring it contains
+/// no credentials or personal data.
+pub struct StagingLoadTestResourceRegistration<'a> {
+    pub run_id: &'a str,
+    pub scenario: StagingLoadTestScenario,
+    pub target_deployment_sha: &'a str,
+    pub resource_class: StagingLoadTestResourceClass,
+    pub opaque_handle: &'a str,
+}
+
+impl core::fmt::Debug for StagingLoadTestResourceRegistration<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StagingLoadTestResourceRegistration")
+            .field("run_id", &self.run_id)
+            .field("scenario", &self.scenario)
+            .field("target_deployment_sha", &self.target_deployment_sha)
+            .field("resource_class", &self.resource_class)
+            .field("opaque_handle", &"[REDACTED]")
+            .finish()
+    }
+}
+
+/// Outcome of an attempted exact-run registration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StagingLoadTestRegistrationOutcome {
+    /// D1 inserted the row and returned this redacted receipt reference.
+    Registered { receipt_ref: String },
+    /// No open staging run matched the supplied exact identity.
+    NoMatchingOpenRun,
+}
+
+/// Restricted writer for the append-only staging load-test ownership ledger.
+///
+/// Construct with [`StagingLoadTestOwnershipWriter::from_d1_env`] so this path
+/// loads only D1 scope and credentials, never R2 object-delete credentials.
+pub struct StagingLoadTestOwnershipWriter {
+    d1: D1HttpClient,
+}
+
+impl StagingLoadTestOwnershipWriter {
+    /// Load the D1-only, writable capability needed by this adapter.
+    ///
+    /// The wrapped client is private, so this API exposes registration only;
+    /// it does not expose arbitrary SQL or any delete operation.
+    pub fn from_d1_env() -> Result<Self, String> {
+        Ok(Self {
+            d1: D1HttpClient::for_staging_load_test_ownership_writes()?,
+        })
+    }
+
+    /// Append one run-owned resource reference to the migration 0147 ledger.
+    ///
+    /// The single `INSERT ... SELECT` binds the supplied run, scenario and
+    /// deployment SHA to an exact open staging run. The class determines its
+    /// disposition: DSR obligations and audit/billing evidence are retained;
+    /// all other classes are disposable candidates. This method cannot delete
+    /// or update ledger rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid input, a D1 failure/uniqueness conflict,
+    /// or an unexpected D1 response. Error text does not include the opaque
+    /// handle or any bound parameter.
+    pub async fn register_staging_load_test_resource(
+        &self,
+        registration: StagingLoadTestResourceRegistration<'_>,
+    ) -> Result<StagingLoadTestRegistrationOutcome, String> {
+        validate_registration(&registration)?;
+
+        let receipt_ref = receipt_ref(&registration);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "system clock is before the Unix epoch".to_owned())?
+            .as_millis();
+        let now_ms = i64::try_from(now_ms)
+            .map_err(|_| "system clock timestamp is out of range".to_owned())?;
+        let disposition = if registration.resource_class.is_retained() {
+            "retained"
+        } else {
+            "disposable"
+        };
+        let rows = self
+            .d1
+            .query(
+                "INSERT INTO staging_load_test_resources \
+                 (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) \
+                 SELECT ?1, ?2, ?4, ?5, ?6, ?7, 'registered', ?8 \
+                 WHERE EXISTS (SELECT 1 FROM staging_load_test_runs \
+                   WHERE run_id = ?1 AND scenario = ?2 AND target_environment = 'staging' \
+                     AND target_deployment_sha = ?3 AND state = 'open') \
+                 RETURNING receipt_ref",
+                &[
+                    json!(registration.run_id),
+                    json!(registration.scenario.as_str()),
+                    json!(registration.target_deployment_sha),
+                    json!(registration.resource_class.as_str()),
+                    json!(receipt_ref),
+                    json!(registration.opaque_handle),
+                    json!(disposition),
+                    json!(now_ms),
+                ],
+            )
+            .await
+            .map_err(|_| "staging load-test resource registration failed".to_owned())?;
+
+        let Some(row) = rows.first() else {
+            return Ok(StagingLoadTestRegistrationOutcome::NoMatchingOpenRun);
+        };
+        let returned_receipt = row
+            .get("receipt_ref")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "D1 returned a malformed registration result".to_owned())?;
+        if returned_receipt != receipt_ref {
+            return Err("D1 returned an unexpected registration receipt".to_owned());
+        }
+        Ok(StagingLoadTestRegistrationOutcome::Registered { receipt_ref })
+    }
+}
+
+fn validate_registration(
+    registration: &StagingLoadTestResourceRegistration<'_>,
+) -> Result<(), String> {
+    let run_id = registration.run_id;
+    if run_id.is_empty()
+        || run_id.len() > 20
+        || run_id.starts_with('0')
+        || !run_id.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err("run_id must be canonical positive decimal text".to_owned());
+    }
+    let sha = registration.target_deployment_sha;
+    if sha.len() != 40
+        || !sha
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("target deployment SHA must be 40 lowercase hexadecimal characters".to_owned());
+    }
+    let handle = registration.opaque_handle;
+    if handle.is_empty() || handle.len() > 512 || handle.chars().any(char::is_control) {
+        return Err(
+            "opaque resource handle must be 1-512 bytes without control characters".to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn receipt_ref(registration: &StagingLoadTestResourceRegistration<'_>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"corelink-staging-load-test-resource-receipt-v1\0");
+    for part in [
+        registration.run_id.as_bytes(),
+        registration.scenario.as_str().as_bytes(),
+        registration.target_deployment_sha.as_bytes(),
+        registration.resource_class.as_str().as_bytes(),
+        registration.opaque_handle.as_bytes(),
+    ] {
+        hasher.update(&(part.len() as u64).to_be_bytes());
+        hasher.update(part);
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn registration<'a>(
+        run_id: &'a str,
+        deployment_sha: &'a str,
+        opaque_handle: &'a str,
+        resource_class: StagingLoadTestResourceClass,
+    ) -> StagingLoadTestResourceRegistration<'a> {
+        StagingLoadTestResourceRegistration {
+            run_id,
+            scenario: StagingLoadTestScenario::Cas,
+            target_deployment_sha: deployment_sha,
+            resource_class,
+            opaque_handle,
+        }
+    }
+
+    #[test]
+    fn rejects_noncanonical_or_out_of_scope_identity() {
+        let sha = "a".repeat(40);
+        assert!(validate_registration(&registration(
+            "01",
+            &sha,
+            "handle",
+            StagingLoadTestResourceClass::CasReference,
+        ))
+        .is_err());
+        assert!(validate_registration(&registration(
+            "1",
+            &"A".repeat(40),
+            "handle",
+            StagingLoadTestResourceClass::CasReference,
+        ))
+        .is_err());
+        assert!(validate_registration(&registration(
+            "1",
+            &sha,
+            "bad\nhandle",
+            StagingLoadTestResourceClass::CasReference,
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn receipt_is_deterministic_but_run_scoped() {
+        let sha = "a".repeat(40);
+        let first = registration(
+            "123",
+            &sha,
+            "opaque-id",
+            StagingLoadTestResourceClass::CasReference,
+        );
+        let same = registration(
+            "123",
+            &sha,
+            "opaque-id",
+            StagingLoadTestResourceClass::CasReference,
+        );
+        let other_run = registration(
+            "124",
+            &sha,
+            "opaque-id",
+            StagingLoadTestResourceClass::CasReference,
+        );
+        assert_eq!(receipt_ref(&first), receipt_ref(&same));
+        assert_ne!(receipt_ref(&first), receipt_ref(&other_run));
+    }
+
+    #[test]
+    fn migration_retained_classes_are_not_marked_disposable() {
+        for class in [
+            StagingLoadTestResourceClass::DsrObligation,
+            StagingLoadTestResourceClass::AuditEvidence,
+            StagingLoadTestResourceClass::BillingAudit,
+        ] {
+            assert!(class.is_retained());
+        }
+        assert!(!StagingLoadTestResourceClass::CasReference.is_retained());
+    }
+}

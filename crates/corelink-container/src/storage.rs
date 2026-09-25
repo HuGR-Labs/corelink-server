@@ -59,6 +59,8 @@ pub mod d1_http;
 pub mod r2_kv;
 pub mod r2_s3;
 pub mod region_map;
+/// Exact-run resource attribution writes for staging load-test teardown.
+pub mod staging_load_test_ownership;
 
 /// Configuration for the native-container storage layer, sourced
 /// entirely from environment variables.
