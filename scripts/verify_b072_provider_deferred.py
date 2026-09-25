@@ -29,7 +29,8 @@ REQUIRED = {
     "scheduler correlation check": 'terminalReceipt["correlation_id"] !== `PAT-CORRELATION-ID-001:${deliveryId}`',
     "scheduler execution check": 'terminalReceipt["scheduled_at_ms"] !== controller.scheduledTime',
     "scheduler serving SHA check": 'terminalReceipt["serving_sha"] !== expectedServingSha',
-    "scheduler receiver revision bounds": 'terminalReceipt["receiver_worker_revision"].length < 1 || terminalReceipt["receiver_worker_revision"].length > 200',
+    "scheduler receiver revision non-empty": 'terminalReceipt["receiver_worker_revision"].length < 1',
+    "scheduler receiver revision max length": 'terminalReceipt["receiver_worker_revision"].length > 200',
 }
 
 
