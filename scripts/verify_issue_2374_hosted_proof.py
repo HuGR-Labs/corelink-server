@@ -40,6 +40,34 @@ FILES = {
     ".github/workflows/stale.yml": {"stale"},
     ".github/workflows/welcome-first-pr.yml": {"welcome"},
 }
+RUN_STEPS = {
+    ".github/workflows/bot-pr-has-checks.yml": {"audit": {"automation-created open PRs are actually gated"}},
+    ".github/workflows/coverage.yml": {"coverage": {"Run coverage (HTML + SUMMARY.txt)", "Render PR comment body", "Append step summary"}},
+    ".github/workflows/dependabot-auto-merge.yml": {"auto-merge": {
+        "Log Dependabot PR metadata", "Compute auto-merge eligibility", "Annotate major-update block",
+        "Annotate non-security minor block", "Enable auto-merge (security-patch only)",
+        "Audit log emission", "Annotate metric (structured log)"}},
+    ".github/workflows/dependabot-policy-trust-boundary.yml": {"trust-boundary-teeth": {
+        "Prepare hermetic checker interpreter (BASE tree)", "Statically reject B-133 control mutations (BASE checker)",
+        "Prove host-toolchain channel guard (BASE tree)", "Prove Dependabot trust-boundary teeth (BASE tree)"}},
+    ".github/workflows/dependabot-policy.yml": {
+        "sentinel": {"Pass-through (non-dependabot PR)"},
+        "policy-gate": {"Prepare hermetic checker interpreter (BASE tree)", "Assert trust-boundary wiring (BASE checker)",
+                        "Verify fetched PR history (fail-closed)", "Prepare isolated Cargo policy tree (PR data only)",
+                        "Select the workspace-pinned host toolchain", "Run cargo-deny licenses (fail-closed)",
+                        "Banned-license signature scan (Cargo.lock)", "npm banned-license scan",
+                        "Forbid skip-hook / skip-ci flags", "Forbid governance-file modifications",
+                        "Verify required checks are present", "Policy-gate audit log"}},
+    ".github/workflows/lockfile-diff.yml": {"lockfile-diff": {
+        "Assert the workspace-pinned toolchain (rust-toolchain.toml)", "Generate Cargo.lock diff",
+        "Run cargo-deny (license summary)", "Post PR comment with diff + cargo-deny summary"}},
+    ".github/workflows/permission-matrix.yml": {"permission-matrix": {
+        "Run mutation self-test", "Validate published claims against applied gates",
+        "Install pytest (venv on system python3)", "Run validator regression suite"}},
+    ".github/workflows/pr-labels.yml": {"label": set(), "size": {"Apply size:* label"}},
+    ".github/workflows/stale.yml": {"stale": set()},
+    ".github/workflows/welcome-first-pr.yml": {"welcome": {"Greet first-time contributor"}},
+}
 MUTATION_MARKERS = {
     "auto-merge": "gh pr merge --auto",
     "lockfile-diff": "Post PR comment with diff",
@@ -338,6 +366,17 @@ def verify_inventory(root: Path) -> None:
         if not present:
             fail(f"mutation path marker for {job} disappeared")
 
+    actual_run_steps: dict[str, dict[str, set[str]]] = {}
+    for relative in FILES:
+        actual_run_steps[relative] = {}
+        for job, lines in job_blocks((root / relative).read_text(encoding="utf-8"), relative).items():
+            actual_run_steps[relative][job] = {
+                name for name, block in step_blocks(lines).items()
+                if any(line.startswith("        run:") for line in block)
+            }
+    if actual_run_steps != RUN_STEPS:
+        fail("scoped inline command inventory changed; update and execute every exact run block in the proof harness")
+
 
 def verify_bot_audit_fixture(root: Path) -> None:
     """Run the workflow's actual inline audit script against a local fake gh."""
@@ -419,20 +458,22 @@ args = sys.argv[1:]
 joined = " ".join(args)
 verb = args[0] if args else ""
 sub = args[1] if len(args) > 1 else ""
-write = ((verb == "pr" and sub in {"merge", "edit", "comment"}) or
+method = "GET"
+for index, arg in enumerate(args[:-1]):
+    if arg in {"-X", "--method"}:
+        method = args[index + 1].upper()
+        break
+write = (method in {"POST", "PUT", "PATCH", "DELETE"} or
+         (verb == "pr" and sub in {"merge", "edit", "comment"}) or
          (verb == "issue" and sub == "comment") or
          (verb == "label" and sub == "create"))
-record = {"args": args, "method": "write" if write else "read",
-          "outcome": "denied" if write and os.environ.get("DENY_WRITES") == "1" else "simulated"}
+record = {"args": args, "method": method if verb == "api" else ("WRITE" if write else "READ"),
+          "outcome": "denied" if write else "read-only-fixture"}
 with open(os.environ["GH_TRACE"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps(record) + "\\n")
 if write:
-    # A successful response is simulated locally; it never contacts GitHub.
-    if os.environ.get("DENY_WRITES") == "1":
-        print("mock GitHub denied write: " + joined, file=sys.stderr)
-        raise SystemExit(86)
-    print("MOCK-GITHUB: " + joined)
-    raise SystemExit(0)
+    print("mock GitHub denied write: " + joined, file=sys.stderr)
+    raise SystemExit(86)
 if verb == "api":
     path = next((arg for arg in args if arg.startswith("repos/") or arg.startswith("search/")), args[-1])
     if path.endswith("/pulls?state=open&per_page=100"):
@@ -466,7 +507,7 @@ raise SystemExit("unexpected gh command: " + joined)
 
 
 class LocalGitHubHandler(BaseHTTPRequestHandler):
-    """In-memory REST surface used to execute the pinned labeler and stale actions."""
+    """Read-only REST fixtures used to execute pinned actions with writes denied."""
 
     requests: list[dict[str, object]] = []
     labels: set[str] = set()
@@ -519,28 +560,22 @@ class LocalGitHubHandler(BaseHTTPRequestHandler):
         else:
             self._send(200, {})
 
-    def _write(self) -> None:
+    def _deny_write(self) -> None:
         record = self._record()
-        method = str(record["method"])
-        path = str(record["path"])
-        body = record["body"]
-        if path.endswith("/issues/314/labels") and isinstance(body, dict):
-            self.labels.update(str(label) for label in body.get("labels", []))
-        # Writes affect only this process-local fixture and are discarded on exit.
-        payload = {"number": 314, "labels": [{"name": label} for label in sorted(self.labels)]}
-        self._send(200 if method != "POST" else 201, payload)
+        record["status"] = 403
+        self._send(403, {"message": "issue-2374 proof mock denies all writes"})
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-        self._write()
+        self._deny_write()
 
     def do_PUT(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-        self._write()
+        self._deny_write()
 
     def do_PATCH(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-        self._write()
+        self._deny_write()
 
     def do_DELETE(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-        self._write()
+        self._deny_write()
 
 
 def action_step_inputs(root: Path, relative: str, job: str, step_name: str) -> dict[str, str]:
@@ -610,8 +645,8 @@ def run_pinned_action(action_root: Path, action: str, root: Path, api_url: str, 
         env["INPUT_" + key.upper().replace("_", "-")] = value
     env["INPUT_REPO-TOKEN"] = "fixture-token-never-valid-outside-local-mock"
     result = subprocess.run(["node", str(entrypoint)], cwd=root, env=env, capture_output=True, text=True)
-    if result.returncode != 0:
-        fail(f"{action}: pinned action failed against local API mock: {result.stderr[-1000:]} {result.stdout[-500:]}; local requests={LocalGitHubHandler.requests[-12:]}")
+    if result.returncode == 0 and not any(request["method"] in {"POST", "PUT", "PATCH", "DELETE"} for request in LocalGitHubHandler.requests):
+        fail(f"{action}: action completed without reaching a denied write boundary")
 
 
 def verify_pinned_mutating_actions(root: Path, action_root: Path) -> None:
@@ -642,19 +677,21 @@ def verify_pinned_mutating_actions(root: Path, action_root: Path) -> None:
     writes = [request for request in LocalGitHubHandler.requests if request["method"] in {"POST", "PUT", "PATCH", "DELETE"}]
     serialized = json.dumps(writes)
     all_requests = json.dumps(LocalGitHubHandler.requests)
-    if "/pulls/314/files" not in all_requests or "area:infra" not in serialized:
-        fail(f"pinned labeler did not send its expected fixture label request: {LocalGitHubHandler.requests}")
-    if "/issues/315/labels" not in serialized or "/issues/316" not in serialized:
-        fail("pinned stale action did not mark and close the aged issue fixtures")
+    if "/pulls/314/files" not in all_requests or not any("/issues/314/labels" in str(request.get("path")) for request in writes):
+        fail(f"pinned labeler did not reach its denied fixture label write: {LocalGitHubHandler.requests}")
+    if not any("/issues/315/labels" in str(request.get("path")) for request in writes):
+        fail("pinned stale action did not attempt to mark the aged issue fixture")
+    if not writes or any(request.get("status") != 403 for request in writes):
+        fail(f"pinned action REST writes were not all denied: {writes}")
     if any("api.github.com" in str(request) for request in LocalGitHubHandler.requests):
         fail("a pinned action escaped the local GitHub API mock")
 
 
-def run_gh_script(script: str, fakebin: Path, trace: Path, env: dict[str, str], *, deny: bool) -> subprocess.CompletedProcess[str]:
+def run_gh_script(script: str, fakebin: Path, trace: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-euo", "pipefail", "-c", script],
         env={**os.environ, **env, "PATH": str(fakebin) + os.pathsep + os.environ.get("PATH", ""),
-             "GH_TRACE": str(trace), "DENY_WRITES": "1" if deny else "0"},
+             "GH_TRACE": str(trace)},
         capture_output=True, text=True,
     )
 
@@ -686,26 +723,20 @@ def verify_original_write_commands(root: Path) -> None:
             script = script.replace("${{github.server_url}}", "https://github.com").replace("${{github.run_id}}", "1")
             if relative == ".github/workflows/lockfile-diff.yml":
                 (tmp / "deny-output.txt").write_text("fixture cargo-deny output\n", encoding="utf-8")
-            completed = run_gh_script(script, fakebin, trace, env, deny=False)
-            if completed.returncode != 0:
-                fail(f"{relative}:{step}: local GitHub fixture failed: {completed.stderr[-500:]}")
+            completed = run_gh_script(script, fakebin, trace, env)
             records = [line for line in trace.read_text(encoding="utf-8").splitlines() if line]
             if not records:
                 fail(f"{relative}:{step}: fake GitHub did not record a request")
-            observed = [(item["args"][0], item["args"][1]) for item in map(json.loads, records) if item["method"] == "write"]
+            decoded = list(map(json.loads, records))
+            observed = [(item["args"][0], item["args"][1]) for item in decoded if item["outcome"] == "denied"]
             if observed != expected_writes:
                 fail(f"{relative}:{step}: expected mocked write requests {expected_writes}, got {observed}")
-
-            trace.unlink(missing_ok=True)
-            negative = run_gh_script(script, fakebin, trace, env, deny=True)
-            denied = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines() if line]
-            denied_writes = [record for record in denied if record["method"] == "write"]
-            if not denied_writes or any(record["outcome"] != "denied" for record in denied_writes):
-                fail(f"{relative}:{step}: negative control did not stop at a write request")
-            # A helper may deliberately degrade a comment failure to a warning;
-            # the decisive control is that every attempted write was denied.
-            if negative.returncode == 0 and relative != ".github/workflows/lockfile-diff.yml":
-                fail(f"{relative}:{step}: write-denial negative control was ignored")
+            if any(item["outcome"] == "denied" and item["method"] != "WRITE" for item in decoded):
+                fail(f"{relative}:{step}: write request did not use the deny-by-default sink")
+            # The lockfile notifier catches a failed comment to emit an annotation;
+            # all other original write commands must observe the denial as failure.
+            if completed.returncode == 0 and relative != ".github/workflows/lockfile-diff.yml":
+                fail(f"{relative}:{step}: command ignored the denied local write")
 
         eligibility = named_run_block(root, ".github/workflows/dependabot-auto-merge.yml", "auto-merge", "Compute auto-merge eligibility")
         output_path = tmp / "eligibility-output.txt"
@@ -753,7 +784,7 @@ def verify_original_write_commands(root: Path) -> None:
         required_check = named_run_block(root, ".github/workflows/dependabot-policy.yml", "policy-gate", "Verify required checks are present")
         checked = run_gh_script(required_check, fakebin, trace,
                                 {"GH_TOKEN": "fixture", "REPO": "HuGR-dev/corelink-server",
-                                 "PR_HEAD_SHA": "a" * 40, "UNTRUSTED_TREE": str(git_root)}, deny=False)
+                                 "PR_HEAD_SHA": "a" * 40, "UNTRUSTED_TREE": str(git_root)})
         if checked.returncode != 0 or "All 5 resolved required status checks are present" not in checked.stdout:
             fail(f"Dependabot policy check command failed against fixture API: {checked.stderr[-500:]} {checked.stdout[-500:]}")
 
@@ -765,6 +796,166 @@ def verify_original_write_commands(root: Path) -> None:
                                       env={**os.environ, "GITHUB_OUTPUT": str(deny_output)}, capture_output=True, text=True)
             if deny_run.returncode != 0 or not re.search(r"(?m)^exit_code=\d+$", deny_output.read_text(encoding="utf-8")):
                 fail(f"lockfile cargo-deny command did not produce its workflow outputs: {deny_run.stderr[-500:]}")
+
+
+def run_original_shell(root: Path, relative: str, job: str, step: str, *, cwd: Path,
+                       env: dict[str, str] | None = None, replacements: dict[str, str] | None = None,
+                       expect_success: bool = True) -> subprocess.CompletedProcess[str]:
+    """Execute one exact workflow run block with only fixture substitutions."""
+    script = named_run_block(root, relative, job, step)
+    for source, value in (replacements or {}).items():
+        script = script.replace(source, value)
+    result = subprocess.run(["bash", "-euo", "pipefail", "-c", script], cwd=cwd,
+                            env={**os.environ, **(env or {})}, capture_output=True, text=True)
+    if (result.returncode == 0) != expect_success:
+        expected = "success" if expect_success else "failure"
+        fail(f"{relative}:{step}: expected {expected}, got rc={result.returncode}: {result.stderr[-600:]} {result.stdout[-250:]}")
+    return result
+
+
+def _git_fixture(directory: Path, *, candidate_files: dict[str, str], merge_message: str = "fixture candidate") -> Path:
+    """Create a PR-shaped two-parent merge; changed fixture files are on parent two."""
+    directory.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(directory)], check=True)
+    subprocess.run(["git", "-C", str(directory), "config", "user.name", "issue-2374 fixture"], check=True)
+    subprocess.run(["git", "-C", str(directory), "config", "user.email", "fixture@example.invalid"], check=True)
+    for relative, contents in {"Cargo.toml": '[workspace]\nmembers = []\nresolver = "2"\n',
+                               "Cargo.lock": "version = 4\n", "deny.toml": '[licenses]\nallow = ["MIT"]\n',
+                               "fixture-base.txt": "base\n"}.items():
+        target = directory / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(contents, encoding="utf-8")
+    subprocess.run(["git", "-C", str(directory), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(directory), "commit", "-qm", "base"], check=True)
+    base = subprocess.run(["git", "-C", str(directory), "rev-parse", "HEAD"], check=True,
+                          capture_output=True, text=True).stdout.strip()
+    (directory / "fixture-left.txt").write_text("left parent\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(directory), "add", "fixture-left.txt"], check=True)
+    subprocess.run(["git", "-C", str(directory), "commit", "-qm", "first PR parent"], check=True)
+    left = subprocess.run(["git", "-C", str(directory), "rev-parse", "HEAD"], check=True,
+                          capture_output=True, text=True).stdout.strip()
+    subprocess.run(["git", "-C", str(directory), "checkout", "-qb", "fixture-right", base], check=True)
+    for relative, contents in candidate_files.items():
+        target = directory / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(contents, encoding="utf-8")
+    subprocess.run(["git", "-C", str(directory), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(directory), "commit", "-qm", merge_message], check=True)
+    right = subprocess.run(["git", "-C", str(directory), "rev-parse", "HEAD"], check=True,
+                           capture_output=True, text=True).stdout.strip()
+    subprocess.run(["git", "-C", str(directory), "checkout", "-q", left], check=True)
+    subprocess.run(["git", "-C", str(directory), "merge", "--no-ff", "-qm", "fixture PR merge", right], check=True)
+    return directory
+
+
+def verify_remaining_original_commands(root: Path, baseline: Path) -> None:
+    """Run scoped inline commands not already covered by the focused command/action fixtures."""
+    with tempfile.TemporaryDirectory(prefix="i2374-all-commands-") as directory:
+        tmp = Path(directory)
+        coverage_dir = tmp / "target/coverage"
+        coverage_dir.mkdir(parents=True)
+        (coverage_dir / "SUMMARY.txt").write_text("fixture coverage summary\n", encoding="utf-8")
+        coverage_output, coverage_summary = tmp / "coverage-output", tmp / "step-summary"
+        run_original_shell(root, ".github/workflows/coverage.yml", "coverage", "Render PR comment body",
+                           cwd=tmp, env={"GITHUB_OUTPUT": str(coverage_output)},
+                           replacements={"${{ github.event.pull_request.number || 'main' }}": "314"})
+        run_original_shell(root, ".github/workflows/coverage.yml", "coverage", "Append step summary",
+                           cwd=tmp, env={"GITHUB_STEP_SUMMARY": str(coverage_summary)})
+        if "fixture coverage summary" not in coverage_output.read_text(encoding="utf-8") or "fixture coverage summary" not in coverage_summary.read_text(encoding="utf-8"):
+            fail("coverage render/summary commands omitted fixture data")
+
+        auto = ".github/workflows/dependabot-auto-merge.yml"
+        auto_env = {"UPDATE_TYPE": "version-update:semver-patch", "DEPENDENCY_TYPE": "direct",
+                    "DEPENDENCY_NAMES": "fixture-crate", "PACKAGE_ECOSYSTEM": "cargo",
+                    "PR_TITLE": "[security] fixture update", "PR_LABELS": '["security"]',
+                    "LABELS_JSON": '["security"]', "DEP_NAMES": "fixture-crate",
+                    "ECOSYSTEM": "cargo", "PR_NUMBER": "314"}
+        run_original_shell(root, auto, "auto-merge", "Log Dependabot PR metadata", cwd=tmp, env=auto_env)
+        run_original_shell(root, auto, "auto-merge", "Annotate major-update block", cwd=tmp, env=auto_env,
+                           replacements={"${{ steps.metadata.outputs.dependency-names }}": "fixture-crate"})
+        run_original_shell(root, auto, "auto-merge", "Annotate non-security minor block", cwd=tmp)
+        auto_expr = {"${{ steps.decide.outputs.eligible }}": "true", "${{ steps.decide.outputs.is_security }}": "true",
+                     "${{ steps.metadata.outputs.update-type }}": "version-update:semver-patch",
+                     "${{ steps.metadata.outputs.package-ecosystem }}": "cargo",
+                     "${{ steps.metadata.outputs.dependency-names }}": "fixture-crate",
+                     "${{ github.event.pull_request.number }}": "314", "${{ github.event.pull_request.head.sha }}": "a" * 40,
+                     "${{ github.repository }}": "HuGR-dev/corelink-server"}
+        run_original_shell(root, auto, "auto-merge", "Audit log emission", cwd=tmp, env=auto_env, replacements=auto_expr)
+        run_original_shell(root, auto, "auto-merge", "Annotate metric (structured log)", cwd=tmp,
+                           env=auto_env, replacements=auto_expr)
+
+        npm_repo = _git_fixture(tmp / "npm-clean", candidate_files={
+            "apps/fixture/package.json": '{"name":"fixture","license":"MIT"}\n'})
+        for relative in (".github/workflows/dependabot-policy.yml",
+                         ".github/workflows/dependabot-policy-trust-boundary.yml",
+                         "scripts/check_dependabot_policy_trusted_tree.py",
+                         "scripts/test_dependabot_policy_trust_boundary.sh",
+                         "scripts/test_ci_use_host_toolchain.sh", "scripts/prepare_b133_python.sh",
+                         "scripts/ci-use-host-toolchain.sh", "rust-toolchain.toml"):
+            target = npm_repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((baseline / relative).read_bytes())
+        policy_env = {"UNTRUSTED_TREE": str(npm_repo), "POLICY_TREE": str(tmp / "policy-tree"),
+                      "CARGO_HOME": str(tmp / "cargo-home"), "DENY_CONFIG": str(baseline / "deny.toml"),
+                      "REPO": "HuGR-dev/corelink-server", "PR_HEAD_SHA": "a" * 40, "GH_TOKEN": "fixture-token"}
+        policy = ".github/workflows/dependabot-policy.yml"
+        run_original_shell(root, policy, "policy-gate", "Verify fetched PR history (fail-closed)", cwd=baseline, env=policy_env)
+        cargo_lock = tmp / "policy-tree/Cargo.lock"
+        cargo_lock.parent.mkdir(parents=True)
+        cargo_lock.write_text("version = 4\n", encoding="utf-8")
+        scan_env = {**policy_env, "POLICY_TREE": str(tmp / "policy-tree")}
+        run_original_shell(root, policy, "policy-gate", "Banned-license signature scan (Cargo.lock)",
+                           cwd=baseline, env=scan_env)
+        cargo_lock.write_text('[[package]]\nname = "fixture"\nversion = "1.0.0"\nlicense = "AGPL-3.0"\n', encoding="utf-8")
+        run_original_shell(root, policy, "policy-gate", "Banned-license signature scan (Cargo.lock)",
+                           cwd=baseline, env=scan_env, expect_success=False)
+        run_original_shell(root, policy, "policy-gate", "npm banned-license scan", cwd=baseline, env=policy_env)
+        banned = _git_fixture(tmp / "npm-banned", candidate_files={
+            "apps/fixture/package.json": '{"name":"fixture","license":"AGPL-3.0"}\n'})
+        run_original_shell(root, policy, "policy-gate", "npm banned-license scan", cwd=baseline,
+                           env={**policy_env, "UNTRUSTED_TREE": str(banned)}, expect_success=False)
+        skip = _git_fixture(tmp / "skip-hook", candidate_files={"src/fixture.rs": "fn fixture() {}\n"},
+                            merge_message="fixture [skip ci]")
+        run_original_shell(root, policy, "policy-gate", "Forbid skip-hook / skip-ci flags", cwd=baseline,
+                           env={**policy_env, "UNTRUSTED_TREE": str(skip)}, expect_success=False)
+        run_original_shell(root, policy, "policy-gate", "Forbid skip-hook / skip-ci flags", cwd=baseline,
+                           env=policy_env)
+        governance = _git_fixture(tmp / "governance", candidate_files={"deny.toml": '[licenses]\nallow = ["AGPL-3.0"]\n'})
+        run_original_shell(root, policy, "policy-gate", "Forbid governance-file modifications", cwd=baseline,
+                           env={**policy_env, "UNTRUSTED_TREE": str(governance)}, expect_success=False)
+        run_original_shell(root, policy, "policy-gate", "Forbid governance-file modifications", cwd=baseline,
+                           env=policy_env)
+
+        b133 = tmp / "b133-python"
+        b133_env = {"B133_PYTHON": str(b133), "B133_UNTRUSTED_TREE": str(npm_repo),
+                    "UNTRUSTED_TREE": str(npm_repo)}
+        run_original_shell(root, ".github/workflows/dependabot-policy.yml", "policy-gate",
+                           "Prepare hermetic checker interpreter (BASE tree)", cwd=baseline, env=b133_env)
+        run_original_shell(root, policy, "policy-gate", "Assert trust-boundary wiring (BASE checker)",
+                           cwd=baseline, env=b133_env)
+        run_original_shell(root, ".github/workflows/dependabot-policy-trust-boundary.yml", "trust-boundary-teeth",
+                           "Prepare hermetic checker interpreter (BASE tree)", cwd=baseline, env=b133_env)
+        run_original_shell(root, ".github/workflows/dependabot-policy-trust-boundary.yml", "trust-boundary-teeth",
+                           "Statically reject B-133 control mutations (BASE checker)", cwd=baseline, env=b133_env)
+        run_original_shell(root, ".github/workflows/dependabot-policy-trust-boundary.yml", "trust-boundary-teeth",
+                           "Prove host-toolchain channel guard (BASE tree)", cwd=baseline)
+        run_original_shell(root, ".github/workflows/dependabot-policy-trust-boundary.yml", "trust-boundary-teeth",
+                           "Prove Dependabot trust-boundary teeth (BASE tree)", cwd=baseline)
+
+        toolchain_path = tmp / "github-path"
+        run_original_shell(root, policy, "policy-gate", "Select the workspace-pinned host toolchain",
+                           cwd=baseline, env={"HOST_TRIPLE": "x86_64-unknown-linux-gnu", "GITHUB_PATH": str(toolchain_path)})
+        run_original_shell(root, ".github/workflows/lockfile-diff.yml", "lockfile-diff",
+                           "Assert the workspace-pinned toolchain (rust-toolchain.toml)", cwd=root)
+
+        audit_replacements = {"${{ github.event.pull_request.number }}": "314",
+                              "${{ steps.metadata.outputs.package-ecosystem }}": "cargo",
+                              "${{ steps.metadata.outputs.dependency-names }}": "fixture-crate",
+                              "${{ steps.metadata.outputs.update-type }}": "version-update:semver-patch",
+                              "${{ github.event.pull_request.head.sha }}": "a" * 40}
+        run_original_shell(root, policy, "policy-gate", "Policy-gate audit log", cwd=tmp,
+                           env={"PR_NUMBER": "314", "ECOSYSTEM": "cargo", "DEP_NAMES": "fixture-crate",
+                                "UPDATE_TYPE": "version-update:semver-patch"}, replacements=audit_replacements)
 
 
 def _safe_fixture_target_path(policy_root: Path, manifest_dir: Path, raw_path: object, label: str) -> Path:
@@ -1014,6 +1205,7 @@ def main() -> int:
             if not args.baseline_root:
                 fail("exact hosted proof requires --baseline-root for Dependabot policy execution")
             verify_policy_gate_cargo_deny(args.root, args.baseline_root)
+            verify_remaining_original_commands(args.root, args.baseline_root)
     except (ContractError, subprocess.CalledProcessError) as error:
         print(f"issue-2374 hosted proof: FAIL: {error}", file=sys.stderr)
         return 1
