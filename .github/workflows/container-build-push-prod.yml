@@ -1,16 +1,7 @@
-# Build + push the prod container image on the SELF-HOSTED `corelink` fleet —
-# daemonless (BuildKit + runc), $0 GitHub billing, off the founder's dev Mac AND
-# off GitHub-hosted runners.
-#
-# This REPLACES the GitHub-hosted docker+buildx lane (and its WAIVER). The move
-# is possible because the runner image now bakes BuildKit (buildkitd+buildctl+
-# runc, X4-pinned — corelink-runners deploy/runner/Dockerfile), so `docker` is no
-# longer needed anywhere: `buildctl` builds the linux/amd64 image, the three SOTA
-# gates run daemonless against the OCI output + a runc smoke, and the push to the
-# CF managed registry uses a wrangler-minted registry credential (no docker).
-# Every step was proven live before this lane shipped:
-#   - build FROM ubuntu:24.04 + daemonless push to registry.cloudflare.com — run 31664445243
-#   - all 3 gates daemonless (size/cred/runc-smoke discriminates) — run 31713087683
+# Build + push the production container image on GitHub-hosted Ubuntu.
+# BuildKit and runc are installed from versioned release assets after SHA-256
+# verification. The build remains daemonless and the existing production
+# confirmation, gates, and explicit registry push are preserved.
 #
 # === SOTA build — no across-run cache machinery (unchanged intent) ===
 # The Dockerfile builds with the canonical [profile.release] (lto="fat",
@@ -41,12 +32,9 @@ permissions:
 
 jobs:
   build-push:
-    name: build + push prod container (fat-LTO SOTA, daemonless on corelink)
+    name: build + push prod container (fat-LTO SOTA, daemonless on hosted Ubuntu)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
     steps:
       - name: Confirm intent
         env:
@@ -62,7 +50,36 @@ jobs:
           fetch-depth: 0 # full history so `git rev-parse --short HEAD` resolves the image tag
           persist-credentials: false
 
-      - name: Preflight — BuildKit + runc must be baked in the runner image
+      - name: Install checksum-pinned BuildKit + runc
+        run: |
+          set -euo pipefail
+          VERSION=0.33.0
+          RUNC_VERSION=1.5.1
+          STAGE="$RUNNER_TEMP/buildkit-stage"
+          mkdir -p "$STAGE"
+          BUILDKIT_ARCHIVE="$RUNNER_TEMP/buildkit-v${VERSION}.linux-amd64.tar.gz"
+          curl --fail --location --retry 3 \
+            "https://github.com/moby/buildkit/releases/download/v${VERSION}/buildkit-v${VERSION}.linux-amd64.tar.gz" \
+            --output "$BUILDKIT_ARCHIVE"
+          printf '%s  %s\n' \
+            'b6242896d343100808dcbe37565caf381e0a444a6a83d7255926bb1519248ead' \
+            "$BUILDKIT_ARCHIVE" | sha256sum --check --status
+          tar -xzf "$BUILDKIT_ARCHIVE" -C "$STAGE" --strip-components=1 bin
+          test -x "$STAGE/buildkitd"
+          test -x "$STAGE/buildctl"
+
+          RUNC_BINARY="$RUNNER_TEMP/runc.amd64"
+          curl --fail --location --retry 3 \
+            "https://github.com/opencontainers/runc/releases/download/v${RUNC_VERSION}/runc.amd64" \
+            --output "$RUNC_BINARY"
+          printf '%s  %s\n' \
+            '177df879d50c913eb205e898d5c1c05a18f574053c0ce5524c471208eaf06f6f' \
+            "$RUNC_BINARY" | sha256sum --check --status
+
+          sudo install -m 0755 "$STAGE"/* /usr/local/bin/
+          sudo install -m 0755 "$RUNC_BINARY" /usr/local/bin/runc
+
+      - name: Preflight — verify pinned BuildKit + runc tools
         run: |
           set -uo pipefail
           missing=0
@@ -70,8 +87,7 @@ jobs:
             if ! command -v "$t" >/dev/null 2>&1; then echo "::error::'$t' not on PATH"; missing=1; fi
           done
           if [ "$missing" = "1" ]; then
-            echo "::error::This lane needs BuildKit + runc baked in the corelink runner image."
-            echo "::error::Roll the runner image that bakes them first (corelink-runners deploy/runner/Dockerfile)."
+            echo "::error::The checksum-pinned BuildKit + runc installation is incomplete."
             exit 1
           fi
           # `|| true`: version logging only, and it is the LAST statement of the
@@ -255,6 +271,9 @@ jobs:
           echo "ADR-0015: to verify reproducibility, rebuild on the same HEAD and compare the OCI manifest digest."
 
       - name: Push image to the 5 CF Containers registries (daemonless, wrangler cred)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: |
           set -uo pipefail
           TAG="${{ steps.meta.outputs.short_sha }}-r1"
@@ -292,5 +311,5 @@ jobs:
 
       - name: Next step (repin + deploy)
         run: |
-          echo "Built+pushed corelink-server:${{ steps.meta.outputs.short_sha }}-r1 to the 5 CF registries (daemonless, on corelink)."
+          echo "Built+pushed corelink-server:${{ steps.meta.outputs.short_sha }}-r1 to the 5 CF registries (daemonless, on GitHub-hosted Ubuntu)."
           echo "NEXT: repin wrangler.toml [[env.*.containers]] image= to the new tag, then run cf-deploy-prod."
