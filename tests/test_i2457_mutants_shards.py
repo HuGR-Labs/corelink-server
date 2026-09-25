@@ -28,7 +28,15 @@ from scripts.verify_i2457_mutants_shards import (
 
 class MutantsShardAggregateTests(unittest.TestCase):
     @staticmethod
-    def raw_mutant(index: int, *, name: str | None = None, file: str | None = None, line: int | None = None) -> dict:
+    def raw_mutant(
+        index: int,
+        *,
+        name: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
+        replacement: str | None = None,
+        diff: str | None = None,
+    ) -> dict:
         line = index + 1 if line is None else line
         return {
             "name": name or f"mutant-{index}",
@@ -38,8 +46,10 @@ class MutantsShardAggregateTests(unittest.TestCase):
                 "start": {"line": line, "column": 1},
                 "end": {"line": line, "column": 2},
             },
-            "replacement": str(index),
+            "function": None,
+            "replacement": str(index) if replacement is None else replacement,
             "genre": "FnValue",
+            "diff": f"--- original-{index}\\n+++ replacement-{index}\\n" if diff is None else diff,
         }
 
     def setUp(self) -> None:
@@ -119,10 +129,16 @@ class MutantsShardAggregateTests(unittest.TestCase):
         with self.assertRaisesRegex(VerificationError, "complete denominator-one"):
             validate_inventory(invalid)
 
-    def test_canonical_identity_distinguishes_duplicate_names_by_source_location(self) -> None:
+    def test_canonical_identity_distinguishes_duplicate_display_names_by_full_record(self) -> None:
         raw = [
-            self.raw_mutant(0, name="same display name", file="crates/one/src/lib.rs", line=10),
-            self.raw_mutant(1, name="same display name", file="crates/two/src/lib.rs", line=10),
+            self.raw_mutant(
+                0, name="same display name", file="crates/one/src/lib.rs", line=10,
+                replacement="0", diff="--- crates/one/src/lib.rs\\n+++ replacement A\\n",
+            ),
+            self.raw_mutant(
+                1, name="same display name", file="crates/one/src/lib.rs", line=10,
+                replacement="0", diff="--- crates/one/src/lib.rs\\n+++ replacement B\\n",
+            ),
         ]
         first = make_inventory(raw, self.sha, self.run_id, 1)
         second = make_inventory(copy.deepcopy(raw), self.sha, self.run_id, 1)
@@ -134,6 +150,12 @@ class MutantsShardAggregateTests(unittest.TestCase):
         raw = self.raw_mutant(0, name="same display name", file="crates/one/src/lib.rs", line=10)
         with self.assertRaisesRegex(VerificationError, "duplicate identities"):
             make_inventory([raw, copy.deepcopy(raw)], self.sha, self.run_id, 1)
+
+    def test_canonical_identity_rejects_a_truncated_or_drifted_list_record(self) -> None:
+        raw = self.raw_mutant(0)
+        del raw["diff"]
+        with self.assertRaisesRegex(VerificationError, "pinned cargo-mutants v27 list shape"):
+            make_inventory([raw], self.sha, self.run_id, 1)
 
     def test_rejects_missing_duplicate_and_unexpected_shards(self) -> None:
         with self.assertRaisesRegex(VerificationError, "missing"):

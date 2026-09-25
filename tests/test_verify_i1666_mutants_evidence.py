@@ -35,6 +35,19 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify(text.replace(before, after, 1))
 
+    def test_evidence_contract_rejects_no_config_omission_from_each_mutants_command(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        commands = (
+            "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
+            "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json",
+            "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output \"$output\"",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(text.count(command), 1)
+                with self.assertRaises(ValueError):
+                    verify(text.replace(command, command.replace(" --no-config", "", 1), 1))
+
 
 if __name__ == "__main__":
     unittest.main()
