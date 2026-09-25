@@ -1,0 +1,108 @@
+name: issue-2586-windows-contract
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact pull request head SHA to validate
+        required: true
+        type: string
+      target_base_sha:
+        description: Exact protected-main base used to construct the candidate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2586-windows-contract-${{ inputs.candidate_sha }}
+  cancel-in-progress: false
+
+jobs:
+  linux-contract:
+    name: structural and credentialless contract
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.repository_id == '1232040291' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/codex/issue-2586-windows-readiness'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact head and base
+        env:
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          TARGET_BASE_SHA: ${{ inputs.target_base_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" == "$EXPECTED_SHA" ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          [[ "$(git merge-base "$TARGET_BASE_SHA" "$EXPECTED_SHA")" == "$TARGET_BASE_SHA" ]]
+          actual_paths="$(git diff --name-only "$TARGET_BASE_SHA...$EXPECTED_SHA" | sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/issue-2586-windows-contract.yml \
+            .github/workflows/issue-2586-windows-readiness.yml \
+            scripts/verify_i2586_windows_readiness.py \
+            scripts/windows_signing_readiness.ps1 \
+            tests/test_i2586_windows_readiness.py | sort)"
+          [[ "$actual_paths" == "$expected_paths" ]]
+
+      - name: Install pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "$archive"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $archive" | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "$archive" -C "${RUNNER_TEMP}/actionlint" actionlint
+
+      - name: Lint the two issue-owned workflows
+        run: |
+          "${RUNNER_TEMP}/actionlint/actionlint" \
+            -ignore '^undefined configuration variable "windows_(code_signing_(issuer|not_before|expires_at)|signing_renewal_(owner|date))"\.' \
+            .github/workflows/issue-2586-windows-readiness.yml \
+            .github/workflows/issue-2586-windows-contract.yml
+
+      - name: Verify readiness and CI-pack contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -S scripts/verify_i2586_windows_readiness.py
+          python3 -S -m unittest -q tests/test_i2586_windows_readiness.py
+
+  windows-powershell-contract:
+    name: synthetic PowerShell acceptance and negative fixtures
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.repository_id == '1232040291' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/codex/issue-2586-windows-readiness'
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run synthetic metadata fixtures only
+        shell: pwsh
+        run: ./scripts/windows_signing_readiness.ps1 -SelfTest
