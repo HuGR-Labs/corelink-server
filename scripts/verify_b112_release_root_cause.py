@@ -442,6 +442,25 @@ def _yaml_job_key_nodes(text: str, job_name: str, wanted: str) -> list[tuple[int
 
 
 @lru_cache(maxsize=16)
+def _yaml_job_nodes(text: str, job_name: str) -> list[yaml.nodes.MappingNode]:
+    """Return the named job mapping for checks that span nested job fields."""
+    values: list[yaml.nodes.MappingNode] = []
+    root = _yaml_root(text)
+    for node in _walk_yaml(root):
+        if not isinstance(node, yaml.nodes.MappingNode):
+            continue
+        for key, jobs in node.value:
+            if key.value != "jobs" or not isinstance(jobs, yaml.nodes.MappingNode):
+                continue
+            values.extend(
+                job_value
+                for job, job_value in jobs.value
+                if job.value == job_name and isinstance(job_value, yaml.nodes.MappingNode)
+            )
+    return values
+
+
+@lru_cache(maxsize=16)
 def _yaml_trigger_values(text: str, trigger: str) -> list[str]:
     """Read tag values from the semantic ``on.push`` trigger mapping."""
     root = _yaml_root(text)
@@ -585,6 +604,29 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         errors.append("release-cli must be an explicit workflow_dispatch operation")
     if release_tags:
         errors.append("release-cli must not publish from a tag-push trigger")
+    trigger_section = release.split("permissions:", 1)[0]
+    if re.search(r"(?m)^  (?:push|schedule|release):", trigger_section):
+        errors.append("release-cli must remain manually dispatched without automatic release triggers")
+    require(
+        release_code,
+        "github.ref == format('refs/tags/{0}', inputs.release_tag)",
+        "build bound to the requested immutable tag",
+    )
+    require(
+        release_code,
+        "ref: refs/tags/${{ inputs.release_tag }}",
+        "checkout of the requested immutable tag",
+    )
+    expected_targets = (
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-gnu",
+    )
+    for target in expected_targets:
+        if target not in release_code:
+            errors.append(f"release-cli is missing expected target: {target}")
     if not any(
         isinstance(value, yaml.nodes.ScalarNode)
         and str(value.value) == "${{ matrix.target.runner }}"
@@ -594,6 +636,14 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
     for runner in ("ubuntu-24.04", "windows-2022", "macos-14"):
         if f"runner: {runner}" not in release_code:
             errors.append(f"missing hosted target runner: {runner}")
+    build_jobs = _yaml_job_nodes(release, "build")
+    if len(build_jobs) != 1 or any(
+        isinstance(node, yaml.nodes.ScalarNode)
+        and re.search(r"\$\{\{\s*secrets\.", str(node.value))
+        for job in build_jobs
+        for node in _walk_yaml(job)
+    ):
+        errors.append("release build jobs must not receive signing or publication secrets")
     pinned_guards = [
         (line, args)
         for line, args in _active_commands(release, "bash")
@@ -618,6 +668,10 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         for _line, args in _active_commands(release, "git")
     ):
         errors.append("Windows hosted checkout must enable Git long paths")
+    longpaths_step = release.find("- name: Enable Git long paths for Windows checkout")
+    checkout_step = release.find("- name: Checkout", longpaths_step + 1)
+    if longpaths_step < 0 or checkout_step < 0 or longpaths_step >= checkout_step:
+        errors.append("Windows long-path setup must run before checkout")
     if not any(name == "EXPECTED_ZIG_VERSION" and value == "0.16.0" for _line, name, value in _active_assignments(release)):
         errors.append("missing active Zig version pin")
     if not any(
@@ -634,17 +688,21 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         value for _line, value in _yaml_key_values(release, "tool")
     ]:
         errors.append("missing semantic cargo-zigbuild version pin")
-    commands_by_line: dict[int, set[tuple[str, ...]]] = {}
-    for line, command in _shell_commands(release):
-        if command:
-            commands_by_line.setdefault(line, set()).add(tuple(command))
-    version_probe = ("cargo-zigbuild", "--version")
-    version_match = ("grep", "-Fx", "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}")
     if not any(
-        version_probe in commands and version_match in commands
-        for commands in commands_by_line.values()
+        args[:1] == ["--help"]
+        for _line, args in _active_commands(release, "cargo-zigbuild")
     ):
-        errors.append("cargo-zigbuild version probe must directly match the pinned version")
+        errors.append("cargo-zigbuild executable must be called with its supported --help option")
+    if "command -v cargo-zigbuild" not in _active_shell_lines(release):
+        errors.append("release-cli must verify that cargo-zigbuild is installed on PATH")
+    if any(
+        args[:1] in (["--version"], ["-V"])
+        for _line, args in _active_commands(release, "cargo-zigbuild")
+    ) or any(
+        args[:2] in (["zigbuild", "--version"], ["zigbuild", "-V"])
+        for _line, args in _active_commands(release, "cargo")
+    ):
+        errors.append("release-cli must not use unsupported cargo-zigbuild version probes")
     errors.extend(_isolation_errors(release))
     if not _env_export_lines(release, "CARGO_ZIGBUILD_CACHE_DIR", "ZIGBUILD_CACHE"):
         errors.append("missing active cargo-zigbuild cache export")
@@ -762,7 +820,7 @@ def _mutate_b112_status(backlog: str) -> str:
 
 def _inject_run_command(release: str, command: str) -> str:
     """Place a mutation inside the first real build run scalar."""
-    needle = '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n'
+    needle = "          cargo-zigbuild --help >/dev/null\n"
     if needle not in release:
         raise RuntimeError("B-112 mutation could not find semantic build command")
     return release.replace(needle, needle + f"          {command}\n", 1)
@@ -812,11 +870,11 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
         "unclosed heredoc": (_inject_run_command(release, "cat <<'B112_EOF'"), cosign, backlog),
         "shared artifact path": (release.replace(ARTIFACT_PATH, 'SRC="target/${TARGET_TRIPLE}/release/corelink"', 1), cosign, backlog),
         "cache assignment order": (release.replace(
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n'
+            "          cargo-zigbuild --help >/dev/null\n"
             '          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"\n'
             '          mkdir -p "$ZIGBUILD_CACHE"\n'
             '          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"\n',
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n'
+            "          cargo-zigbuild --help >/dev/null\n"
             '          mkdir -p "$ZIGBUILD_CACHE"\n'
             '          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"\n'
             '          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"\n', 1), cosign, backlog),
@@ -832,8 +890,20 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
             "        run: git config --global core.longpaths true\n", "", 1
         ), cosign, backlog),
         "invalid cargo-zigbuild version probe": (release.replace(
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n',
-            '          cargo zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n', 1
+            "          cargo-zigbuild --help >/dev/null\n",
+            "          cargo-zigbuild --version\n", 1
+        ), cosign, backlog),
+        "missing cargo-zigbuild PATH check": (release.replace(
+            "          command -v cargo-zigbuild\n", "", 1
+        ), cosign, backlog),
+        "missing immutable tag binding": (release.replace(
+            "github.ref == format('refs/tags/{0}', inputs.release_tag)",
+            "github.ref == 'refs/heads/main'"
+        ), cosign, backlog),
+        "build job signing secret": (release.replace(
+            "      TARGET_EXT: ${{ matrix.target.ext }}\n",
+            "      TARGET_EXT: ${{ matrix.target.ext }}\n"
+            "      SIGNING_KEY: ${{ secrets.SIGNING_KEY }}\n", 1
         ), cosign, backlog),
         "pinned target installation order": (release.replace(
             '          bash scripts/ci-assert-pinned-toolchain.sh\n'
@@ -852,9 +922,9 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
         "tool echo bait": (release.replace(
             "          tool: cargo-zigbuild@0.19.8\n", "          tool: cargo-zigbuild@0.19.7\n", 1
         ).replace(
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n',
+            "          cargo-zigbuild --help >/dev/null\n",
             "          echo 'tool: cargo-zigbuild@0.19.8'\n"
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n', 1), cosign, backlog),
+            "          cargo-zigbuild --help >/dev/null\n", 1), cosign, backlog),
     }
     for name, (mutated_release, mutated_cosign, mutated_backlog) in mutations.items():
         try:

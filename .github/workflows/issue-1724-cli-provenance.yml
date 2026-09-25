@@ -9,6 +9,10 @@ on:
         description: Full 40-character commit SHA to prove
         required: true
         type: string
+      base_sha:
+        description: Full 40-character protected main SHA the candidate is based on
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,11 +27,12 @@ jobs:
     timeout-minutes: 15
     env:
       CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      BASE_SHA: ${{ inputs.base_sha }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.candidate_sha }}
-          fetch-depth: 1
+          fetch-depth: 4
           persist-credentials: false
       - name: Bind the pack to the requested immutable candidate
         shell: bash
@@ -37,12 +42,27 @@ jobs:
             echo "::error::candidate_sha must be a lowercase 40-character SHA" >&2
             exit 1
           fi
+          if ! [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::base_sha must be a lowercase 40-character SHA" >&2
+            exit 1
+          fi
           test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git merge-base --is-ancestor "${BASE_SHA}" HEAD
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
         with:
           toolchain: 1.91.1
       - name: Reject provenance builder, identity, issuer, and subject mutations
         run: cargo test --locked -p corelink-cli --test release_workflow_contract -- --nocapture
+      - name: Install Python contract dependencies
+        run: python3 -m pip install --requirement requirements-ci.txt
+      - name: Verify B-112 release build and signing gates
+        run: python3 scripts/verify_b112_release_root_cause.py --root .
+      - name: Verify issue-2050 CLI release dry-run contract
+        env:
+          GITHUB_EVENT_NAME: workflow_dispatch
+          CORELINK_BASE_SHA: ${{ inputs.base_sha }}
+        run: python3 scripts/verify_i2050_release_dryrun_contract.py contract --base-sha "${CORELINK_BASE_SHA}"
       - name: Install checksum-pinned actionlint
         shell: bash
         run: |
@@ -56,5 +76,9 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/actionlint"
           tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
           "${RUNNER_TEMP}/actionlint/actionlint" -version
-      - name: Validate the pack workflow schema
-        run: '"${RUNNER_TEMP}/actionlint/actionlint" -color .github/workflows/issue-1724-cli-provenance.yml'
+      - name: Validate the CLI release workflow schemas
+        run: >-
+          "${RUNNER_TEMP}/actionlint/actionlint" -color
+          .github/workflows/issue-1724-cli-provenance.yml
+          .github/workflows/issue-2050-cli-release-dry-run.yml
+          .github/workflows/release-cli.yml

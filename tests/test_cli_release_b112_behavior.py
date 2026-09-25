@@ -57,7 +57,7 @@ def _run_b112_fixture(root: Path) -> subprocess.CompletedProcess[str]:
 
 def _inject_release_run(text: str, command: str) -> str:
     """Insert a mutation into a real semantic run block, never YAML bait."""
-    needle = '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n'
+    needle = "          cargo-zigbuild --help >/dev/null\n"
     assert needle in text
     return text.replace(needle, needle + f"          {command}\n", 1)
 
@@ -206,11 +206,11 @@ def test_b112_root_cause_guard_rejects_wrapped_and_normalized_mutations(
     ("label", "mutate"),
     [
         ("cache order", lambda text: text.replace(
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n'
+            "          cargo-zigbuild --help >/dev/null\n"
             '          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"\n'
             '          mkdir -p "$ZIGBUILD_CACHE"\n'
             '          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"\n',
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n'
+            "          cargo-zigbuild --help >/dev/null\n"
             '          mkdir -p "$ZIGBUILD_CACHE"\n'
             '          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"\n'
             '          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"\n', 1)),
@@ -271,8 +271,8 @@ def test_b112_root_cause_guard_rejects_unclosed_heredoc(tmp_path: Path):
             "        run: git config --global core.longpaths true\n", "", 1
         )),
         ("invalid cargo-zigbuild version probe", lambda text: text.replace(
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n',
-            '          cargo zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n', 1
+            "          cargo-zigbuild --help >/dev/null\n",
+            "          cargo-zigbuild --version\n", 1
         )),
         ("pinned target installation order", lambda text: text.replace(
             '          bash scripts/ci-assert-pinned-toolchain.sh\n'
@@ -293,9 +293,9 @@ def test_b112_root_cause_guard_rejects_unclosed_heredoc(tmp_path: Path):
         ("tool echo bait", lambda text: text.replace(
             "          tool: cargo-zigbuild@0.19.8\n", "          tool: cargo-zigbuild@0.19.7\n", 1
         ).replace(
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n',
+            "          cargo-zigbuild --help >/dev/null\n",
             "          echo 'tool: cargo-zigbuild@0.19.8'\n"
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n', 1
+            "          cargo-zigbuild --help >/dev/null\n", 1
         )),
     ],
 )
