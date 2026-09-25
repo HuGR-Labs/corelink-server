@@ -593,9 +593,9 @@ def test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition():
     )
 
 
-def test_v0006_replays_the_exact_delivered_successor_chain():
-    """The v0006 and v0007 receipts replay the complete immutable chain."""
-    assert ledger.load_successor_chain()["sequence"] == 7
+def test_successor_chain_replays_through_v0008():
+    """The immutable receipts replay through the current v0008 successor."""
+    assert ledger.load_successor_chain()["sequence"] == 8
 
 
 def test_v0006_pins_source_hash_and_exact_changed_ids():
@@ -677,7 +677,9 @@ def test_v0007_replays_exact_b083_lifecycle_clarification(monkeypatch):
         .read_text()
     )
     prior = policy._git_state_bytes(ledger.REPO_ROOT, receipt["base_commit"])
-    current = policy._state_bytes(ledger.REPO_ROOT)
+    current = policy._git_state_bytes(
+        ledger.REPO_ROOT, "211bf1a637ea6b754b95d8ef7e384a7ee8de5792",
+    )
     assert policy._v0007_reconciliation_authorized(previous, prior, current, receipt, 7)
 
     assert not policy._v0007_reconciliation_authorized(
@@ -811,6 +813,35 @@ def test_delivered_successor_rejects_rewritten_receipt(tmp_path, monkeypatch):
     _git(base, "commit", "--quiet", "-m", "rewrite v3")
     with pytest.raises(LedgerError, match="introduction is not unique"):
         ledger.load_successor_chain(base)
+
+
+def test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose(monkeypatch):
+    root = ledger.REPO_ROOT
+    relative = ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0008.json"
+    receipt = json.loads((root / relative).read_text())
+    previous = json.loads(
+        (root / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0007.json").read_text()
+    )
+    policy = ledger._successor_policy()
+    introduced = _git(
+        root, "log", "--first-parent", "--full-history", "--format=%H", "--", relative.as_posix(),
+    )
+    prior = policy._git_state_bytes(root, receipt["base_commit"])
+    current = policy._git_state_bytes(root, introduced)
+
+    assert ledger.load_successor_chain(root)["sequence"] == 8
+    assert policy._v0008_reconciliation_authorized(previous, prior, current, receipt, 8)
+
+    changed = dict(receipt, base_commit="0" * 40)
+    assert not policy._v0008_reconciliation_authorized(previous, prior, current, changed, 8)
+
+    b113_hashes = successor.V0008_RECONCILIATION["history"][0]["sections"]["B-113"]
+    monkeypatch.setitem(b113_hashes, "prior", "0" * 64)
+    assert not policy._v0008_reconciliation_authorized(previous, prior, current, receipt, 8)
+
+    b098_hashes = successor.V0008_RECONCILIATION["history"][1]["sections"]["B-098"]
+    monkeypatch.setitem(b098_hashes, "current", "0" * 64)
+    assert not policy._v0008_reconciliation_authorized(previous, prior, current, receipt, 8)
 
 
 def test_b315_style_two_parent_merge_replays_successor(tmp_path, monkeypatch):
