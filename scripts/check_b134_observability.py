@@ -176,8 +176,8 @@ def check_smoke(text: str) -> None:
     require_exec_line(script, 'exit "${rc}"', where)
     require_exec_line(script, "python3 scripts/smoke_install_observe.py \\", where)
     require_exec_line(script, "--receipt artifacts/i1672/smoke-install-receipt.json", where)
-    require("if: ${{ always() }}", where)
-    require("upload-artifact@", where)
+    require(text, "if: ${{ always() }}", where)
+    require(text, "upload-artifact@", where)
     if re.search(r"(?i)secrets\.|CORELINK_CANARY_PAT|CORELINK_TEST_TOKEN|docker build|docker run|corelink doctor", text):
         raise ContractError(f"{where}: credentialed install claims do not belong in the contract-free observation")
 
