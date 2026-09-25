@@ -1005,9 +1005,10 @@ def test_live_repo_reach_is_not_vacuous() -> None:
     os.chdir(REPO_ROOT)
     try:
         with redirect_stdout(buf):
-            vnsrm.main()
+            rc = vnsrm.main([])
     finally:
         os.chdir(cwd)
+    assert rc == 0
     out = buf.getvalue()
     inspected = int(out.split("self-hosted job(s)")[0].split()[-1])
     # The floor must sit ABOVE the reach of the defect this PR exists to close,
