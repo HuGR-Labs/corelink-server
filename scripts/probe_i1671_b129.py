@@ -8,7 +8,6 @@ cannot be evidence for the deployed version.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -43,6 +42,40 @@ def residual_median(rows: list[dict[str, object]]) -> float:
     if not values:
         fail("no residual samples")
     return float(statistics.median(values))
+
+
+def build_receipt(
+    *,
+    target_origin: str,
+    tenant_id: str,
+    cargo_key: str,
+    deployed_sha: str,
+    deployed_region: str,
+    captured_at: str,
+    sample_count: int,
+    residual_median_pct: float,
+    residual_max_pct: float,
+    rows: list[dict[str, object]],
+) -> dict[str, object]:
+    """Build the redacted receipt without retaining target credentials or IDs."""
+    # These values are required to send the bounded request, but are deliberately
+    # excluded from the durable artifact. A digest can still disclose a low-
+    # entropy cargo key, so the receipt keeps neither the key nor its hash.
+    del tenant_id, cargo_key
+    return {
+        "issue": 1671,
+        "work_package": "B-129",
+        "kind": "approved_read_only_probe",
+        "target_origin": target_origin,
+        "deployed_sha": deployed_sha.lower(),
+        "deployed_region": deployed_region,
+        "diagnostic_flag": "on",
+        "captured_at": captured_at,
+        "sample_count": sample_count,
+        "residual_median_pct": residual_median_pct,
+        "residual_max_pct": residual_max_pct,
+        "rows": rows,
+    }
 
 
 def _timing_items(raw: str) -> list[str]:
@@ -184,7 +217,18 @@ def main() -> int:
     median = residual_median(rows)
     if median >= 10:
         fail(f"residual median is {median:.3f}%, expected <10%")
-    receipt = {"issue": 1671, "work_package": "B-129", "kind": "approved_read_only_probe", "target_origin": f"{target.scheme}://{target.netloc}", "tenant": args.tenant, "cargo_key_sha256": hashlib.sha256(args.cargo_key.encode()).hexdigest(), "deployed_sha": args.deployed_sha.lower(), "deployed_region": args.deployed_region, "diagnostic_flag": "on", "captured_at": datetime.now(timezone.utc).isoformat(), "sample_count": args.samples, "residual_median_pct": median, "residual_max_pct": maximum, "rows": rows}
+    receipt = build_receipt(
+        target_origin=f"{target.scheme}://{target.netloc}",
+        tenant_id=args.tenant,
+        cargo_key=args.cargo_key,
+        deployed_sha=args.deployed_sha,
+        deployed_region=args.deployed_region,
+        captured_at=datetime.now(timezone.utc).isoformat(),
+        sample_count=args.samples,
+        residual_median_pct=median,
+        residual_max_pct=maximum,
+        rows=rows,
+    )
     with open(args.output, "w", encoding="utf-8") as handle:
         json.dump(receipt, handle, sort_keys=True, indent=2)
         handle.write("\n")
