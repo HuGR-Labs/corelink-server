@@ -81,7 +81,7 @@ jobs:
     # does not bound queued time — it starts once a job is RUNNING. That is a
     # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
     # check as ⛔ DO NOT MERGE, so a stranded box blocks the PR.
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     # Measured median 416 s (~6.9 min) over the last 6 runs ON THIS FABRIC (hosted
     # history is slower, median 685 s); 3x rounds to 25 min, ~2.2x over the worst
     # fabric run observed (676 s). Migrated before the bound was standard, so it
@@ -93,6 +93,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
       # `dtolnay/rust-toolchain` removed. It asked for `stable` + clippy/rustfmt,
       # but `rust-toolchain.toml` pins 1.91.1 and lists BOTH components, and
@@ -381,12 +383,14 @@ jobs:
     # Runner: `corelink` (wave 2, 2026-08-03) — see the pr-gate job above for the
     # ephemeral-box caveats (no cache between runs; a dropped spawn stalls the
     # job as ⛔ pending rather than passing it).
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     # Measured median 82 s over the last 8 fabric runs (112 s hosted); 3x is under
     # the 10-min floor, so the floor applies.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
       # `dtolnay/rust-toolchain@stable` with `targets: wasm32-unknown-unknown`
       # removed — and the target question is the one worth spelling out, because
       # the image itself does NOT ship wasm32 (probe 30825772599: the box's only
@@ -420,7 +424,7 @@ jobs:
   mutants-nightly:
     name: cargo-mutants kill-rate ≥ 80%
     # zero-hosted (WP-CI): cargo por crate; os outros 2 jobs deste arquivo já rodam aqui
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     # Bound BEFORE the move, for the same reason `pr-gate` above got one: without
     # it the job inherits GitHub's 360-min default, and a wedged `cargo mutants`
     # would pin a fleet box for 6 h.
@@ -445,10 +449,15 @@ jobs:
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
       # Self-hosted Macs already ship rustup+cargo; re-provisioning via
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
       # instead — see CLAUDE.md "the rustup proxy is broken" note.
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: "1.91.1"
       - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
         run: bash scripts/ci-use-host-toolchain.sh
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1

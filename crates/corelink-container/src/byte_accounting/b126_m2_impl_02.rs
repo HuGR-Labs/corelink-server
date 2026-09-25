@@ -3,10 +3,9 @@
 /// Same reserve→commit→release discipline as [`AccountingCasHandler`], over the
 /// `AcUpdateHandler` / `AcDeleteHandler` surface (Bazel AC writes + native AC).
 ///
-/// `key_locks` is a FIXED [`CAS_LOCK_SHARDS`]-wide array of per-`(tenant,
-/// action_digest)` serialization locks — the EXACT mirror of
-/// [`AccountingCasHandler`]'s (see [`CAS_LOCK_SHARDS`] for the rt-nuclear C2
-/// rationale). AC entries are mutable (a result payload's size can change), so a
+/// `key_locks` is a FIXED [`AC_LOCK_SHARDS`]-wide array of per-`(tenant,
+/// action_digest)` serialization locks. AC entries are mutable (a result
+/// payload's size can change), so a
 /// concurrent AC `update` + `delete` of the SAME key has the identical
 /// write-vs-delete byte-accounting race the CAS plane already closed: the delete
 /// releases a stale `reclaimed_bytes` while the update independently
@@ -47,7 +46,7 @@ impl AccountingAcHandler {
         delete_inner: Arc<dyn corelink_handler_ac::AcDeleteHandler>,
         accountant: Arc<ByteAccountant>,
     ) -> Self {
-        let key_locks = (0..CAS_LOCK_SHARDS)
+        let key_locks = (0..AC_LOCK_SHARDS)
             .map(|_| Arc::new(tokio::sync::Mutex::new(())))
             .collect::<Vec<_>>();
         Self {
@@ -102,10 +101,8 @@ impl AccountingAcHandler {
         // A separator so `(a, bc)` and `(ab, c)` cannot collapse to one key.
         0u8.hash(&mut hasher);
         key.hash(&mut hasher);
-        // Map the key hash onto a shard. The modulo is correct for any shard
-        // count; `CAS_LOCK_SHARDS` (256) is a power of two so the distribution is
-        // uniform and the op is a single cheap division off a 64-bit hash.
-        let idx = (hasher.finish() as usize) % self.key_locks.len();
+        // AC deliberately retains its separate, bounded 256-shard lock table.
+        let idx = (hasher.finish() as usize) % AC_LOCK_SHARDS;
         // `idx < len` by construction (modulo), so `get` is always `Some`; the
         // `unwrap_or_else` is unreachable totality that keeps clippy's
         // `indexing_slicing` happy without a panic path.

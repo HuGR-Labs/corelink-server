@@ -178,6 +178,8 @@ def parse_d1_response(payload: object) -> Counts:
     if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
         raise Indeterminate("D1 response must contain exactly one aggregate row")
     row = rows[0]
+    if set(row) != set(COUNT_FIELDS):
+        raise Indeterminate("D1 aggregate row fields are missing or unexpected")
     return Counts(**{field: _count(row, field) for field in COUNT_FIELDS})
 
 

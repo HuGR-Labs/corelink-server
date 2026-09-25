@@ -594,8 +594,8 @@ def test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition():
 
 
 def test_v0006_replays_the_exact_delivered_successor_chain():
-    """The committed v0006 receipt binds the #2346 baseline correction."""
-    assert ledger.load_successor_chain()["sequence"] == 6
+    """The v0006 and v0007 receipts replay the complete immutable chain."""
+    assert ledger.load_successor_chain()["sequence"] == 7
 
 
 def test_v0006_pins_source_hash_and_exact_changed_ids():
@@ -610,7 +610,9 @@ def test_v0006_pins_source_hash_and_exact_changed_ids():
         .read_text()
     )
     prior = policy._git_state_bytes(ledger.REPO_ROOT, receipt["base_commit"])
-    current = policy._state_bytes(ledger.REPO_ROOT)
+    current = policy._git_state_bytes(
+        ledger.REPO_ROOT, successor.V0007_RECONCILIATION["history_start_commit"],
+    )
     assert policy._v0006_reconciliation_authorized(previous, prior, current, receipt, 6)
 
     wrong_hash = dict(receipt, source_sha256="0" * 64)
@@ -635,7 +637,7 @@ def test_v0006_receipt_is_required_for_the_main_baseline_transition(tmp_path):
     try:
         with pytest.raises(
             LedgerError,
-            match=r"backlog-ledger-snapshot-v0005\.json: delivered state drifted after last successor",
+            match=r"successor snapshot sequence is not contiguous from v0003",
         ):
             ledger.load_successor_chain()
     finally:
@@ -654,11 +656,52 @@ def test_v0006_authorizer_rejects_wrong_immutable_main_parent():
         .read_text()
     )
     prior = policy._git_state_bytes(ledger.REPO_ROOT, receipt["base_commit"])
-    current = policy._state_bytes(ledger.REPO_ROOT)
+    current = policy._git_state_bytes(
+        ledger.REPO_ROOT, successor.V0007_RECONCILIATION["history_start_commit"],
+    )
     wrong_parent = dict(receipt, base_commit="2af5c9b64cccba9cf618145224186ec2717cca50")
     assert not policy._v0006_reconciliation_authorized(
         previous, prior, current, wrong_parent, 6,
     )
+
+
+def test_v0007_replays_exact_b083_lifecycle_clarification(monkeypatch):
+    """v0007 pins the intervening B-083 and B-250 bytes, then advances the ledger."""
+    policy = successor.install(ledger)
+    receipt = json.loads(
+        (ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0007.json")
+        .read_text()
+    )
+    previous = json.loads(
+        (ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0006.json")
+        .read_text()
+    )
+    prior = policy._git_state_bytes(ledger.REPO_ROOT, receipt["base_commit"])
+    current = policy._state_bytes(ledger.REPO_ROOT)
+    assert policy._v0007_reconciliation_authorized(previous, prior, current, receipt, 7)
+
+    assert not policy._v0007_reconciliation_authorized(
+        previous, prior, current, {**receipt, "changed_ids": ["B-083"]}, 7,
+    )
+    assert not policy._v0007_reconciliation_authorized(
+        previous, prior, current, {**receipt, "source_sha256": "0" * 64}, 7,
+    )
+    altered_history = list(successor.V0007_RECONCILIATION["history"])
+    altered_history[-1] = {
+        **altered_history[-1],
+        "sections": {
+            "B-250": {
+                **altered_history[-1]["sections"]["B-250"],
+                "current": "0" * 64,
+            },
+        },
+    }
+    monkeypatch.setattr(
+        successor,
+        "V0007_RECONCILIATION",
+        {**successor.V0007_RECONCILIATION, "history": tuple(altered_history)},
+    )
+    assert not policy._v0007_reconciliation_authorized(previous, prior, current, receipt, 7)
 
 
 def test_v0005_receipt_is_required_to_bridge_post_v0004_history(tmp_path):

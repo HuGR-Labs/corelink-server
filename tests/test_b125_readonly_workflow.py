@@ -7,6 +7,7 @@ import re
 import sqlite3
 import sys
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -74,7 +75,7 @@ def _hourly_sql() -> str:
 
 def test_hourly_sql_is_one_select_only_aggregate_with_six_offsets() -> None:
     sql = _hourly_sql()
-    assert sql.startswith("SELECT ")
+    assert sql.startswith("WITH hour_offsets")
     assert ";" not in sql
     assert not re.search(r"\b(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE|PRAGMA|ATTACH|DETACH)\b", sql)
     assert "aggregate_counts AS" in sql
@@ -110,13 +111,64 @@ def test_aggregate_fixtures_preserve_six_row_redacted_shape() -> None:
             assert rows == expected
 
 
-def test_workflow_keeps_four_query_ids_and_remote_only_execution() -> None:
+def test_workflow_keeps_all_required_query_ids_and_remote_only_execution() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
-    assert "for query_id in population hourly latency heads; do" in source
+    assert "for query_id in population partition hourly latency heads burst integrity replay head_tail; do" in source
     assert "--remote --command \"$sql\" --json" in source
     assert "--local" not in source
     assert "contents: read" in source
     assert "persist-credentials: false" in source
+
+
+def test_all_production_control_queries_are_single_read_only_selects() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    query_ids = ("population", "partition", "hourly", "latency", "heads", "burst", "integrity", "replay", "head_tail")
+    queries: dict[str, str] = {}
+    for query_id in query_ids:
+        match = re.search(rf"^\s*SQL\[{query_id}\]='([^']+)'$", source, re.MULTILINE)
+        assert match, f"missing explicit {query_id} SELECT allowlist entry"
+        sql = match.group(1)
+        assert sql.startswith(("SELECT ", "WITH "))
+        assert ";" not in sql
+        assert not re.search(r"\b(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE|PRAGMA|ATTACH|DETACH)\b", sql)
+        queries[query_id] = sql
+
+    connection = sqlite3.connect(":memory:")
+    connection.execute(
+        "CREATE TABLE audit_outbox (tenant_id TEXT, region TEXT, enqueued_at INTEGER, emitted_at INTEGER, "
+        "sequence_number INTEGER, prev_hash TEXT, chain_hash TEXT, canonical_jcs TEXT, chained_at INTEGER)"
+    )
+    connection.execute(
+        "CREATE TABLE audit_chain_head (tenant_id TEXT, region TEXT, head_signature TEXT, "
+        "next_sequence INTEGER, head_hash TEXT)"
+    )
+    connection.execute(
+        "INSERT INTO audit_outbox VALUES ('tenant', 'region', 0, 0, 0, 'prev', 'hash', '{}', 0)"
+    )
+    for query_id, sql in queries.items():
+        rows = connection.execute(sql).fetchall()
+        expected_rows = 6 if query_id == "hourly" else 1
+        assert len(rows) == expected_rows, f"{query_id} returned {len(rows)} rows"
+        if query_id == "hourly":
+            starts = [
+                datetime.strptime(row[0], "%Y-%m-%dT%H:00:00Z").replace(tzinfo=timezone.utc)
+                for row in rows
+            ]
+            ends = [
+                datetime.strptime(row[1], "%Y-%m-%dT%H:00:00Z").replace(tzinfo=timezone.utc)
+                for row in rows
+            ]
+            assert all(end - start == timedelta(hours=1) for start, end in zip(starts, ends))
+            assert all(ends[index - 1] == starts[index] for index in range(1, 6))
+            assert ends[-1] <= datetime.now(timezone.utc)
+
+    hourly_sql = queries["hourly"]
+    assert 'CAST(strftime("%s", "now") AS INTEGER) / 3600 * 3600 AS anchor_s' in hourly_sql
+    for offset in range(6):
+        upper = "c.anchor_s" if offset == 0 else f"(c.anchor_s - {offset * 3600})"
+        lower = f"(c.anchor_s - {(offset + 1) * 3600})"
+        assert f"enqueued_at >= {lower} * 1000 AND enqueued_at < {upper} * 1000" in hourly_sql
+        assert f"emitted_at >= {lower} * 1000 AND emitted_at < {upper} * 1000" in hourly_sql
 
 
 def test_failure_receipt_is_bounded_data_free_and_keeps_provider_shape(tmp_path: Path) -> None:

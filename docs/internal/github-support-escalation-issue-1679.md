@@ -87,3 +87,44 @@ personal account data are included in this packet.
 **Owner follow-up:** GitHub Support or the authorized repository/organization
 Actions owner should provide the case/reference ID and the backend repair or
 reindex result; retain the bounded run IDs and timestamps for comparison.
+
+## Identity separation and latest read — 2026-09-23 UTC
+
+The repository-owned diagnostic now assigns the B-250 classification only when
+both deleted-workflow identity fields match: workflow ID `303501160` and path
+`BuildFailed`. It does not classify by workflow name. This distinction matters
+because Actions currently exposes a separate active record with the similar name
+`Issue 1679 BuildFailed classification`:
+
+```text
+active workflow ID: 364720472
+active workflow path: .github/workflows/issue-1679-classification.yml
+successful control run: 35804451077
+control run head SHA: ea0ff54251c0cef36c43b972b9f952c3ae258e62
+```
+
+That active record is historical backend state from closed PR #2150, not a
+request to recreate or mutate a workflow. The deleted record remains separate:
+
+```text
+deleted workflow ID: 303501160
+deleted workflow path: BuildFailed
+last observed ghost run: 35676257895
+last observed ghost run created: 2026-09-22T01:34:26Z
+last observed ghost run head SHA: be37ee65c98a5a6e8ce9c19ad8536e6118e28501
+```
+
+Post-occurrence read-only query, bounded after the last observed run, returned
+`total_count=0` at capture time:
+
+```text
+GET /repos/HuGR-dev/corelink-server/actions/workflows/303501160/runs
+    ?per_page=100&created=2026-09-22T01:34:27Z..2026-09-23T23:59:59Z
+```
+
+The identical positive-control query for active workflow `364720472` returned
+run `35804451077`. The quiet deleted-workflow interval is not a backend repair
+receipt and does not close B-250. Closure still requires GitHub Support or an
+authorized Actions owner to provide a case/reference ID and purge/reindex
+result, followed by a fresh non-mutating event resolving to the real workflow
+graph with expected jobs/checks.

@@ -58,11 +58,46 @@ fn assert_managed_cli_provenance_contract(caller: &str, generator: &str) {
     );
 }
 
+fn assert_issue_1724_ci_pack(workflow: &str) {
+    for required in [
+        "# This is the explicit #1724 pack.",
+        "workflow_dispatch:",
+        "candidate_sha:",
+        "Full 40-character commit SHA to prove",
+        "github.repository_id == '1232040291'",
+        "ref: ${{ inputs.candidate_sha }}",
+        "persist-credentials: false",
+        "Bind the pack to the requested immutable candidate",
+        "candidate_sha must be a lowercase 40-character SHA",
+        "[[ \"${CANDIDATE_SHA}\" =~ ^[0-9a-f]{40}$ ]]",
+        "test \"$(git rev-parse HEAD)\" = \"${CANDIDATE_SHA}\"",
+        "cargo test --locked -p corelink-cli --test release_workflow_contract -- --nocapture",
+        "actionlint_1.7.12_linux_amd64.tar.gz",
+        "actionlint\" -color .github/workflows/issue-1724-cli-provenance.yml",
+        "timeout-minutes: 15",
+        "runs-on: ubuntu-24.04",
+    ] {
+        assert!(
+            workflow.contains(required),
+            "#1724 CI pack missing {required}"
+        );
+    }
+    for forbidden in ["\n  pull_request:", "gh release ", "cosign ", "secrets."] {
+        assert!(
+            !workflow.contains(forbidden),
+            "#1724 CI pack must remain structural and non-publishing: {forbidden}"
+        );
+    }
+}
+
 #[test]
 fn cli_provenance_uses_managed_generator_and_exact_release_identity() -> Result<(), String> {
     let caller = release_workflow()?;
     let generator = load_workflow("release-slsa3.yml")?;
     assert_managed_cli_provenance_contract(&caller, &generator);
+
+    let ci_pack = load_workflow("issue-1724-cli-provenance.yml")?;
+    assert_issue_1724_ci_pack(&ci_pack);
 
     for (mutant, label) in [
         (
@@ -104,5 +139,10 @@ fn cli_provenance_uses_managed_generator_and_exact_release_identity() -> Result<
             "mutation control accepted {label}"
         );
     }
+    let automatic_pack = ci_pack.replacen("  workflow_dispatch:\n", "  pull_request:\n", 1);
+    assert!(
+        std::panic::catch_unwind(|| assert_issue_1724_ci_pack(&automatic_pack)).is_err(),
+        "#1724 CI pack must reject an automatic PR trigger"
+    );
     Ok(())
 }

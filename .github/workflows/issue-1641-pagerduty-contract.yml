@@ -7,6 +7,10 @@ on:
   pull_request:
     paths:
       - 'evidence/i1641/pagerduty-contract-manifest.json'
+      - 'docs/handoff/2026-09-05-owner-action-packets-b008-b154.json'
+      - 'scripts/verify_owner_action_packets.py'
+      - 'infra/staging/topology.json'
+      - 'tests/test_i1641_b008_action_packet_contract.py'
       - 'scripts/verify_i1641_pagerduty_contract.py'
       - 'tests/test_i1641_pagerduty_contract.py'
       - 'worker/src/index_schedule.ts'
@@ -22,6 +26,10 @@ on:
     branches: [main]
     paths:
       - 'evidence/i1641/pagerduty-contract-manifest.json'
+      - 'docs/handoff/2026-09-05-owner-action-packets-b008-b154.json'
+      - 'scripts/verify_owner_action_packets.py'
+      - 'infra/staging/topology.json'
+      - 'tests/test_i1641_b008_action_packet_contract.py'
       - 'scripts/verify_i1641_pagerduty_contract.py'
       - 'tests/test_i1641_pagerduty_contract.py'
       - 'worker/src/index_schedule.ts'
@@ -55,8 +63,12 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
       - name: Lint staging deploy workflow
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -no-color .github/workflows/synthetic-pager-worker-deploy.yml
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -no-color .github/workflows/synthetic-pager-worker-deploy.yml .github/workflows/issue-1641-pagerduty-contract.yml
       - name: Verify credentialless event, receipt, escalation, and redaction contract
         run: python3 -S scripts/verify_i1641_pagerduty_contract.py
       - name: Verify manifest mutations fail closed
         run: python3 -S -m unittest tests/test_i1641_pagerduty_contract.py
+      - name: Verify B-008 owner admission and receipt contract
+        run: python3 -S scripts/verify_owner_action_packets.py --id B-008
+      - name: Verify B-008 packet mutations fail closed
+        run: python3 -S -m unittest tests/test_i1641_b008_action_packet_contract.py

@@ -84,6 +84,16 @@ AUTH_VERIFY_COMMANDS = {
     "B-028": "python3 scripts/verify_b028_dependabot.py",
     "B-373": "python3 scripts/verify_b373_dependabot.py --alerts-file docs/security/b373-dependabot-census-2026-09-09.json",
 }
+# The sequential B-register ends at B-373. B-1630 is the single historical
+# external-issue identity: PR #1945 recorded GitHub issue #1630 under that key,
+# and immutable V0004 binds it in history_changed_ids and history_transitions
+# (commit 08b1618d3d6ce922043e8cd064d5e58a50990f63). It is not a missing run of
+# 1,256 canonical B-items. Keep this exact identity required and separate from
+# the allocator sequence; every other unrecognized gap remains fatal.
+HISTORICAL_EXTERNAL_ISSUE_IDS = {"B-1630": 1630}
+# This prefix is the delivered canonical allocator population. Never lower it;
+# later allocated B-IDs extend the dense sequence and retirement keeps the row.
+CANONICAL_B_ID_PREFIX_MAX = 373
 IMMUTABLE_ITEM_FIELDS = frozenset({
     "id", "repo", "verify", "action-packet", "source-document",
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
@@ -512,6 +522,7 @@ def validate_candidate_transitions(
     candidate_items: list[Item], trusted_items: list[Item], today: dt.date,
     *, allow_sprint3_rewrite: bool = False, allow_b154_reconciliation: bool = False,
     allow_v0006_reconciliation: bool = False,
+    allow_v0007_reconciliation: bool = False,
     successor_mode: bool = False,
 ) -> list[str]:
     """Validate the small, auditable set of BACKLOG changes a PR may make."""
@@ -539,12 +550,17 @@ def validate_candidate_transitions(
             "B-216": {"verify-means"},
             "B-229": {"next-action", "acceptance", "verify"},
         }
+        v0007_fields = {"B-083": {"verify-means"}}
         for item_field in IMMUTABLE_ITEM_FIELDS:
             if old_raw.get(item_field) != new_raw.get(item_field):
                 if (
                     allow_v0006_reconciliation
                     and item.id in v0006_fields
                     and item_field in v0006_fields[item.id]
+                ) or (
+                    allow_v0007_reconciliation
+                    and item.id in v0007_fields
+                    and item_field in v0007_fields[item.id]
                 ):
                     continue
                 # The B-089 successor may add only this already-BASE-owned
@@ -584,6 +600,10 @@ def validate_candidate_transitions(
                         allow_v0006_reconciliation
                         and item.id in v0006_fields
                         and item_field in v0006_fields[item.id]
+                    ) or (
+                        allow_v0007_reconciliation
+                        and item.id in v0007_fields
+                        and item_field in v0007_fields[item.id]
                     ):
                         continue
                     errors.append(f"{item.id}: unsupported field {item_field!r} changed")
@@ -595,6 +615,8 @@ def validate_candidate_transitions(
         if old_raw.get("verify-means") != new_raw.get("verify-means") and old_status == new_status:
             if not ((allow_v0006_reconciliation and item.id in v0006_fields
                      and "verify-means" in v0006_fields[item.id])
+                    or (allow_v0007_reconciliation and item.id in v0007_fields
+                        and "verify-means" in v0007_fields[item.id])
                     or (allow_sprint3_rewrite and item.id in {
                 "B-012", "B-065", "B-087", "B-089", "B-097", "B-154", "B-170",
             }) or (allow_b154_reconciliation and item.id == "B-154")):
@@ -608,6 +630,47 @@ def validate_candidate_transitions(
     missing = sorted(set(trusted_by_id) - set(candidate_by_id))
     if missing:
         errors.append("candidate deleted BASE item(s): " + ", ".join(missing))
+    return errors
+
+
+def validate_dense_id_population(items: list[Item]) -> list[str]:
+    """Require a dense primary B sequence plus the immutable B-1630 alias."""
+    item_ids = {item.id for item in items}
+    errors: list[str] = []
+    for item_id, external_issue in HISTORICAL_EXTERNAL_ISSUE_IDS.items():
+        if item_id not in item_ids:
+            errors.append(
+                f"missing history-backed external issue identity {item_id} "
+                f"(GitHub issue #{external_issue})"
+            )
+
+    primary_numbers = sorted(
+        int(match.group(1))
+        for item in items
+        if item.id not in HISTORICAL_EXTERNAL_ISSUE_IDS
+        and (match := re.fullmatch(r"B-(\d+)", item.id))
+    )
+    present = set(primary_numbers)
+    sequence_max = max(CANONICAL_B_ID_PREFIX_MAX, max(primary_numbers, default=0))
+    missing = sorted(set(range(1, sequence_max + 1)) - present)
+    if missing:
+        ranges: list[tuple[int, int]] = []
+        start = previous = missing[0]
+        for number in missing[1:]:
+            if number == previous + 1:
+                previous = number
+                continue
+            ranges.append((start, previous))
+            start = previous = number
+        ranges.append((start, previous))
+        rendered = ", ".join(
+            f"B-{first:03d}" if first == last else f"B-{first:03d}..B-{last:03d}"
+            for first, last in ranges
+        )
+        errors.append(
+            f"missing {rendered} in the canonical B-ID sequence — ids must be dense; "
+            "restore a real item or mark it retired in place"
+        )
     return errors
 
 
@@ -627,7 +690,6 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         "types: [opened, synchronize, reopened]",
         "persist-credentials: false",
         'paths: ["**"]',
-        "runs-on: corelink",
         "permissions:\n  contents: read",
         "--candidate-file",
         "--trusted-file",
@@ -695,6 +757,13 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test\n"
         "python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py\n"
     )
+    expected_b314_dependencies = (
+        "set -euo pipefail\n"
+        "python3 -m venv .venv\n"
+        ".venv/bin/python3 -m pip install --disable-pip-version-check --no-input -r requirements-ci.txt\n"
+        ".venv/bin/python3 -m pytest --version\n"
+        'echo "$GITHUB_WORKSPACE/_base/.venv/bin" >> "$GITHUB_PATH"\n'
+    )
     expected_b046_gate = (
         "python3 scripts/verify_b046_object_lock_probe.py\n"
         "python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py\n"
@@ -702,7 +771,7 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         "test -f migrations/d1/0102_cas_retention.sql\n"
     )
     expected_data = {
-        "runs-on": "corelink", "timeout-minutes": 10,
+        "runs-on": "ubuntu-24.04", "timeout-minutes": 10,
         "steps": [
             checkout("Checkout candidate data (immutable event SHA)",
                      "${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
@@ -713,13 +782,15 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
                      "TRUSTED_ROOT": "${{ github.workspace }}/_base"}, "run": expected_gate},
             {"name": "Prove BASE checker mutation teeth", "working-directory": "_base",
              "run": "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"},
+            {"name": "Install CI Python dependencies for B-314 tests", "working-directory": "_base",
+             "run": expected_b314_dependencies},
             {"name": "Prove BASE B-314 owner-gate mutation teeth", "working-directory": "_base",
              "run": expected_b314_gate},
         ],
     }
     expected_trusted = {
         "if": "github.event_name == 'push' || github.event_name == 'schedule'",
-        "runs-on": "corelink", "timeout-minutes": 10,
+        "runs-on": "ubuntu-24.04", "timeout-minutes": 10,
         "permissions": {"contents": "read", "vulnerability-alerts": "read"},
         "steps": [
             {"name": "Checkout trusted main (immutable event SHA)",
@@ -736,17 +807,12 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         ],
     }
     verify_job = jobs["verify"]
-    if (
-        not isinstance(verify_job, dict)
-        or verify_job.get("runs-on") not in ("corelink", "ubuntu-24.04")
-    ):
+    trusted_job = jobs["trusted_semantic"]
+    if not isinstance(verify_job, dict) or verify_job.get("runs-on") != "ubuntu-24.04":
         raise RuntimeError("candidate workflow policy has unexpected verify runner")
-    # Accept the current BASE runner during rollout and the one explicitly
-    # approved hosted target. Normalize only this field before applying the
-    # existing closed-world shape check; trusted_semantic remains exact.
-    normalized_verify = dict(verify_job)
-    normalized_verify["runs-on"] = "corelink"
-    if normalized_verify != expected_data or jobs["trusted_semantic"] != expected_trusted:
+    if not isinstance(trusted_job, dict) or trusted_job.get("runs-on") != "ubuntu-24.04":
+        raise RuntimeError("candidate workflow policy has unexpected trusted semantic runner")
+    if verify_job != expected_data or trusted_job != expected_trusted:
         raise RuntimeError("candidate workflow policy has unexpected data/trusted job shape")
 
 
@@ -1029,9 +1095,10 @@ def main() -> int:
         return 2
 
     # A deleted item is invisible to per-item checks — every survivor still passes
-    # while the record silently loses work. This happened on 2026-08-23: an edit
-    # that rewrote one item removed its neighbour, and the gate reported all-green.
-    # So ids must stay DENSE. Retiring an item means marking it, never deleting it.
+    # while the record silently loses work. The sequential B-register stays dense;
+    # B-1630 is excluded from that sequence only because immutable V0004 records it
+    # as the historical external issue identity for GitHub issue #1630. This exact
+    # ID remains required, and every other gap is still rejected.
     if orphan_headings:
         print(
             "FATAL: heading(s) sem bloco ```backlog parseavel: "
@@ -1044,21 +1111,10 @@ def main() -> int:
         )
         return 2
 
-    numbered = sorted(
-        int(m.group(1))
-        for i in items
-        if (m := re.fullmatch(r"B-(\d+)", i.id))
-    )
-    if numbered:
-        missing = sorted(set(range(1, max(numbered) + 1)) - set(numbered))
-        if missing:
-            gaps = ", ".join(f"B-{n:03d}" for n in missing)
-            print(
-                f"FATAL: BACKLOG.md is missing {gaps} — ids must be dense. An item was "
-                "deleted rather than resolved. Restore it, or mark it retired in place.",
-                file=sys.stderr,
-            )
-            return 2
+    id_population_errors = validate_dense_id_population(items)
+    if id_population_errors:
+        print("FATAL: invalid BACKLOG.md ID population: " + "; ".join(id_population_errors), file=sys.stderr)
+        return 2
 
     seen: dict[str, int] = {}
     for it in items:

@@ -37,6 +37,9 @@ on:
       duration:
         description: 'The lane is fixed at exactly 2 hours'
         required: true
+        type: choice
+        options:
+          - '2h'
         default: '2h'
 
 permissions:

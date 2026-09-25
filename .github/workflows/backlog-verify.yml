@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout candidate data (immutable event SHA) # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: candidate is data-only; BASE checker runs separately; ADR-0101
@@ -50,6 +50,14 @@ jobs:
       - name: Prove BASE checker mutation teeth
         working-directory: _base
         run: python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py
+      - name: Install CI Python dependencies for B-314 tests
+        working-directory: _base
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/python3 -m pip install --disable-pip-version-check --no-input -r requirements-ci.txt
+          .venv/bin/python3 -m pytest --version
+          echo "$GITHUB_WORKSPACE/_base/.venv/bin" >> "$GITHUB_PATH"
       - name: Prove BASE B-314 owner-gate mutation teeth
         working-directory: _base
         run: |
@@ -57,7 +65,7 @@ jobs:
           python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py
   trusted_semantic:
     if: github.event_name == 'push' || github.event_name == 'schedule'
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read

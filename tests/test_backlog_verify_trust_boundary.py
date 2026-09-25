@@ -25,6 +25,13 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "backlog-verify.yml").read_text(encoding="utf-8")
         self.assertIn("pull_request_target:", workflow)
         self.assertNotIn("\n  pull_request:\n", workflow)
+        self.assertIn("  verify:\n    runs-on: ubuntu-24.04", workflow)
+        self.assertIn(
+            "  trusted_semantic:\n"
+            "    if: github.event_name == 'push' || github.event_name == 'schedule'\n"
+            "    runs-on: ubuntu-24.04",
+            workflow,
+        )
         self.assertGreaterEqual(workflow.count("persist-credentials: false"), 2)
         self.assertIn("github.event.pull_request.head.sha || github.sha", workflow)
         self.assertIn("github.event.pull_request.base.sha || github.sha", workflow)
@@ -173,11 +180,11 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
         )
         self.assertEqual(backlog_verify.validate_candidate_transitions(
-            [candidate], [base], dt.date(2026, 9, 13), allow_sprint3_rewrite=True,
+            [candidate], [base], dt.date(2026, 9, 13), allow_b154_reconciliation=True,
         ), [])
         candidate.raw["verify"] = candidate.raw["verify"].replace(" &&\n", "\n")
         errors = backlog_verify.validate_candidate_transitions(
-            [candidate], [base], dt.date(2026, 9, 13), allow_sprint3_rewrite=True,
+            [candidate], [base], dt.date(2026, 9, 13), allow_b154_reconciliation=True,
         )
         self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
         self.assertNotEqual(backlog_verify.run_verify("false &&\ntrue", mode="trusted")[0], 0)
@@ -187,16 +194,12 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         env.pop("PYTHONPATH", None)
         result = subprocess.run(
             [
-                sys.executable, str(VERIFIER),
-                "--candidate-file", str(self.candidate / "BACKLOG.md"),
-                "--trusted-file", str(ROOT / "BACKLOG.md"),
-                "--candidate-root", str(self.candidate),
-                "--trusted-root", str(ROOT),
+                sys.executable, str(VERIFIER), "--help",
             ],
             cwd=ROOT, env=env, capture_output=True, text=True, check=False,
         )
         self.assertNotIn("ModuleNotFoundError", result.stderr)
-        self.assertNotEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_deleting_highest_base_id_is_rejected(self) -> None:
         errors = backlog_verify.validate_candidate_transitions(
@@ -205,6 +208,45 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             dt.date(2026, 8, 23),
         )
         self.assertTrue(any("deleted BASE item(s): B-002" in error for error in errors))
+
+    def test_dense_primary_ids_preserve_only_v0004_external_issue_identity(self) -> None:
+        current = backlog_verify.parse((ROOT / "BACKLOG.md").read_text(encoding="utf-8"))
+        self.assertEqual(backlog_verify.validate_dense_id_population(current), [])
+        historic = next(item for item in current if item.id == "B-1630")
+        self.assertEqual(backlog_verify.HISTORICAL_EXTERNAL_ISSUE_IDS["B-1630"], 1630)
+        self.assertIn("PR #1923", historic.raw["verify-means"])
+        self.assertIn("35700316381", historic.raw["verify-means"])
+
+        synthetic = [self.item(f"B-{number:03d}") for number in range(1, 374)]
+        synthetic.append(self.item("B-1630"))
+        self.assertEqual(backlog_verify.validate_dense_id_population(synthetic), [])
+
+        # The exception names one immutable external issue identity, not a sparse range.
+        unapproved_outlier = [*synthetic, self.item("B-1631")]
+        errors = backlog_verify.validate_dense_id_population(unapproved_outlier)
+        self.assertTrue(
+            any("B-374..B-1630" in error and "ids must be dense" in error for error in errors)
+        )
+
+        missing_middle = [item for item in current if item.id != "B-200"]
+        errors = backlog_verify.validate_dense_id_population(missing_middle)
+        self.assertTrue(any("B-200" in error and "ids must be dense" in error for error in errors))
+
+        missing_external = [item for item in current if item.id != "B-1630"]
+        errors = backlog_verify.validate_dense_id_population(missing_external)
+        self.assertTrue(any("external issue identity B-1630" in error for error in errors))
+
+    def test_candidate_cannot_delete_real_middle_id_or_v0004_external_identity(self) -> None:
+        base = backlog_verify.parse((ROOT / "BACKLOG.md").read_text(encoding="utf-8"))
+        for missing_id in ("B-200", "B-1630"):
+            candidate = [item for item in base if item.id != missing_id]
+            errors = backlog_verify.validate_candidate_transitions(
+                candidate, base, dt.date(2026, 9, 24)
+            )
+            self.assertTrue(
+                any(f"deleted BASE item(s): {missing_id}" in error for error in errors),
+                f"deletion of {missing_id} must fail closed",
+            )
 
     def test_mutable_workflow_ref_is_rejected_as_data(self) -> None:
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
@@ -216,58 +258,73 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
             backlog_verify.validate_candidate_workflow(self.candidate)
 
-    def test_only_verify_accepts_the_approved_hosted_runner(self) -> None:
+    def test_both_jobs_require_the_approved_hosted_runner(self) -> None:
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
         baseline = workflow.read_text(encoding="utf-8")
-        hosted = baseline.replace(
-            "  verify:\n    runs-on: corelink",
-            "  verify:\n    runs-on: ubuntu-24.04",
-            1,
-        )
-        self.assertNotEqual(hosted, baseline)
-        workflow.write_text(hosted, encoding="utf-8")
         backlog_verify.validate_candidate_workflow(self.candidate)
 
-        for runner in ("ubuntu-latest", "self-hosted", "[self-hosted, linux]"):
+        trusted_start = baseline.index("  trusted_semantic:")
+        trusted_job = baseline[trusted_start:]
+        for runner in ("corelink", "ubuntu-latest", "self-hosted", "[self-hosted, linux]"):
             with self.subTest(verify_runner=runner):
-                mutated = hosted.replace("runs-on: ubuntu-24.04", f"runs-on: {runner}", 1)
+                mutated = baseline.replace(
+                    "  verify:\n    runs-on: ubuntu-24.04",
+                    f"  verify:\n    runs-on: {runner}",
+                    1,
+                )
                 workflow.write_text(mutated, encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, "unexpected verify runner"):
                     backlog_verify.validate_candidate_workflow(self.candidate)
 
-        trusted_start = baseline.index("  trusted_semantic:")
-        trusted = baseline[trusted_start:].replace(
-            "runs-on: corelink", "runs-on: ubuntu-24.04", 1
-        )
-        workflow.write_text(baseline[:trusted_start] + trusted, encoding="utf-8")
-        with self.assertRaisesRegex(RuntimeError, "unexpected data/trusted job shape"):
-            backlog_verify.validate_candidate_workflow(self.candidate)
+            with self.subTest(trusted_semantic_runner=runner):
+                mutated_trusted = trusted_job.replace(
+                    "    runs-on: ubuntu-24.04", f"    runs-on: {runner}", 1
+                )
+                self.assertNotEqual(mutated_trusted, trusted_job)
+                workflow.write_text(baseline[:trusted_start] + mutated_trusted, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "unexpected trusted semantic runner"):
+                    backlog_verify.validate_candidate_workflow(self.candidate)
+
         workflow.write_text(baseline, encoding="utf-8")
 
-    def test_b314_trusted_step_shape_and_placement_are_fail_closed(self) -> None:
+    def test_b314_dependency_and_trusted_step_shape_are_fail_closed(self) -> None:
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
         baseline = workflow.read_text(encoding="utf-8")
         backlog_verify.validate_candidate_workflow(self.candidate)
+        dependency_marker = "      - name: Install CI Python dependencies for B-314 tests"
         b314_marker = "      - name: Prove BASE B-314 owner-gate mutation teeth"
         semantic_marker = "      - name: Execute trusted main semantic checks"
-        start = baseline.index(b314_marker)
+        start = baseline.index(dependency_marker)
         end = baseline.index(semantic_marker, start)
-        prefix, b314_step, suffix = baseline[:start], baseline[start:end], baseline[end:]
+        prefix, b314_steps, suffix = baseline[:start], baseline[start:end], baseline[end:]
         mutations = {
-            "removed": prefix + suffix,
-            "wrong-working-directory": prefix + b314_step.replace(
-                "working-directory: _base", "working-directory: _candidate", 1
+            "removed-dependency-and-tests": prefix + suffix,
+            "wrong-dependency-working-directory": prefix + b314_steps.replace(
+                "name: Install CI Python dependencies for B-314 tests\n        working-directory: _base",
+                "name: Install CI Python dependencies for B-314 tests\n        working-directory: _candidate",
+                1,
             ) + suffix,
-            "weakened-self-test": prefix + b314_step.replace(
+            "dependency-from-candidate": prefix + b314_steps.replace(
+                "-r requirements-ci.txt", "-r $GITHUB_WORKSPACE/_candidate/requirements-ci.txt", 1
+            ) + suffix,
+            "unverified-pytest-install": prefix + b314_steps.replace(
+                ".venv/bin/python3 -m pytest --version", "true", 1
+            ) + suffix,
+            "wrong-test-working-directory": prefix + b314_steps.replace(
+                b314_marker + "\n        working-directory: _base",
+                b314_marker + "\n        working-directory: _candidate",
+                1,
+            ) + suffix,
+            "weakened-self-test": prefix + b314_steps.replace(
                 "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test",
                 "python3 -S scripts/verify_b314_gdpr_sigstore.py",
                 1,
             ) + suffix,
-            "weakened-mutation-test": prefix + b314_step.replace(
+            "weakened-mutation-test": prefix + b314_steps.replace(
                 "python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py", "true", 1
             ) + suffix,
-            "extra-shell-key": prefix + b314_step + "        shell: bash\n" + suffix,
-            "reordered": prefix + suffix + b314_step,
+            "extra-shell-key": prefix + b314_steps + "        shell: bash\n" + suffix,
+            "reordered": prefix + suffix + b314_steps,
         }
         for label, mutated in mutations.items():
             with self.subTest(label=label):

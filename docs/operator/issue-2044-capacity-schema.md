@@ -23,6 +23,47 @@ member into a concurrency measurement. Bind a parser only to the Wrangler
 client contract and keep concurrency as a separate evidence question unless
 Cloudflare supplies a documented, measurable response field.
 
+## Public Cloudflare sources and signal boundaries (reviewed 2026-09-24)
+
+Cloudflare's [Containers limits documentation](https://developers.cloudflare.com/containers/platform/limits/)
+states standard per-account ceilings of 1,500 concurrent vCPU, 6 TiB concurrent
+memory, and 30 TB concurrent disk. It also says to contact the account team,
+open a support ticket, or use its form for higher account-level limits. These
+are authoritative platform ceilings; they do not document the response schema
+or establish whether this account has a customized entitlement. A historical
+`GET /accounts/{account}/containers/me` receipt records values returned for
+this account, but does not document that endpoint's schema. The separate
+`GET /accounts/{account}/cloudchamber/me` observation follows the locked
+Wrangler Cloudchamber client contract; that client contract is not a published
+Cloudflare API schema.
+
+Cloudflare's [Containers GraphQL metrics guide](https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-container-metrics/)
+documents the `containersMetricsAdaptiveGroups` and
+`containersUsageAdaptiveGroups` datasets. The examples expose fields including
+`cpuTimeSec`, `allocatedMemory`, and `allocatedDisk`, grouped over explicit
+date/time filters. These can support a measured usage report for the selected
+window; they are time-filtered analytics aggregates, not a current instantaneous
+account-usage snapshot or a concurrency count.
+
+Cloudflare's [Wrangler Containers command reference](https://developers.cloudflare.com/workers/wrangler/commands/containers/)
+documents `wrangler containers instances <APPLICATION_ID>` as a list of
+instances for one application. Its JSON fields are `id`, `name`, `state`,
+`location`, `version`, and `created`; non-interactive use fetches all pages.
+This supports a timestamped, per-application instance census. It does not
+identify tenants, document a cross-application atomic snapshot, or define
+tenant-concurrency semantics. A fixed application allowlist and the repository's
+one-container-per-active-tenant contract may support a separately labeled
+container-count estimate, but cannot establish distinct concurrent tenants or
+a provider-defined measurement window.
+
+Therefore, the documented standard account ceiling is known, and Cloudflare
+documents historical-window usage and per-application instance enumeration.
+The remaining external gaps are an authoritative account-specific entitlement
+readback schema (including any customization), a supported current usage field
+with units/scope/time semantics, and a tenant-concurrency signal with its
+population, units, scope, and measurement window. Do not bind these gaps to
+unknown `/containers/me` fields or infer them from reservations or analytics.
+
 ## Capacity receipt parser
 
 The later receipt mode accepts only the strict Cloudflare envelope

@@ -1,5 +1,5 @@
 {
-  "schema_version": "i1650.real-integration-readiness.v1",
+  "schema_version": "i1650.real-integration-readiness.v2",
   "issue": 1650,
   "status": "blocked",
   "captured_at": "2026-09-22T00:00:00Z",
@@ -25,19 +25,22 @@
           "name": "Cloudflare account",
           "kind": "provider account",
           "scope": "dedicated test account; no production writes",
-          "status": "missing"
+          "status": "missing",
+          "evidence_ref": null
         },
         {
           "name": "D1 database",
           "kind": "D1 database",
           "scope": "dedicated integration database",
-          "status": "missing"
+          "status": "missing",
+          "evidence_ref": null
         },
         {
           "name": "R2 test bucket",
           "kind": "R2 bucket",
           "scope": "dedicated disposable bucket; cleanup after receipt",
-          "status": "missing"
+          "status": "missing",
+          "evidence_ref": null
         }
       ],
       "environment": [
@@ -85,7 +88,12 @@
       ],
       "blockers": [
         "Dedicated test resources, protected environment entries, and an owner reviewed cleanup receipt are not recorded."
-      ]
+      ],
+      "cleanup_receipt": {
+        "status": "missing",
+        "owner_reviewed": false,
+        "evidence_ref": null
+      }
     },
     "r2": {
       "status": "blocked",
@@ -94,19 +102,22 @@
           "name": "Cloudflare account",
           "kind": "provider account",
           "scope": "dedicated test account; no production writes",
-          "status": "missing"
+          "status": "missing",
+          "evidence_ref": null
         },
         {
           "name": "D1 database",
           "kind": "D1 database",
           "scope": "dedicated integration database for audit path",
-          "status": "missing"
+          "status": "missing",
+          "evidence_ref": null
         },
         {
           "name": "R2 test bucket",
           "kind": "R2 bucket",
           "scope": "dedicated disposable bucket; cleanup after receipt",
-          "status": "missing"
+          "status": "missing",
+          "evidence_ref": null
         }
       ],
       "environment": [
@@ -159,7 +170,12 @@
       ],
       "blockers": [
         "Dedicated test resources, protected environment entries, and an owner reviewed cleanup receipt are not recorded."
-      ]
+      ],
+      "cleanup_receipt": {
+        "status": "missing",
+        "owner_reviewed": false,
+        "evidence_ref": null
+      }
     },
     "stripe": {
       "status": "blocked",
@@ -168,13 +184,15 @@
           "name": "HuGR wallet broker test reference",
           "kind": "wallet broker account",
           "scope": "stripe-prod-test only; test mode",
-          "status": "missing"
+          "status": "missing",
+          "evidence_ref": null
         },
         {
           "name": "Starter test price",
           "kind": "Stripe price",
           "scope": "test-mode price_* only",
-          "status": "missing"
+          "status": "missing",
+          "evidence_ref": null
         }
       ],
       "environment": [
@@ -216,7 +234,12 @@
       ],
       "blockers": [
         "Wallet broker test reference, test price, protected environment entries, and an owner reviewed cleanup receipt are not recorded."
-      ]
+      ],
+      "cleanup_receipt": {
+        "status": "missing",
+        "owner_reviewed": false,
+        "evidence_ref": null
+      }
     },
     "neon": {
       "status": "blocked",
@@ -225,7 +248,8 @@
           "name": "Neon shadow database",
           "kind": "PostgreSQL database",
           "scope": "staging shadow branch; disposable tenant data only",
-          "status": "missing"
+          "status": "missing",
+          "evidence_ref": null
         }
       ],
       "environment": [
@@ -242,7 +266,12 @@
       ],
       "blockers": [
         "A staging shadow database, protected DSN, and an owner reviewed cleanup receipt are not recorded."
-      ]
+      ],
+      "cleanup_receipt": {
+        "status": "missing",
+        "owner_reviewed": false,
+        "evidence_ref": null
+      }
     }
   },
   "forbidden_inputs": [

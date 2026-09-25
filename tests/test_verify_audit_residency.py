@@ -253,6 +253,14 @@ def test_result_set_success_is_required() -> None:
         verifier.parse_d1_response(payload)
 
 
+def test_aggregate_row_must_contain_only_the_allowlisted_counts() -> None:
+    payload = response()
+    payload["result"][0]["results"][0]["tenant_id"] = "row-level-identity-must-not-be-accepted"
+
+    with pytest.raises(verifier.Indeterminate, match="fields are missing or unexpected"):
+        verifier.parse_d1_response(payload)
+
+
 @pytest.mark.parametrize("result_success", [False, None, 0, 1, "true"])
 def test_incomplete_result_set_evidence_exits_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], result_success: object

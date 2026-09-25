@@ -1,8 +1,8 @@
-name: proof — runs-on corelink (remote cache hit)
+name: proof — GitHub-hosted runner (remote cache hit)
 
-# Prova, contra o fabric de runners do próprio produto, que:
-#   1. `runs-on: corelink` recebe uma box de verdade, e
-#   2. essa box acerta o cache REMOTO do CoreLink — não um cache local.
+# This workflow used to prove CoreLink-fabric admission and remote cache use.
+# The hosted runner cannot receive the fabric-injected `clw` binary or lease
+# credentials, so this lane no longer provides CoreLink-fabric evidence.
 #
 # ── POR QUE ESTE WORKFLOW NÃO ASSERTA "O JOB PASSOU" ─────────────────────────
 # Uma box COLD passa no job e entrega ZERO do valor do produto: ela roda, o
@@ -44,13 +44,15 @@ concurrency:
 
 jobs:
   remote-cache-hit:
-    name: box do fabric + acerto no cache remoto
-    runs-on: corelink
+    name: GitHub-hosted runner + remote cache check
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      - name: preflight — a box tem clw e credencial?
+      - name: preflight — hosted runner tool and credentials
         run: |
           set -uo pipefail
           echo "== identidade da box =="
