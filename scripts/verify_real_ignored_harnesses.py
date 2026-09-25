@@ -431,6 +431,12 @@ def assert_contract(workflow: str, runner: str) -> None:
         fail("semantic executor guard is missing or only comment bait")
     if runs.count('bash scripts/run-real-ignored-harnesses.sh "$REAL_HARNESS_PROFILE"') != 1:
         fail("real executor wiring is missing or only comment bait")
+    if 'readonly RECEIPT_SHA="${GITHUB_SHA:-}"' not in sh:
+        fail("receipt does not bind results to the GitHub run SHA")
+    if '[[ "$RECEIPT_SHA" =~ ^[0-9a-f]{40}$ ]]' not in sh:
+        fail("receipt does not reject a missing or malformed exact Git SHA")
+    if '{"sha":"%s","profile":"%s"' not in sh or '"$RECEIPT_SHA" "$profile"' not in sh:
+        fail("test receipt entries do not carry the exact Git SHA")
 
     # No path in this executor may receive the PAT signing key or invoke the
     # side-effecting seed.  Check executable content, not explanatory comments.

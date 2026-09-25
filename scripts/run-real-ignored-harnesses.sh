@@ -13,6 +13,7 @@ readonly SCRIPT_NAME="${0##*/}"
 readonly PROFILE="${1:-}"
 readonly RECEIPT_DIR="${REAL_HARNESS_RECEIPT_DIR:-artifacts/real-ignored-harnesses}"
 readonly RECEIPT_FILE="${RECEIPT_DIR}/receipt.jsonl"
+readonly RECEIPT_SHA="${GITHUB_SHA:-}"
 
 usage() {
   printf 'usage: %s {d1|r2|stripe|neon|all}\n' "$SCRIPT_NAME" >&2
@@ -37,10 +38,11 @@ require_https() {
 }
 
 record_receipt() {
-  # Values are closed selectors or statuses; credentials never enter receipts.
+  # Values are closed selectors/statuses plus GitHub's immutable run SHA;
+  # credentials never enter receipts.
   local profile="$1" test_name="$2" status="$3"
-  printf '{"profile":"%s","test":"%s","status":"%s"}\n' \
-    "$profile" "$test_name" "$status" >> "$RECEIPT_FILE"
+  printf '{"sha":"%s","profile":"%s","test":"%s","status":"%s"}\n' \
+    "$RECEIPT_SHA" "$profile" "$test_name" "$status" >> "$RECEIPT_FILE"
 }
 
 finish_receipt() {
@@ -173,6 +175,9 @@ case "$PROFILE" in
     die "unknown harness profile: ${PROFILE:-<empty>}"
     ;;
 esac
+
+[[ "$RECEIPT_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+  die "GITHUB_SHA must be the exact 40-character Git commit SHA"
 
 mkdir -p "$RECEIPT_DIR"
 : > "$RECEIPT_FILE"
