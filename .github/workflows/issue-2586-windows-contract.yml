@@ -1,0 +1,146 @@
+name: issue-2586-windows-contract
+
+on:
+  pull_request:
+    paths:
+      - .actionlint.yaml
+      - .github/workflows/issue-2586-windows-contract.yml
+      - .github/workflows/issue-2586-windows-readiness.yml
+      - scripts/verify_i2586_windows_readiness.py
+      - scripts/windows_signing_readiness.ps1
+      - tests/test_i2586_windows_readiness.py
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact pull request head SHA to validate
+        required: true
+        type: string
+      target_base_sha:
+        description: Exact protected-main base used to construct the candidate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2586-windows-contract-${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
+  cancel-in-progress: false
+
+jobs:
+  linux-contract:
+    name: structural and credentialless contract
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.repository_id == '1232040291' &&
+      ((github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/issue-2586-no-sign-readiness-20260925' &&
+      github.event.pull_request.base.ref == 'main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/issue-2586-no-sign-readiness-20260925'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch the protected main base
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: refs/heads/main
+          path: trusted-main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact head and base
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
+          REQUESTED_BASE_SHA: ${{ inputs.target_base_sha }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          git fetch "$GITHUB_WORKSPACE/trusted-main" refs/heads/main:refs/remotes/target/main
+          TRUSTED_MAIN_SHA="$(git rev-parse refs/remotes/target/main)"
+          EXPECTED_BASE="$(git merge-base "$TRUSTED_MAIN_SHA" "$EXPECTED_SHA")"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$GITHUB_SHA" == "$EXPECTED_SHA" ]]
+            [[ "$REQUESTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$REQUESTED_BASE_SHA" == "$EXPECTED_BASE" ]]
+          else
+            [[ "$GITHUB_EVENT_NAME" == pull_request ]]
+            [[ "$PR_HEAD_REPO" == "$GITHUB_REPOSITORY" ]]
+            [[ "$PR_HEAD_REF" == codex/issue-2586-no-sign-readiness-20260925 ]]
+            [[ "$PR_BASE_REF" == main ]]
+          fi
+          TARGET_BASE_SHA="$EXPECTED_BASE"
+          actual_paths="$(git diff --name-only "$TARGET_BASE_SHA...$EXPECTED_SHA" | sort)"
+          expected_paths="$(printf '%s\n' \
+            .actionlint.yaml \
+            .github/workflows/issue-2586-windows-contract.yml \
+            .github/workflows/issue-2586-windows-readiness.yml \
+            scripts/verify_i2586_windows_readiness.py \
+            scripts/windows_signing_readiness.ps1 \
+            tests/test_i2586_windows_readiness.py | sort)"
+          [[ "$actual_paths" == "$expected_paths" ]]
+
+      - name: Install pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "$archive"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $archive" | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "$archive" -C "${RUNNER_TEMP}/actionlint" actionlint
+
+      - name: Lint the two issue-owned workflows
+        run: |
+          "${RUNNER_TEMP}/actionlint/actionlint" \
+            .github/workflows/issue-2586-windows-readiness.yml \
+            .github/workflows/issue-2586-windows-contract.yml
+
+      - name: Verify readiness and CI-pack contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -S scripts/verify_i2586_windows_readiness.py
+          python3 -S -m unittest -q tests/test_i2586_windows_readiness.py
+
+  windows-powershell-contract:
+    name: synthetic PowerShell acceptance and negative fixtures
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.repository_id == '1232040291' &&
+      ((github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/issue-2586-no-sign-readiness-20260925' &&
+      github.event.pull_request.base.ref == 'main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/issue-2586-no-sign-readiness-20260925'))
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the PowerShell self-test script
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: scripts/windows_signing_readiness.ps1
+          sparse-checkout-cone-mode: false
+
+      - name: Run synthetic metadata fixtures only
+        shell: pwsh
+        run: ./scripts/windows_signing_readiness.ps1 -SelfTest
