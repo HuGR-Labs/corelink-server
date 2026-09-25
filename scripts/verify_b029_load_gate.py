@@ -692,6 +692,7 @@ def assess(root: Path, *, expect: str) -> list[str]:
     else:
         teardown_step = teardown_steps[0]
         teardown_run = teardown_step.runs[0]
+        teardown_commands = _active_shell_commands(teardown_run)
         for needle in (
             "--write-out '%{http_code}'",
             "test \"${HTTP_STATUS}\" = '200'",
@@ -703,6 +704,25 @@ def assess(root: Path, *, expect: str) -> list[str]:
         ):
             if needle not in teardown_run:
                 gaps.append(f"load teardown does not enforce exact receipt contract: {needle}")
+        validator_commands = [
+            command
+            for command in teardown_commands
+            if command[:2] == ("python3", "scripts/validate_load_teardown_receipt.py")
+        ]
+        if len(validator_commands) != 1:
+            gaps.append("load teardown must execute exactly one exact receipt validator")
+        else:
+            validator_command = validator_commands[0]
+            for argument in (
+                "--run-id",
+                "${GITHUB_RUN_ID}",
+                "--scenario",
+                "${SCENARIO}",
+                "--deployment-sha",
+                "${TARGET_DEPLOYMENT_SHA}",
+            ):
+                if argument not in validator_command:
+                    gaps.append(f"active load receipt validator is missing {argument}")
         if "--location" in teardown_run or "--output /dev/null" in teardown_run:
             gaps.append("load teardown must retain its response and must not forward bearer auth across redirects")
         upload_steps = [step for step in steps if step.name == "upload results and exact teardown receipt"]
