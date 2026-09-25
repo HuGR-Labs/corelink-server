@@ -214,7 +214,11 @@ def check_smoke(text: str) -> None:
     require_line(helper_step, r"^\s*if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$", where)
     upload_step = named_step(text, "Upload structured observation", where)
     require_line(upload_step, r"^\s*if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$", where)
-    require_line(upload_step, r"^\s*uses:\s*actions/upload-artifact@[a-f0-9]{40}\s*$", where)
+    require_line(
+        upload_step,
+        r"^\s*uses:\s*actions/upload-artifact@[a-f0-9]{40}\s*(?:#.*)?$",
+        where,
+    )
     require_line(upload_step, r"^\s*path:\s*artifacts/i1672/\s*$", where)
     require_line(upload_step, r"^\s*if-no-files-found:\s*error\s*$", where)
     if re.search(r"(?i)secrets\.|CORELINK_CANARY_PAT|CORELINK_TEST_TOKEN|docker build|docker run|corelink doctor", text):

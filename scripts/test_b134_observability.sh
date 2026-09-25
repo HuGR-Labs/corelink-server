@@ -71,6 +71,10 @@ copy_fixture "${TMP}/upload-action"
 sed -i.bak 's#uses: actions/upload-artifact@#uses: actions/download-artifact@#' "${TMP}/upload-action/.github/workflows/smoke-install.yml"
 expect_red upload-action "${TMP}/upload-action"
 
+copy_fixture "${TMP}/upload-unpinned"
+sed -i.bak 's#uses: actions/upload-artifact@[a-f0-9]\{40\}#uses: actions/upload-artifact@v4#' "${TMP}/upload-unpinned/.github/workflows/smoke-install.yml"
+expect_red upload-unpinned "${TMP}/upload-unpinned"
+
 copy_fixture "${TMP}/upload-path"
 sed -i.bak 's#path: artifacts/i1672/#path: artifacts/missing/#' "${TMP}/upload-path/.github/workflows/smoke-install.yml"
 expect_red upload-path "${TMP}/upload-path"
