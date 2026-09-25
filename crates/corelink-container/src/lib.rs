@@ -189,6 +189,8 @@ pub mod quota_error;
 pub mod reapi_action_cache;
 /// Unmounted authenticated REAPI ByteStream service contract.
 pub mod reapi_bytestream;
+/// Unmounted composition of the authenticated cache-only REAPI services.
+pub mod reapi_composition;
 /// Unmounted REAPI CAS unary service over the authenticated ingress kernel.
 pub mod reapi_cas;
 /// Authenticated, tenant-scoped ingress kernel for future REAPI gRPC services.
