@@ -79,6 +79,9 @@ MUTATION_MARKERS = {
 }
 SHA = re.compile(r"[0-9a-f]{40}")
 POLICY_CARGO_DENY_COMMAND = (
+    'cargo deny --manifest-path "$POLICY_TREE/Cargo.toml" check --config "$DENY_CONFIG" licenses bans'
+)
+POLICY_CARGO_DENY_OLD_INVALID_COMMAND = (
     'cargo deny --manifest-path "$POLICY_TREE/Cargo.toml" --config "$DENY_CONFIG" check licenses bans'
 )
 
@@ -161,6 +164,8 @@ def run_blocks(lines: list[str]) -> tuple[str, ...]:
 
 
 def commands_preserve_intent(relative: str, job: str, original: tuple[str, ...], candidate: tuple[str, ...]) -> bool:
+    if relative == ".github/workflows/dependabot-policy.yml" and job == "policy-gate":
+        original = tuple(block.replace(POLICY_CARGO_DENY_OLD_INVALID_COMMAND, POLICY_CARGO_DENY_COMMAND) for block in original)
     return original == candidate
 
 
@@ -303,7 +308,9 @@ def verify_baseline(candidate: Path, baseline: Path) -> None:
 def verify_inventory(root: Path) -> None:
     policy_text = (root / ".github/workflows/dependabot-policy.yml").read_text(encoding="utf-8")
     if POLICY_CARGO_DENY_COMMAND not in policy_text:
-        fail("Dependabot policy must retain the pinned cargo-deny command unchanged")
+        fail("Dependabot policy must use the pinned cargo-deny command with `check --config` ordering")
+    if POLICY_CARGO_DENY_OLD_INVALID_COMMAND in policy_text:
+        fail("Dependabot policy still contains cargo-deny's invalid `--config ... check` ordering")
 
     for relative, expected in FILES.items():
         jobs = job_blocks((root / relative).read_text(encoding="utf-8"), relative)
@@ -1078,6 +1085,9 @@ def verify_policy_gate_cargo_deny(root: Path, baseline: Path) -> None:
     """Run both original Dependabot policy cargo-deny steps on isolated PR data."""
     if not shutil.which("cargo-deny"):
         fail("cargo-deny is not installed in the hosted proof job")
+    version = subprocess.run(["cargo", "deny", "--version"], check=True, capture_output=True, text=True).stdout.strip()
+    if not re.search(r"(?:^|\s)0\.19\.8(?:$|\s)", version):
+        fail(f"hosted proof requires workflow-pinned cargo-deny 0.19.8, got {version!r}")
     with tempfile.TemporaryDirectory(prefix="i2374-policy-") as directory:
         tmp = Path(directory)
         env = {
@@ -1097,6 +1107,15 @@ def verify_policy_gate_cargo_deny(root: Path, baseline: Path) -> None:
         checked = subprocess.run(["bash", "-euo", "pipefail", "-c", policy], cwd=baseline, env=env, capture_output=True, text=True)
         if checked.returncode != 0:
             fail(f"Dependabot policy cargo-deny command failed: {checked.stderr[-1000:]} {checked.stdout[-500:]}")
+        old_order = policy.replace(POLICY_CARGO_DENY_COMMAND, POLICY_CARGO_DENY_OLD_INVALID_COMMAND)
+        if old_order == policy:
+            fail("cargo-deny old-order negative control could not find the canonical command")
+        rejected = subprocess.run(["bash", "-euo", "pipefail", "-c", old_order], cwd=baseline,
+                                  env=env, capture_output=True, text=True)
+        if rejected.returncode == 0 or "unexpected argument '--config'" not in rejected.stderr:
+            fail("cargo-deny old-order negative control was not rejected as invalid syntax: "
+                 f"rc={rejected.returncode} stderr={rejected.stderr[-700:]}")
+        print("cargo-deny syntax negative control: old `--config ... check` ordering rejected")
 
 
 def verify_negative_controls(root: Path, baseline: Path | None) -> None:
