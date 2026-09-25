@@ -1186,6 +1186,22 @@ def install(api):
             path.as_posix(): _git_bytes(repo_root, commit, path) for path in relatives
         }
 
+    def _successor_introduction(root: Path, path: Path) -> str:
+        """Return the one path-changing commit after simplifying merge transport."""
+        introduced = subprocess.run(
+            ["git", "log", "--simplify-merges", "--format=%H", "--", path.as_posix()],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        commits = introduced.stdout.splitlines()
+        if introduced.returncode or len(commits) != 1:
+            raise LedgerError(
+                f"{path}: successor introduction is not unique on simplified history"
+            )
+        return commits[0]
+
     def _history_authorized(pinned: dict[str, object]) -> bool:
         """Reconstruct one pinned first-parent BACKLOG history from Git objects."""
         expected = pinned.get("history_transitions")
@@ -1438,34 +1454,15 @@ def install(api):
             raw = _regular_bytes(root, path)
             receipt = _receipt(raw, path.as_posix())
             base_sha = receipt["base_commit"]
-            introduced = subprocess.run(
-                [
-                    "git",
-                    "log",
-                    "--first-parent",
-                    "--full-history",
-                    "--format=%H",
-                    "--",
-                    path.as_posix(),
-                ],
-                cwd=root,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            commits = introduced.stdout.splitlines()
-            if introduced.returncode or len(commits) != 1:
-                raise LedgerError(
-                    f"{path}: successor introduction is not unique on main history"
-                )
+            introduced = _successor_introduction(root, path)
             first_parent = subprocess.run(
-                ["git", "rev-parse", f"{commits[0]}^1"],
+                ["git", "rev-parse", f"{introduced}^1"],
                 cwd=root,
                 check=False,
                 capture_output=True,
                 text=True,
             ).stdout.strip()
-            if _git_bytes(root, commits[0], path) != raw:
+            if _git_bytes(root, introduced, path) != raw:
                 raise LedgerError(
                     f"{path}: successor was rewritten"
                 )
@@ -1503,7 +1500,7 @@ def install(api):
             if _git_bytes(root, base_sha, previous_path) != previous_raw:
                 raise LedgerError(f"{path}: prior snapshot differs from immutable BASE")
             prior = _git_state_bytes(root, base_sha)
-            current = _git_state_bytes(root, commits[0])
+            current = _git_state_bytes(root, introduced)
             v0004_reconciliation = _v0004_reconciliation_authorized(
                 previous, prior, current, receipt, index + 3,
             )
@@ -1536,11 +1533,7 @@ def install(api):
                 next_raw = _regular_bytes(root, paths[index + 1])
                 next_receipt = _receipt(next_raw, paths[index + 1].as_posix())
                 next_current = _git_state_bytes(
-                    root,
-                    subprocess.run(
-                        ["git", "log", "--first-parent", "--full-history", "--format=%H", "--", paths[index + 1].as_posix()],
-                        cwd=root, check=False, capture_output=True, text=True,
-                    ).stdout.strip(),
+                    root, _successor_introduction(root, paths[index + 1]),
                 )
                 next_prior = _git_state_bytes(root, next_receipt["base_commit"])
                 bridge = _v0004_reconciliation_authorized(
@@ -1732,6 +1725,7 @@ def install(api):
         _v0004_ledger=_v0004_ledger,
         _v0005_ledger=_v0005_ledger,
         _git_state_bytes=_git_state_bytes,
+        _successor_introduction=_successor_introduction,
         _v0004_history_authorized=_v0004_history_authorized,
         _v0005_history_authorized=_v0005_history_authorized,
         _v0005_reconciliation_authorized=_v0005_reconciliation_authorized,

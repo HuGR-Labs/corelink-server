@@ -839,6 +839,7 @@ def test_delivered_successor_allows_an_unchanged_ancestor_base_before_introducti
     Path("BACKLOG.md"),
     ledger.LEDGER_RELATIVE,
     Path("docs/campaigns/remediation/work-packages/B001-B045.md"),
+    ledger.GENESIS_SNAPSHOT_RELATIVE,
 ])
 def test_delivered_successor_rejects_a_changed_ancestor_base_before_introduction(
     tmp_path, monkeypatch, relative,
@@ -849,13 +850,15 @@ def test_delivered_successor_rejects_a_changed_ancestor_base_before_introduction
     target.write_text(target.read_text() + "\nintervening mutation\n")
     _git(base, "add", relative.as_posix())
     _git(base, "commit", "--quiet", "-m", "mutate ledger state before v3")
-    for copied in (
+    copied_paths = [
         Path("BACKLOG.md"), ledger.LEDGER_RELATIVE,
         ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json",
-    ):
+    ]
+    if relative == ledger.GENESIS_SNAPSHOT_RELATIVE:
+        copied_paths.append(relative)
+    for copied in copied_paths:
         (base / copied).write_bytes((candidate / copied).read_bytes())
-    _git(base, "add", "BACKLOG.md", ledger.LEDGER_RELATIVE.as_posix(),
-         "docs/campaigns/remediation/backlog-ledger-snapshot-v0003.json")
+    _git(base, "add", *(path.as_posix() for path in copied_paths))
     _git(base, "commit", "--quiet", "-m", "append stale v3")
 
     with pytest.raises(LedgerError, match="unchanged ancestor"):
@@ -870,9 +873,7 @@ def test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose(monkeypatch
         (root / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0007.json").read_text()
     )
     policy = ledger._successor_policy()
-    introduced = _git(
-        root, "log", "--first-parent", "--full-history", "--format=%H", "--", relative.as_posix(),
-    )
+    introduced = policy._successor_introduction(root, relative)
     first_parent = _git(root, "rev-parse", f"{introduced}^1")
     assert first_parent == "44a0dbb6d885dfe136b2d5aeee7e0f41a8251378"
     assert _git(root, "merge-base", "--is-ancestor", receipt["base_commit"], first_parent) == ""
