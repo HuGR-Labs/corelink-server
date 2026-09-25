@@ -21,6 +21,33 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 TAG = re.compile(r"^cli-v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
+# This is the closed initial CLI release inventory. Keep asset names explicit
+# so a new target cannot enter through a broad platform prefix check.
+LINUX_PAYLOADS = {
+    "corelink-linux-x86_64",
+    "corelink-linux-x86_64.tar.gz",
+    "corelink-linux-aarch64",
+    "corelink-linux-arm64.tar.gz",
+}
+WINDOWS_PAYLOADS = {"corelink-windows-x86_64.exe", "corelink-windows-x86_64.zip"}
+BASE_PAYLOADS = LINUX_PAYLOADS | WINDOWS_PAYLOADS
+CHECKSUMS = {"checksums.txt", *(f"{name}.sha256" for name in BASE_PAYLOADS)}
+STAGING_INVENTORY = BASE_PAYLOADS | CHECKSUMS
+LINUX_SIGNATURES = {f"{name}.asc" for name in LINUX_PAYLOADS} | {
+    f"{name}.asc.sha256" for name in LINUX_PAYLOADS
+}
+FINAL_INVENTORY = STAGING_INVENTORY | LINUX_SIGNATURES
+
+
+def validate_inventory(names: set[str], *, final: bool | None = None) -> None:
+    if not names or not names <= FINAL_INVENTORY:
+        unexpected = sorted(names - FINAL_INVENTORY)
+        raise ValueError(f"release inventory contains an unsupported asset: {unexpected[:3]}")
+    if final is True and names != FINAL_INVENTORY:
+        raise ValueError("final release inventory is not the complete Linux + Windows set")
+    if final is False and names != STAGING_INVENTORY:
+        raise ValueError("staging release inventory is not the complete Linux + Windows set")
+
 
 def digest(path: Path) -> str:
     if path.is_symlink() or not stat.S_ISREG(path.stat(follow_symlinks=False).st_mode):
@@ -70,6 +97,7 @@ def load(path: Path, tag: str, source_sha: str) -> list[dict[str, str]]:
             raise ValueError("manifest has duplicate artifact or invalid digest")
         seen.add(name)
         normalized.append({"name": name, "sha256": checksum})
+    validate_inventory(seen, final=value["version"] == 2)
     return normalized
 
 
@@ -83,7 +111,8 @@ def create(directory: Path, output: Path, tag: str, source_sha: str, staging_man
         parent = json.loads(staging_manifest.read_text(encoding="utf-8"))
         if not isinstance(parent, dict) or parent.get("version") != 1 or parent.get("tag") != tag or parent.get("source_sha") != source_sha:
             raise ValueError("final manifest parent is not the canonical staging manifest")
-        parent_entries = {safe_name(item.get("name")): item.get("sha256") for item in parent.get("artifacts", []) if isinstance(item, dict)}
+        parent_entries = {item["name"]: item["sha256"] for item in load(staging_manifest, tag, source_sha)}
+        validate_inventory(set(parent_entries), final=False)
         if any(not isinstance(checksum, str) or not SHA256.fullmatch(checksum) for checksum in parent_entries.values()):
             raise ValueError("final manifest parent has invalid staged digest")
         parent_names = set(parent_entries)
@@ -102,6 +131,7 @@ def create(directory: Path, output: Path, tag: str, source_sha: str, staging_man
     if not artifacts:
         raise ValueError("refusing to create an empty release manifest")
     names = {item["name"] for item in artifacts}
+    validate_inventory(names, final=staging_manifest is not None)
     if parent_names is not None:
         signed_linux = {name for name in parent_names if name.startswith("corelink-linux-") and not name.endswith(".sha256")}
         signatures = {f"{name}.asc" for name in signed_linux}
@@ -110,7 +140,6 @@ def create(directory: Path, output: Path, tag: str, source_sha: str, staging_man
             raise ValueError("final inventory exceeds allowlisted signed-artifact transformations")
         changed = {item["name"] for item in artifacts if item["name"] in parent_entries and item["sha256"] != parent_entries[item["name"]]}
         allowed_changed = {"corelink-windows-x86_64.exe", "corelink-windows-x86_64.zip"}
-        allowed_changed |= {name for name in parent_names if name.startswith("corelink-darwin-") and not name.endswith(".sha256")}
         # Digest sidecars and the aggregate checksum necessarily change when an
         # allowlisted signed payload changes; they remain exact manifest subjects.
         allowed_changed |= {name for name in parent_names if name.endswith(".sha256") or name == "checksums.txt"}

@@ -1,22 +1,18 @@
 name: release-cli
 
-# CoreLink CLI cross-platform release pipeline (Stream 2.8).
+# CoreLink CLI release pipeline (Stream 2.8).
 #
-# Triggers on version tags cli-v* in the server repository.
-# Builds five platform binaries on GitHub-hosted runners: Linux and Windows use
-# the pinned Zig/cargo-zigbuild cross-toolchain, while macOS targets use native
-# cargo. It then creates a
-# GitHub Release in the SEPARATE repo HuGR-Labs/corelink-cli.
+# Triggers on an explicit owner dispatch for an existing cli-v* tag. It builds
+# the closed Linux + Windows inventory and creates a release in the separate
+# HuGR-Labs/corelink-cli repository.
 #
 # Binary names match the install script contract:
 #   URL="${RELEASE_ORIGIN}/corelink-${OS}-${ARCH}"
 #   (apps/get-corelink-worker/src/install.ts)
 #
-# Platforms:
+# Closed platform inventory:
 #   corelink-linux-x86_64       x86_64-unknown-linux-gnu
 #   corelink-linux-aarch64      aarch64-unknown-linux-gnu
-#   corelink-darwin-x86_64      x86_64-apple-darwin
-#   corelink-darwin-aarch64     aarch64-apple-darwin
 #   corelink-windows-x86_64.exe x86_64-pc-windows-gnu
 #
 # Required GH Secret (set MANUALLY by operator, used only by `release`):
@@ -57,13 +53,12 @@ env:
 
 jobs:
   # -------------------------------------------------------------------
-  # build — cargo-zigbuild matrix (Option A: 5 targets, 1 runner type)
+  # build — Linux + Windows cargo-zigbuild matrix
   # -------------------------------------------------------------------
   build:
     name: build (${{ matrix.target.name }})
     if: github.repository_id == '1232040291' && github.ref == format('refs/tags/{0}', inputs.release_tag)
-    # Each target has its own ephemeral GitHub-hosted VM.  The old macOS fleet
-    # shared HOME between runner services, which was the B-112 failure domain.
+    # Each target has its own ephemeral GitHub-hosted VM.
     runs-on: ${{ matrix.target.runner }}
     timeout-minutes: 45
     env:
@@ -74,15 +69,6 @@ jobs:
     strategy:
       fail-fast: false
       # One runner per target; no host-local state is shared between legs.
-      #
-      # The 5-runner host is one physical Mac (12 cores / 16 GB). Running
-      # all 5 builds simultaneously drives load average to >100 and per-
-      # job wall time to 30+ minutes (vs ~10 min unblocked). Cap to 3 in
-      # parallel so the host has CPU/RAM headroom and each build proceeds
-      # at native speed. Total wall clock for 5 jobs:
-      #   5/3 = 2 batches (3 jobs, then 2 jobs).
-      #   batch 1 ~10 min cold cache, batch 2 ~5 min warm (sccache hits).
-      #   total ≈ 15 min vs ≈ 30 min with full parallelism + contention.
       matrix:
         target:
           - triple: x86_64-unknown-linux-gnu
@@ -95,16 +81,6 @@ jobs:
             signer_name: corelink-linux-arm64
             ext: ""
             runner: ubuntu-24.04
-          - triple: x86_64-apple-darwin
-            name: corelink-darwin-x86_64
-            signer_name: corelink-darwin-x86_64
-            ext: ""
-            runner: macos-14
-          - triple: aarch64-apple-darwin
-            name: corelink-darwin-aarch64
-            signer_name: corelink-darwin-arm64
-            ext: ""
-            runner: macos-14
           - triple: x86_64-pc-windows-gnu
             name: corelink-windows-x86_64
             signer_name: corelink-windows-x86_64
@@ -126,7 +102,7 @@ jobs:
 
       # Do NOT provision a Rust toolchain. Per its own action.yml,
       # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
+      # against the SHARED `~/.rustup` (one `$HOME` per host). That (a) can make
       # `rustc` unexecutable mid-build for every other job — it took the host down
       # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
       # default, silently moving every concurrent job off the ADR-0015 reproducibility
@@ -135,7 +111,7 @@ jobs:
         run: |
           set -euo pipefail
           case "${TARGET_TRIPLE}:${TARGET_NAME}:${TARGET_SIGNER_NAME}:${TARGET_EXT}" in
-            x86_64-unknown-linux-gnu:corelink-linux-x86_64:corelink-linux-x86_64:|aarch64-unknown-linux-gnu:corelink-linux-aarch64:corelink-linux-arm64:|x86_64-apple-darwin:corelink-darwin-x86_64:corelink-darwin-x86_64:|aarch64-apple-darwin:corelink-darwin-aarch64:corelink-darwin-arm64:|x86_64-pc-windows-gnu:corelink-windows-x86_64:corelink-windows-x86_64:.exe) ;;
+            x86_64-unknown-linux-gnu:corelink-linux-x86_64:corelink-linux-x86_64:|aarch64-unknown-linux-gnu:corelink-linux-aarch64:corelink-linux-arm64:|x86_64-pc-windows-gnu:corelink-windows-x86_64:corelink-windows-x86_64:.exe) ;;
             *) echo "::error::untrusted matrix target metadata" >&2; exit 1 ;;
           esac
 
@@ -149,8 +125,7 @@ jobs:
           rustup target add "${TARGET_TRIPLE}"
           bash scripts/ci-assert-pinned-toolchain.sh "${TARGET_TRIPLE}"
 
-      # The Mac fleet shares one HOME between its five runner services. Keep
-      # Cargo's registry and target artifacts in this job/attempt/target
+      # Isolate Cargo registry and target artifacts in this job/attempt/target
       # namespace so no matrix leg (or unrelated workflow) can prune or
       # rewrite another leg's inputs while rustc is using them. RUNNER_TEMP is
       # a runtime environment variable, so configure it through GITHUB_ENV
@@ -166,23 +141,17 @@ jobs:
           echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR}" >> "$GITHUB_ENV"
 
       # zig cross-toolchain: provides libc headers + linker for Linux + Windows.
-      # SKIPPED for darwin targets: on a macOS host, native `cargo build`
-      # cross-compiles fine using the system linker; using zigcc for
-      # darwin-on-darwin triggers an upstream iconv/charset linker bug.
-      #
       # Do not treat an arbitrary Homebrew Zig as good enough: cargo-zigbuild's
       # generated wrappers are coupled to Zig's CLI. The failed release chain
       # had no recorded tool versions, so an incompatible host upgrade was
       # indistinguishable from a source failure. This pin is checked, not
       # assumed, before every cross build.
       - name: Install pinned Zig (Linux + Windows)
-        if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: 0.16.0
 
       - name: Verify pinned Zig (Linux + Windows)
-        if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -203,7 +172,6 @@ jobs:
       # same moment. Same reasoning as mutation-pr.yml / lockfile-diff.yml.
       # install-action is a no-op when the pinned version is already on the host.
       - name: Install cargo-zigbuild (prebuilt, Linux + Windows only)
-        if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: cargo-zigbuild@0.19.8
@@ -214,7 +182,6 @@ jobs:
       # wrapper. A per-job cache makes wrapper creation atomic from this job's
       # point of view and removes the chmod-after-the-fact race.
       - name: Verify cargo-zigbuild and isolate its wrapper cache
-        if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -234,9 +201,9 @@ jobs:
           echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "$GITHUB_ENV"
 
       # Cargo fetches missing sources as part of the locked build. Do not
-      # manually delete/re-fetch registry packages here: the old Windows-only
-      # repair mutated `$HOME/.cargo/registry/src` shared by every Mac runner
-      # and could recreate the B-112 rustc ENOENT race. CARGO_HOME above is
+      # manually delete/re-fetch registry packages here: the old repair mutated
+      # `$HOME/.cargo/registry/src` shared by concurrent jobs and could recreate
+      # the B-112 rustc ENOENT race. CARGO_HOME above is
       # hermetic, and each target's CARGO_TARGET_DIR is hermetic as well.
 
       # Strip absolute dev-host paths from the binary (CTRL-PATH-HYGIENE).
@@ -254,7 +221,6 @@ jobs:
           echo "RUSTFLAGS=$REMAP" >> "$GITHUB_ENV"
 
       - name: Build (cargo zigbuild) — Linux + Windows
-        if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
         env:
           SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
           RUSTFLAGS: ${{ env.RUSTFLAGS }}
@@ -265,26 +231,11 @@ jobs:
             --locked \
             --target "${TARGET_TRIPLE}"
 
-      - name: Build (cargo build, native) — macOS targets
-        # The runner host is macOS x86_64. cargo can natively cross-compile
-        # to x86_64-apple-darwin (no-op) and aarch64-apple-darwin using the
-        # system linker (ld). No cargo-zigbuild dependency.
-        if: ${{ contains(matrix.target.triple, 'apple-darwin') }}
-        env:
-          SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
-          RUSTFLAGS: ${{ env.RUSTFLAGS }}
-        run: |
-          cargo build \
-            -p corelink-cli \
-            --release \
-            --locked \
-            --target "${TARGET_TRIPLE}"
-
       # Binary stripping is handled by [profile.release] strip = true
       # in the workspace Cargo.toml — no explicit strip step needed.
       #
       # Keep the raw binary for the public installer AND publish the archive
-      # consumed by sign-linux/sign-windows/notarize-macos. Previously only the
+      # consumed by sign-linux/sign-windows. Previously only the
       # former existed, so every downstream signer asked the release root for a
       # .tar.gz/.zip that did not exist.
       - name: Prepare installer + signer artifacts and SHA-256 checksums
@@ -303,9 +254,8 @@ jobs:
             ARCHIVE="${TARGET_SIGNER_NAME}.zip"
             # The Windows signer extracts and signs exactly
             # `./assets/extracted/corelink.exe`.  Do not use ditto --keepParent:
-            # it nests the binary below the package directory (and can add
-            # __MACOSX), leaving no binary at that signer path.  zip -j produces
-            # one deterministic member named corelink.exe instead.
+            # it nests the binary below the package directory, leaving no binary
+            # at that signer path. zip -j produces one deterministic member.
             command -v zip
             command -v unzip
             ARCHIVE_PATH="$(pwd)/out/${ARCHIVE}"
@@ -441,8 +391,8 @@ jobs:
           set -euo pipefail
           echo "=== dist/ contents ==="
           find dist/ -maxdepth 1 -type f | sort
-          # 5 installer binaries + 5 signer archives, each with its own digest.
-          EXPECTED=20
+          # 6 payload files + 6 checksum sidecars.
+          EXPECTED=12
           ACTUAL=$(find dist/ -maxdepth 1 -type f | wc -l | tr -d ' ')
           if [ "$ACTUAL" -ne "$EXPECTED" ]; then
             echo "ERROR: expected ${EXPECTED} files, got ${ACTUAL}" >&2
@@ -492,8 +442,6 @@ jobs:
           |--------|-----|------|
           | `corelink-linux-x86_64`      | Linux   | x86_64  |
           | `corelink-linux-aarch64`     | Linux   | aarch64 |
-          | `corelink-darwin-x86_64`     | macOS   | x86_64  |
-          | `corelink-darwin-aarch64`    | macOS   | aarch64 |
           | `corelink-windows-x86_64.exe`| Windows | x86_64  |
 
           ## Checksums
@@ -580,8 +528,8 @@ jobs:
             --pattern 'staging-manifest.json' \
             --clobber
           ACTUAL=$(find "$PUBLISHED" -maxdepth 1 -type f | wc -l | tr -d ' ')
-          if [ "$ACTUAL" -ne 22 ]; then
-            echo "::error::staging release must expose 20 artifacts, checksums.txt, and staging-manifest.json; got ${ACTUAL}." >&2
+          if [ "$ACTUAL" -ne 14 ]; then
+            echo "::error::staging release must expose 12 platform artifacts, checksums.txt, and staging-manifest.json; got ${ACTUAL}." >&2
             find "$PUBLISHED" -maxdepth 1 -type f -print | sort >&2
             exit 1
           fi
@@ -623,7 +571,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PACKET_READY="$(python3 scripts/verify_i1664_signing_readiness.py --emit-preflight-ready)"
+          PACKET_READY="$(python3 scripts/verify_i1664_signing_readiness.py --emit-initial-release-preflight-ready)"
           case "${PACKET_READY}" in
             true|false) printf 'packet_ready=%s\n' "${PACKET_READY}" >> "${GITHUB_OUTPUT}" ;;
             *) echo "::error::signing readiness verifier returned an invalid state" >&2; exit 1 ;;
@@ -639,19 +587,10 @@ jobs:
           WINDOWS_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
           WINDOWS_FINGERPRINT: ${{ secrets.WINDOWS_CODE_SIGNING_FINGERPRINT }}
           WINDOWS_SUBJECT: ${{ secrets.WINDOWS_CODE_SIGNING_SUBJECT }}
-          APPLE_CERT: ${{ secrets.APPLE_DEVELOPER_ID }}
-          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_FINGERPRINT: ${{ secrets.APPLE_DEVELOPER_ID_FINGERPRINT }}
-          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARIZATION_API_KEY }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
-          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARIZATION_ISSUER }}
         run: |
           set -euo pipefail
           if [ "${PACKET_READY}" = "true" ] && [ -n "${GPG_PRIVATE_KEY}" ] && [ -n "${GPG_PRIVATE_KEY_PASS}" ] && [ -n "${GPG_KEY_ID}" ] && [ -n "${GPG_KEY_FINGERPRINT}" ] && \
-             [ -n "${WINDOWS_CERT}" ] && [ -n "${WINDOWS_PASSWORD}" ] && [ -n "${WINDOWS_FINGERPRINT}" ] && [ -n "${WINDOWS_SUBJECT}" ] && \
-             [ -n "${APPLE_CERT}" ] && [ -n "${APPLE_CERT_PASSWORD}" ] && [ -n "${APPLE_TEAM_ID}" ] && [ -n "${APPLE_FINGERPRINT}" ] && \
-             [ -n "${APPLE_NOTARY_KEY}" ] && [ -n "${APPLE_NOTARY_KEY_ID}" ] && [ -n "${APPLE_NOTARY_ISSUER}" ]; then
+             [ -n "${WINDOWS_CERT}" ] && [ -n "${WINDOWS_PASSWORD}" ] && [ -n "${WINDOWS_FINGERPRINT}" ] && [ -n "${WINDOWS_SUBJECT}" ]; then
             exit 0
           else
             echo "::error::release signing preflight is incomplete; publication is blocked." >&2
@@ -672,28 +611,11 @@ jobs:
       WINDOWS_CODE_SIGNING_FINGERPRINT: ${{ secrets.WINDOWS_CODE_SIGNING_FINGERPRINT }}
       WINDOWS_CODE_SIGNING_SUBJECT: ${{ secrets.WINDOWS_CODE_SIGNING_SUBJECT }}
 
-  notarize-macos:
-    needs: [sign-windows, release]
-    uses: ./.github/workflows/notarize-macos.yml
-    with:
-      tag: ${{ needs.release.outputs.validated_tag }}
-      source_sha: ${{ needs.release.outputs.source_sha }}
-      staging_manifest_sha256: ${{ needs.release.outputs.staging_manifest_sha256 }}
-    secrets:
-      CORELINK_CLI_RELEASE_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
-      APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
-      APPLE_DEVELOPER_ID_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_NOTARIZATION_API_KEY: ${{ secrets.APPLE_NOTARIZATION_API_KEY }}
-      APPLE_NOTARIZATION_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
-      APPLE_NOTARIZATION_ISSUER: ${{ secrets.APPLE_NOTARIZATION_ISSUER }}
-      APPLE_DEVELOPER_ID_FINGERPRINT: ${{ secrets.APPLE_DEVELOPER_ID_FINGERPRINT }}
-
   final-manifest:
     name: bind final signed inventory
     # Successful signer jobs are post-run verification receipts for this exact
     # tag and inventory. The packet gates preflight before release staging.
-    needs: [sign-linux, sign-windows, notarize-macos, release-readiness, release]
+    needs: [sign-linux, sign-windows, release-readiness, release]
     runs-on: ubuntu-24.04
     outputs:
       sha256: ${{ steps.manifest.outputs.sha256 }}

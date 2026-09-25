@@ -23,6 +23,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACKET = ROOT / "docs/handoff/2026-09-22-i1664-signing-readiness.json"
 LANES = ("gpg", "windows", "apple")
+INITIAL_RELEASE_LANES = ("gpg", "windows")
 SECRET_NAMES = {
     "gpg": (
         "GPG_PRIVATE_KEY",
@@ -167,7 +168,8 @@ def validate_lane(name: str, lane: dict[str, Any]) -> tuple[bool, bool]:
     return preflight_ready, ready
 
 
-def validate(packet: Any) -> bool:
+def validate_packet_structure(packet: Any) -> list[tuple[bool, bool]]:
+    """Validate the shared packet shape and every lane without deciding scope."""
     require(isinstance(packet, dict), "packet must be a JSON object")
     required = {"schema_version", "status", "captured_at", "owner", "credentialless", "lanes", "redaction"}
     require(set(packet) == required, f"packet fields drifted: expected {sorted(required)}")
@@ -179,7 +181,12 @@ def validate(packet: Any) -> bool:
     require(packet["redaction"] == {"private_material_present": False, "secret_values_recorded": False}, "redaction contract drifted")
     require(isinstance(packet["lanes"], dict) and set(packet["lanes"]) == set(LANES), "lane set drifted")
     walk_strings(packet)
-    states = [validate_lane(name, packet["lanes"][name]) for name in LANES]
+    return [validate_lane(name, packet["lanes"][name]) for name in LANES]
+
+
+def validate(packet: Any) -> bool:
+    """Require readiness receipts across every lane in the #1664 audit."""
+    states = validate_packet_structure(packet)
     preflight_ready = packet["status"] in {"preflight_ready", "ready"} and all(state[0] for state in states)
     require(packet["status"] not in {"preflight_ready", "ready"} or preflight_ready, "preflight-ready packet has incomplete identity, access, or expiry data")
     ready = packet["status"] == "ready" and all(state[1] for state in states)
@@ -195,23 +202,37 @@ def validate_preflight(packet: Any) -> bool:
     return all(validate_lane(name, packet["lanes"][name])[0] for name in LANES)
 
 
+def validate_initial_release_preflight(packet: Any) -> bool:
+    """Require signing preflight only for the initial Linux + Windows release."""
+    validate_packet_structure(packet)
+    return all(validate_lane(name, packet["lanes"][name])[0] for name in INITIAL_RELEASE_LANES)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--packet", type=Path, default=DEFAULT_PACKET)
     output_mode = parser.add_mutually_exclusive_group()
     output_mode.add_argument("--emit-ready", action="store_true", help="print true/false when all post-run verification receipts exist")
     output_mode.add_argument("--emit-preflight-ready", action="store_true", help="print true/false when identity, access, and expiry authorize signing")
+    output_mode.add_argument("--emit-initial-release-preflight-ready", action="store_true", help="print true/false when the initial Linux + Windows signing lanes are ready")
     args = parser.parse_args()
     try:
         packet = json.loads(args.packet.read_text(encoding="utf-8"))
-        ready = validate_preflight(packet) if args.emit_preflight_ready else validate(packet)
+        if args.emit_initial_release_preflight_ready:
+            ready = validate_initial_release_preflight(packet)
+        elif args.emit_preflight_ready:
+            ready = validate_preflight(packet)
+        else:
+            ready = validate(packet)
     except (OSError, json.JSONDecodeError, ContractError) as exc:
         print(f"signing readiness contract failed: {exc}", file=sys.stderr)
         return 1
-    if args.emit_ready or args.emit_preflight_ready:
+    if args.emit_ready or args.emit_preflight_ready or args.emit_initial_release_preflight_ready:
         print("true" if ready else "false")
     else:
-        if args.emit_preflight_ready:
+        if args.emit_initial_release_preflight_ready:
+            print("READY: Linux and Windows signing preflight is complete" if ready else "BLOCKED: Linux or Windows signing identity, access, or expiry is missing")
+        elif args.emit_preflight_ready:
             print("READY: all platform identity, access, and expiry inputs authorize signing" if ready else "BLOCKED: external signing identity, access, or expiry inputs are missing")
         else:
             print("READY: all platform identities, expiry, access, and verification receipts are present" if ready else "BLOCKED: external signing identities or verification receipts are missing")

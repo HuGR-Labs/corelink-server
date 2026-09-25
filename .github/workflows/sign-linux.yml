@@ -97,7 +97,9 @@ jobs:
       matrix:
         include:
           - asset_suffix: linux-x86_64
+            raw_asset_suffix: linux-x86_64
           - asset_suffix: linux-arm64
+            raw_asset_suffix: linux-aarch64
 
     steps:
       - name: Checkout
@@ -146,10 +148,16 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
           SOURCE_SHA: ${{ steps.tag.outputs.source_sha }}
           STAGING_MANIFEST_SHA256: ${{ inputs.staging_manifest_sha256 }}
+          ASSET_SUFFIX: ${{ matrix.asset_suffix }}
+          RAW_ASSET_SUFFIX: ${{ matrix.raw_asset_suffix }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
-          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
+          RAW_ASSET: corelink-${{ matrix.raw_asset_suffix }}
         run: |
           set -euo pipefail
+          case "${ASSET_SUFFIX}:${RAW_ASSET_SUFFIX}" in
+            linux-x86_64:linux-x86_64|linux-arm64:linux-aarch64) ;;
+            *) echo "::error::untrusted Linux signer asset metadata" >&2; exit 1 ;;
+          esac
           mkdir -p ./assets
           gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${ASSET}" --dir ./assets
           gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --pattern "${RAW_ASSET}" --dir ./assets
@@ -191,8 +199,10 @@ jobs:
           GPG_PRIVATE_KEY_PASS: ${{ secrets.GPG_PRIVATE_KEY_PASS }}
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
           GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
+          ASSET_SUFFIX: ${{ matrix.asset_suffix }}
+          RAW_ASSET_SUFFIX: ${{ matrix.raw_asset_suffix }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
-          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
+          RAW_ASSET: corelink-${{ matrix.raw_asset_suffix }}
         run: |
           ACTUAL_FINGERPRINT="$(GNUPGHOME="${RUNNER_TEMP}/gpg-home" gpg --with-colons --fingerprint "${GPG_KEY_ID}" | awk -F: '$1 == "fpr" {print $10; exit}')"
           test "${ACTUAL_FINGERPRINT}" = "${GPG_KEY_FINGERPRINT}"
@@ -209,7 +219,7 @@ jobs:
       - name: Verify detached signature locally
         env:
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
-          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
+          RAW_ASSET: corelink-${{ matrix.raw_asset_suffix }}
           GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
         run: |
           for target in "${ASSET}" "${RAW_ASSET}"; do
@@ -224,7 +234,7 @@ jobs:
           RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
-          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
+          RAW_ASSET: corelink-${{ matrix.raw_asset_suffix }}
         run: |
           set -euo pipefail
           gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" \
@@ -243,7 +253,7 @@ jobs:
           RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
-          RAW_ASSET: corelink-${{ matrix.asset_suffix }}
+          RAW_ASSET: corelink-${{ matrix.raw_asset_suffix }}
         run: |
           set -euo pipefail
           gh release upload "${TAG}" --repo "${RELEASE_REPOSITORY}" --clobber \
@@ -258,9 +268,10 @@ jobs:
           RELEASE_REPOSITORY: HuGR-Labs/corelink-cli
           TAG: ${{ steps.tag.outputs.tag }}
           ASSET_SUFFIX: ${{ matrix.asset_suffix }}
+          RAW_ASSET_SUFFIX: ${{ matrix.raw_asset_suffix }}
         run: |
           set -euo pipefail
-          case "${ASSET_SUFFIX}" in linux-x86_64|linux-arm64) ;; *) exit 1 ;; esac
+          case "${ASSET_SUFFIX}:${RAW_ASSET_SUFFIX}" in linux-x86_64:linux-x86_64|linux-arm64:linux-aarch64) ;; *) exit 1 ;; esac
           PUBLISHED="${RUNNER_TEMP}/corelink-sign-linux-readback-${ASSET_SUFFIX}"
           mkdir -p "$PUBLISHED"
           gh release download "${TAG}" --repo "${RELEASE_REPOSITORY}" --dir "$PUBLISHED" \

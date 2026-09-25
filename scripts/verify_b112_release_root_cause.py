@@ -617,23 +617,32 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         "ref: refs/tags/${{ inputs.release_tag }}",
         "checkout of the requested immutable tag",
     )
-    expected_targets = (
-        "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu",
-        "x86_64-apple-darwin",
-        "aarch64-apple-darwin",
-        "x86_64-pc-windows-gnu",
-    )
-    for target in expected_targets:
-        if target not in release_code:
-            errors.append(f"release-cli is missing expected target: {target}")
+    expected_targets = {
+        ("x86_64-unknown-linux-gnu", "corelink-linux-x86_64", "ubuntu-24.04"),
+        ("aarch64-unknown-linux-gnu", "corelink-linux-aarch64", "ubuntu-24.04"),
+        ("x86_64-pc-windows-gnu", "corelink-windows-x86_64", "windows-2022"),
+    }
+    try:
+        workflow = yaml.load(release, Loader=_YAML_LOADER)
+        targets = workflow["jobs"]["build"]["strategy"]["matrix"]["target"]
+        actual_targets = {
+            (target.get("triple"), target.get("name"), target.get("runner"))
+            for target in targets
+            if isinstance(target, dict)
+        }
+        if actual_targets != expected_targets or len(targets) != len(expected_targets):
+            errors.append("release-cli target matrix is not the closed Linux + Windows inventory")
+    except (AttributeError, KeyError, TypeError, yaml.YAMLError):
+        errors.append("release-cli target matrix is not a valid closed inventory")
+    if any(marker in release_code.lower() for marker in ("apple_", "apple-darwin", "corelink-darwin-", "notarize-macos")):
+        errors.append("release-cli contains an unsupported Apple release surface")
     if not any(
         isinstance(value, yaml.nodes.ScalarNode)
         and str(value.value) == "${{ matrix.target.runner }}"
         for _line, value in _yaml_job_key_nodes(release, "build", "runs-on")
     ):
         errors.append("build must select an isolated GitHub-hosted runner per target")
-    for runner in ("ubuntu-24.04", "windows-2022", "macos-14"):
+    for runner in ("ubuntu-24.04", "windows-2022"):
         if f"runner: {runner}" not in release_code:
             errors.append(f"missing hosted target runner: {runner}")
     build_jobs = _yaml_job_nodes(release, "build")

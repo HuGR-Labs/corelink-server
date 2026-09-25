@@ -59,6 +59,40 @@ class SigningReadinessTest(unittest.TestCase):
         for lane in packet["lanes"].values():
             self.assertEqual(lane["verification"]["status"], "missing")
 
+    def test_initial_release_preflight_requires_linux_and_windows_only(self) -> None:
+        packet = packet_with_preflight_inputs()
+        packet["status"] = "blocked"
+        packet["lanes"]["apple"]["status"] = "blocked"
+        packet["lanes"]["apple"]["access"]["access_status"] = "missing"
+        packet["lanes"]["apple"]["expiry"] = {"expires_at": None, "status": "missing"}
+
+        self.assertTrue(readiness.validate_initial_release_preflight(packet))
+        self.assertFalse(readiness.validate_preflight(packet))
+        self.assertFalse(readiness.validate(packet))
+
+    def test_initial_release_preflight_fails_closed_for_windows(self) -> None:
+        packet = packet_with_preflight_inputs()
+        packet["status"] = "blocked"
+        packet["lanes"]["windows"]["status"] = "blocked"
+        packet["lanes"]["windows"]["access"]["access_status"] = "missing"
+
+        self.assertFalse(readiness.validate_initial_release_preflight(packet))
+
+    def test_initial_release_preflight_cli_emits_machine_readable_state(self) -> None:
+        packet = packet_with_preflight_inputs()
+        packet["status"] = "blocked"
+        packet["lanes"]["apple"]["status"] = "blocked"
+        packet["lanes"]["apple"]["access"]["access_status"] = "missing"
+        packet["lanes"]["apple"]["expiry"] = {"expires_at": None, "status": "missing"}
+        with tempfile.TemporaryDirectory() as directory:
+            packet_path = Path(directory) / "packet.json"
+            packet_path.write_text(json.dumps(packet), encoding="utf-8")
+            stdout = StringIO()
+            argv = ["verify_i1664_signing_readiness.py", "--packet", str(packet_path), "--emit-initial-release-preflight-ready"]
+            with patch.object(sys, "argv", argv), redirect_stdout(stdout):
+                self.assertEqual(readiness.main(), 0)
+        self.assertEqual(stdout.getvalue(), "true\n")
+
     def test_preflight_cli_emits_machine_readable_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             packet_path = Path(directory) / "packet.json"

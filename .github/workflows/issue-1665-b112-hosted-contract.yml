@@ -5,8 +5,14 @@ on:
     paths:
       - ".github/workflows/issue-1665-b112-hosted-contract.yml"
       - ".github/workflows/release-cli.yml"
+      - ".github/workflows/sign-linux.yml"
+      - "scripts/cli_release_manifest.py"
+      - "scripts/verify_cli_release_inventory.py"
       - "scripts/verify_b112_release_root_cause.py"
+      - "scripts/verify_i1664_signing_readiness.py"
       - "tests/test_cli_release_b112_behavior.py"
+      - "tests/test_cli_release_inventory_scope.py"
+      - "tests/test_i1664_signing_readiness.py"
   workflow_dispatch:
     inputs:
       expected_head:
@@ -19,13 +25,13 @@ permissions:
 
 jobs:
   b112-contract:
-    name: B-112 verifier and cache-order mutations
+    name: B-112 and Linux + Windows release inventory contract
     if: >-
       github.repository_id == '1232040291' &&
       (github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_dispatch' && inputs.expected_head == github.sha))
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -33,13 +39,69 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Bind the gate to the exact candidate head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || inputs.expected_head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_HEAD}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${EXPECTED_HEAD}"
+
+      - name: Verify DCO and whitespace on the pull request
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "${BASE_SHA}" "${HEAD_SHA}"
+          git diff --check "${BASE_SHA}...${HEAD_SHA}"
+          while IFS= read -r sha; do
+            parents="$(git show -s --format='%P' "${sha}" | wc -w | tr -d ' ')"
+            if [ "${parents}" -gt 1 ]; then continue; fi
+            signoff="$(git show -s --format='%(trailers:key=Signed-off-by,valueonly)' "${sha}")"
+            author_email="$(git show -s --format='%ae' "${sha}")"
+            if [ -z "${signoff}" ] || ! grep -Fq "<${author_email}>" <<<"${signoff}"; then
+              echo "::error::commit ${sha} lacks a matching Signed-off-by trailer" >&2
+              exit 1
+            fi
+          done < <(git rev-list "${BASE_SHA}..${HEAD_SHA}")
 
       - name: Install Python contract dependencies
         run: python3 -m pip install --requirement requirements-ci.txt
 
-      - name: Verify the B-112 release contract and self-mutations
-        run: python3 scripts/verify_b112_release_root_cause.py --root .
+      - name: Run focused B-112, inventory, and readiness contracts
+        run: |
+          python3 scripts/verify_b112_release_root_cause.py --root .
+          python3 -m pytest -q tests/test_cli_release_b112_behavior.py
+          python3 -m pytest -q tests/test_cli_release_inventory_scope.py
+          python3 -m pytest -q tests/test_i1664_signing_readiness.py
 
-      - name: Run focused B-112 mutation tests
-        run: python3 -m pytest -q tests/test_cli_release_b112_behavior.py
+      - name: Check secrets-matrix drift
+        run: python3 scripts/validate_secrets_matrix.py
+
+      - name: Install checksum-pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
+
+      - name: Lint the Linux + Windows release workflows and this gate
+        run: >-
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml
+          .github/workflows/release-cli.yml
+          .github/workflows/sign-linux.yml
+          .github/workflows/issue-1665-b112-hosted-contract.yml

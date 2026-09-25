@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.cli_release_manifest import FINAL_INVENTORY
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REKOR = ROOT / "scripts/verify_cli_rekor_bundle.py"
@@ -106,6 +108,25 @@ def test_b112_root_cause_guard_rejects_release_mutations(tmp_path: Path, label: 
     release.write_text(mutate(release.read_text(encoding="utf-8")), encoding="utf-8")
     result = _run_b112_fixture(tmp_path)
     assert result.returncode != 0, label
+
+
+def test_b112_root_cause_guard_rejects_reintroduced_darwin_matrix_target(tmp_path: Path):
+    release, _cosign, _backlog = _b112_fixture(tmp_path)
+    text = release.read_text(encoding="utf-8")
+    anchor = "            runner: windows-2022\n"
+    assert text.count(anchor) == 1
+    release.write_text(text.replace(
+        anchor,
+        anchor + (
+            "          - triple: x86_64-apple-darwin\n"
+            "            name: corelink-darwin-x86_64\n"
+            "            signer_name: corelink-darwin-x86_64\n"
+            "            ext: \"\"\n"
+            "            runner: ubuntu-24.04\n"
+        ), 1,
+    ), encoding="utf-8")
+    result = _run_b112_fixture(tmp_path)
+    assert result.returncode != 0
 
 
 def test_b112_root_cause_guard_rejects_cosign_and_evidence_mutations(tmp_path: Path):
@@ -424,33 +445,39 @@ def _inventory_fixture(tmp_path: Path, *, replacement: bool = False,
                        duplicate_subject: bool = False) -> tuple[Path, Path, Path, Path, str]:
     directory = tmp_path / "assets"
     directory.mkdir()
-    asset = directory / "corelink-linux-x86_64"
-    asset.write_bytes(b"replacement" if replacement else b"signed-bytes")
-    digest = hashlib.sha256(b"signed-bytes").hexdigest()
-    sidecar = directory / f"{asset.name}.sha256"
-    sidecar.write_text(f"{digest}  {asset.name}\n", encoding="utf-8")
-    sidecar_digest = hashlib.sha256(sidecar.read_bytes()).hexdigest()
+    payload_names = FINAL_INVENTORY - {name for name in FINAL_INVENTORY if name.endswith(".sha256")} - {"checksums.txt"}
+    for name in payload_names:
+        (directory / name).write_bytes(name.encode())
+    for name in sorted(payload_names):
+        content_digest = hashlib.sha256((directory / name).read_bytes()).hexdigest()
+        sidecar_name = f"{name}.sha256"
+        (directory / sidecar_name).write_text(f"{content_digest}  {name}\n", encoding="utf-8")
+    checksum_lines = [
+        (directory / sidecar).read_text(encoding="utf-8").rstrip("\n")
+        for sidecar in sorted(f"{name}.sha256" for name in payload_names)
+    ]
     checksums = directory / "checksums.txt"
-    checksums.write_text(f"{digest}  {asset.name}\n", encoding="utf-8")
-    checksums_digest = hashlib.sha256(checksums.read_bytes()).hexdigest()
+    checksums.write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
     manifest = directory / "release-manifest.json"
-    manifest.write_text(json.dumps({"version": 1, "tag": TAG, "source_sha": SOURCE,
-                                    "artifacts": [
-                                        {"name": asset.name, "sha256": digest},
-                                        {"name": sidecar.name, "sha256": sidecar_digest},
-                                        {"name": checksums.name, "sha256": checksums_digest},
-                                    ]}), encoding="utf-8")
+    artifact_digests = {name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in FINAL_INVENTORY}
+    manifest.write_text(json.dumps({"version": 2, "tag": TAG, "source_sha": SOURCE,
+                                    "staging_manifest_sha256": "a" * 64,
+                                    "allowed_transformations": ["replace-platform-signed-artifact", "add-linux-detached-signature-asc"],
+                                    "artifacts": [{"name": name, "sha256": artifact_digests[name]} for name in sorted(FINAL_INVENTORY)]}), encoding="utf-8")
+    if replacement:
+        (directory / "corelink-linux-x86_64").write_bytes(b"replacement")
     actual_manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest()
     statement = {
         "predicateType": "https://slsa.dev/provenance/v1",
         "subject": [{"name": name, "digest": {"sha256": hashlib.sha256((directory / name).read_bytes()).hexdigest()}}
-                    for name in (asset.name, sidecar.name, checksums.name)],
+                    for name in sorted(FINAL_INVENTORY)],
         "predicate": {"buildDefinition": {"runDetails": {"builder": {
             "id": f"https://github.com/{REPOSITORY}/.github/workflows/release-slsa3.yml@refs/tags/{TAG}"
         }}}},
     }
     if duplicate_subject:
-        statement["subject"].append({"name": asset.name, "digest": {"sha256": digest}})
+        duplicate = statement["subject"][0]
+        statement["subject"].append({"name": duplicate["name"], "digest": dict(duplicate["digest"])})
     provenance = directory / "provenance.intoto.jsonl"
     provenance.write_text(json.dumps(statement) + "\n", encoding="utf-8")
     bundle = {
@@ -463,7 +490,7 @@ def _inventory_fixture(tmp_path: Path, *, replacement: bool = False,
     )
     api = tmp_path / "api.json"
     api.write_text(json.dumps({"assets": [{"name": name} for name in (
-        asset.name, sidecar.name, checksums.name, "release-manifest.json", "provenance.intoto.jsonl",
+        *sorted(FINAL_INVENTORY), "release-manifest.json", "provenance.intoto.jsonl",
         "provenance.intoto.jsonl.bundle")]}), encoding="utf-8")
     return api, directory, manifest, provenance, actual_manifest_sha
 
