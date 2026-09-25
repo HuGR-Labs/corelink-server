@@ -7,12 +7,12 @@
 use std::env;
 
 use corelink_audit_chain::{
-    ChainEpoch, EpochChainState, KEYED_ALGORITHM_ID, LinkKeyring, SEALED_LINE_SCHEMA_V2,
-    SealedArchiveLine, key_matches_commitment, link_for_epoch, link_key_commitment,
-    split_verifying_prefix_for_epoch,
+    key_matches_commitment, link_for_epoch, link_key_commitment, split_verifying_prefix_for_epoch,
+    ChainEpoch, EpochChainState, LinkKeyring, SealedArchiveLine, KEYED_ALGORITHM_ID,
+    SEALED_LINE_SCHEMA_V2,
 };
 use ed25519_dalek::{Signer, SigningKey, Verifier};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use zeroize::Zeroizing;
 
 const E1_EPOCH: u64 = 1;
@@ -61,11 +61,9 @@ fn approval_receipt() -> Value {
         .as_array()
         .expect("approver identities are recorded");
     assert!(!dispatcher.is_empty() && !approvers.is_empty());
-    assert!(
-        approvers
-            .iter()
-            .all(|approver| approver.as_str().is_some_and(|login| login != dispatcher))
-    );
+    assert!(approvers
+        .iter()
+        .all(|approver| approver.as_str().is_some_and(|login| login != dispatcher)));
     assert_eq!(receipt["distinct_people"], true);
     receipt
 }
@@ -88,23 +86,17 @@ fn rotation_retains_history_and_failed_successor_rolls_back_to_e1() {
     assert_ne!(e1_verifying_key.to_bytes(), e2_verifying_key.to_bytes());
     let historic_message = b"b054 synthetic historic head";
     let historic_signature = e1_signer.sign(historic_message);
-    assert!(
-        e1_verifying_key
-            .verify(historic_message, &historic_signature)
-            .is_ok()
-    );
-    assert!(
-        e2_verifying_key
-            .verify(historic_message, &historic_signature)
-            .is_err()
-    );
+    assert!(e1_verifying_key
+        .verify(historic_message, &historic_signature)
+        .is_ok());
+    assert!(e2_verifying_key
+        .verify(historic_message, &historic_signature)
+        .is_err());
     let successor_message = b"b054 synthetic active e2 head";
     let successor_signature = e2_signer.sign(successor_message);
-    assert!(
-        e2_verifying_key
-            .verify(successor_message, &successor_signature)
-            .is_ok()
-    );
+    assert!(e2_verifying_key
+        .verify(successor_message, &successor_signature)
+        .is_ok());
 
     // The versioned in-memory keyring owns zeroizing LinkKey values and only
     // exposes commitments. No key bytes enter the durable archive fixture.
@@ -295,12 +287,10 @@ fn rotation_retains_history_and_failed_successor_rolls_back_to_e1() {
         e1_link_hex.as_bytes(),
         e2_link_hex.as_bytes(),
     ] {
-        assert!(
-            !receipt_text
-                .as_bytes()
-                .windows(secret.len())
-                .any(|part| part == secret)
-        );
+        assert!(!receipt_text
+            .as_bytes()
+            .windows(secret.len())
+            .any(|part| part == secret));
     }
     let receipt_path = env::var("B054_RECEIPT_PATH")
         .expect("workflow supplies a runner-temporary receipt location");
