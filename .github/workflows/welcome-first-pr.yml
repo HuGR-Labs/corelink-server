@@ -41,22 +41,19 @@ permissions:
 concurrency:
   group: welcome-${{ github.event.issue.number || github.event.pull_request.number }}
   # A superseded greeting run has nothing to protect — the newer run posts the
-  # same comment. Cancelling frees the self-hosted mac immediately.
+  # same comment.
   cancel-in-progress: true
 
 jobs:
   welcome:
     name: Post welcome comment
-    # Native `gh` implementation (no container action), retained for first-time
-    # contributors on the zero-hosted Mac pool.
+    # Native `gh` implementation (no container action) for first-time contributors.
     #
     # This lane deliberately has no actor allowlist because its purpose is to
-    # greet first-time contributors. The Mac placement above is the boundary:
-    # public issue or fork-PR events cannot allocate an ephemeral microVM.
+    # greet first-time contributors. No PR code is checked out or executed.
     #
-    # The Mac watcher handles queued jobs in this separate pool; the timeout
-    # below bounds running work only.
-    runs-on: [self-hosted, mac, corelink-builder]
+    # The timeout bounds running work.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Greet first-time contributor
