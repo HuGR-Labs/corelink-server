@@ -1,0 +1,116 @@
+name: B-054 nonproduction key custody rotation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/b054-key-custody-drill.yml"
+      - "crates/corelink-audit-chain/tests/b054_custody_rotation.rs"
+      - "docs/operator/b054-key-custody-rotation.md"
+      - "scripts/verify_b054_custody_contract.py"
+      - "scripts/test_b054_custody_contract.py"
+      - "scripts/verify_b054_custody_approval.py"
+      - "scripts/verify_b054_custody_redaction.py"
+      - "rust-toolchain.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b054-key-custody-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  static-contract:
+    name: B-054 custody contract and compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source without a write token
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify protected custody and redaction boundaries
+        run: python3 scripts/verify_b054_custody_contract.py
+
+      - name: Exercise adversarial custody contract mutations
+        run: python3 scripts/test_b054_custody_contract.py
+
+      - name: Assert the workspace-pinned Rust toolchain
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+
+      - name: Compile the secret-gated drill without secret access
+        run: cargo test --locked -p corelink-audit-chain --test b054_custody_rotation --no-run
+
+  protected-rotation:
+    name: Reviewed nonproduction rotation and retention drill
+    needs: static-contract
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    environment: b054-key-custody-drill
+    permissions:
+      actions: read
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact protected main tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Assert the workspace-pinned Rust toolchain
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+
+      - name: Build the test binary before providing protected values
+        run: cargo test --locked -p corelink-audit-chain --test b054_custody_rotation --no-run
+
+      - name: Record the separate dispatcher and environment approver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          B054_APPROVAL_RECEIPT_PATH: ${{ runner.temp }}/b054-custody-approval.json
+        run: python3 scripts/verify_b054_custody_approval.py
+
+      - name: Run synthetic rotation and scan before publishing output
+        shell: bash
+        env:
+          B054_E1_SIGNING_SEED_HEX: ${{ secrets.B054_E1_SIGNING_SEED_HEX }}
+          B054_E1_LINK_KEY_HEX: ${{ secrets.B054_E1_LINK_KEY_HEX }}
+          B054_E2_SIGNING_SEED_HEX: ${{ secrets.B054_E2_SIGNING_SEED_HEX }}
+          B054_E2_LINK_KEY_HEX: ${{ secrets.B054_E2_LINK_KEY_HEX }}
+          B054_APPROVAL_RECEIPT_PATH: ${{ runner.temp }}/b054-custody-approval.json
+          B054_RECEIPT_PATH: ${{ runner.temp }}/b054-custody-receipt.json
+        run: |
+          set -euo pipefail
+          set +x
+          transcript="$RUNNER_TEMP/b054-custody-transcript.log"
+          if ! cargo test --locked -p corelink-audit-chain --test b054_custody_rotation -- --ignored --nocapture >"$transcript" 2>&1; then
+            echo "::error::B-054 protected custody exercise failed; output withheld."
+            exit 1
+          fi
+          python3 scripts/verify_b054_custody_redaction.py "$transcript" "$B054_RECEIPT_PATH"
+          echo "B-054 nonproduction rotation, retention, rollback, and redaction checks passed."
+          cat "$B054_RECEIPT_PATH" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Retain redacted rotation receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b054-custody-rotation-${{ github.run_id }}
+          path: ${{ runner.temp }}/b054-custody-receipt.json
+          if-no-files-found: error
+          retention-days: 90
