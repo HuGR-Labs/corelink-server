@@ -671,9 +671,20 @@ def assert_backlog_verify_boundary(
     trusted = jobs["trusted_semantic"]
     test.assertEqual(trusted.get("if"), "github.event_name == 'push' || github.event_name == 'schedule'")
     trusted_block = raw[verify_block.end() :]
-    test.assertRegex(
+    permissions_block = re.search(
+        r"(?ms)^    permissions:\n(?P<entries>(?:^      [^\n]+\n?)*)",
         trusted_block,
-        r"(?ms)^  trusted_semantic:.*?^    permissions:\n      contents: read\n      vulnerability-alerts: read$",
+    )
+    test.assertIsNotNone(permissions_block, "trusted semantic job must declare permissions")
+    permissions = {}
+    for entry in permissions_block.group("entries").splitlines():
+        permission, value = _mapping_entry(entry.strip())
+        test.assertNotIn(permission, permissions, "duplicate trusted semantic permission")
+        permissions[permission] = _scalar(value)
+    test.assertEqual(
+        permissions,
+        {"contents": "read", "vulnerability-alerts": "read"},
+        "trusted semantic job must have the complete least-privilege permission map",
     )
     test.assertIn("GH_TOKEN: ${{ github.token }}", trusted_block)
 
@@ -862,6 +873,16 @@ jobs:
             "GH_TOKEN: ${{ github.token }}", "GH_TOKEN: ${{ github.token }}", 1
         )
         assert_backlog_verify_boundary(self, workflow, trusted_token)
+        with self.assertRaises(AssertionError):
+            assert_backlog_verify_boundary(
+                self,
+                workflow,
+                raw.replace(
+                    "      vulnerability-alerts: read",
+                    "      vulnerability-alerts: read\n      issues: write",
+                    1,
+                ),
+            )
 
     def test_fabric_jobs_allow_only_trusted_associations(self) -> None:
         assert_labels_boundary(self, load_workflow("pr-labels.yml"))
