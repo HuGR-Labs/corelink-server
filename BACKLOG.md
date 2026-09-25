@@ -16032,8 +16032,8 @@ verify-means: |
   `duplicate_count=0`, testemunho SHA-256, proveniência sem valores brutos,
   `last_refreshed` dentro do max-age e hash/conteúdo do audit referenciado; não
   consulta API nem percorre histórico/paginação. O owner executa separadamente o
-  refresh externo autorizado para gerar ou atualizar o snapshot. Reconciliação
-  registrado em 2026-09-24T17:01:32Z: PR #2217 foi mergeado em `main` no commit
+  refresh externo autorizado para gerar ou atualizar o snapshot. Registro de
+  reconciliação em 2026-09-24T17:01:32Z: PR #2217 foi mergeado em `main` no commit
   `ac53279a5f88e7cdfb1f97a5f97085db1e0c4bf0`, concluindo a classificação
   repo-owned por ID `303501160` mais path `BuildFailed`. O readback do owner
   registrado nesse momento ainda marcava esse workflow como `deleted`; a janela
