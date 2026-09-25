@@ -132,7 +132,7 @@ class B029LoadGateTests(unittest.TestCase):
         contract = self.root / "workflow-contract"
         (contract / ".github/workflows").mkdir(parents=True, exist_ok=True)
         (contract / "scripts").mkdir(exist_ok=True)
-        (contract / "tests/load").mkdir(parents=True)
+        (contract / "tests/load").mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / "scripts/load-test-baseline-check.py", contract / "scripts")
         shutil.copy(ROOT / "scripts/sanitize_k6_summary.py", contract / "scripts")
         shutil.copy(ROOT / "scripts/validate_load_teardown_receipt.py", contract / "scripts")
@@ -574,8 +574,8 @@ class B029LoadGateTests(unittest.TestCase):
 
     def test_verifier_rejects_two_cold_comparator_mutants(self) -> None:
         contract = self.root / "contract"
-        (contract / ".github/workflows").mkdir(parents=True)
-        (contract / "tests/load").mkdir(parents=True)
+        (contract / ".github/workflows").mkdir(parents=True, exist_ok=True)
+        (contract / "tests/load").mkdir(parents=True, exist_ok=True)
         shutil.copy(
             ROOT / ".github/workflows/load-test-nightly.yml",
             contract / ".github/workflows/load-test-nightly.yml",
@@ -583,7 +583,7 @@ class B029LoadGateTests(unittest.TestCase):
         shutil.copy(ROOT / verifier.FOCUSED_PACK, contract / verifier.FOCUSED_PACK)
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
         self._copy_hostname_sources(contract)
-        (contract / "scripts").mkdir()
+        (contract / "scripts").mkdir(exist_ok=True)
         shutil.copy(ROOT / "scripts/sanitize_k6_summary.py", contract / "scripts")
 
         source = SCRIPT.read_text()
@@ -623,8 +623,8 @@ class B029LoadGateTests(unittest.TestCase):
 
     def test_verifier_rejects_unreachable_required_nodes(self) -> None:
         contract = self.root / "reachable-contract"
-        (contract / ".github/workflows").mkdir(parents=True)
-        (contract / "tests/load").mkdir(parents=True)
+        (contract / ".github/workflows").mkdir(parents=True, exist_ok=True)
+        (contract / "tests/load").mkdir(parents=True, exist_ok=True)
         shutil.copy(
             ROOT / ".github/workflows/load-test-nightly.yml",
             contract / ".github/workflows/load-test-nightly.yml",
@@ -632,7 +632,7 @@ class B029LoadGateTests(unittest.TestCase):
         shutil.copy(ROOT / verifier.FOCUSED_PACK, contract / verifier.FOCUSED_PACK)
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
         self._copy_hostname_sources(contract)
-        (contract / "scripts").mkdir()
+        (contract / "scripts").mkdir(exist_ok=True)
         shutil.copy(ROOT / "scripts/sanitize_k6_summary.py", contract / "scripts")
         source = SCRIPT.read_text()
 
