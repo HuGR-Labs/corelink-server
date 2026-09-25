@@ -32,7 +32,6 @@ function envWithDelivery(fetch: typeof globalThis.fetch): Env {
 function envWithProviderDeferred(fetch: typeof globalThis.fetch): Env {
   return { ENVIRONMENT: "staging", SYNTHETIC_DRILL_PROVIDER_MODE: "provider_deferred",
     SENTRY_RELEASE: "0123456789abcdef0123456789abcdef01234567",
-    SYNTHETIC_DRILL_WORKER_REVISION: "cf-scheduler-version-7",
     SCHEDULED_DRILL_DELIVERY: { fetch } } as Env;
 }
 
@@ -120,14 +119,14 @@ describe("scheduled drill delivery", () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
       terminal: true, outcome: "provider_deferred", receiver_result: "persisted_provider_deferred",
       drill_id: TEST_DRILL_ID, correlation_id: `PAT-CORRELATION-ID-001:${TEST_DRILL_ID}`,
-      scheduled_at_ms: TEST_SCHEDULED_AT_MS, worker_revision: "cf-scheduler-version-7",
+      scheduled_at_ms: TEST_SCHEDULED_AT_MS, worker_revision: "0123456789abcdef0123456789abcdef01234567",
       serving_sha: "0123456789abcdef0123456789abcdef01234567", receiver_worker_revision: "cf-receiver-version-9",
     }), { status: 200, headers: { "content-type": "application/json" } }));
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     await expect(workerHandler.scheduled!(controllerFor("0 14 * * 1"), envWithProviderDeferred(fetch), scheduledCtx())).resolves.toBeUndefined();
     const [, init] = fetch.mock.calls[0] ?? [];
     expect(JSON.parse(String((init as RequestInit).body)).synthetic_page).toMatchObject({ provider_mode: "provider_deferred",
-      worker_revision: "cf-scheduler-version-7", serving_sha: "0123456789abcdef0123456789abcdef01234567" });
+      worker_revision: "0123456789abcdef0123456789abcdef01234567", serving_sha: "0123456789abcdef0123456789abcdef01234567" });
     expect(info).toHaveBeenCalledWith("[scheduled_drill] completed drill=synthetic_page result=provider_deferred_terminal");
   });
 

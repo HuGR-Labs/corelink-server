@@ -23,7 +23,7 @@ def main() -> None:
         ("SP-1785844800000", 1_785_844_800_000, "PAT-CORRELATION-ID-001:SP-1785844800000"),
     )
     db.executescript((ROOT / "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql").read_text())
-    provider_migration = ROOT / "migrations/d1/0146_b072_provider_deferred_receipts.sql"
+    provider_migration = ROOT / "migrations/d1/0150_b072_provider_deferred_receipts.sql"
     db.executescript(provider_migration.read_text())
 
     # The migration is additive: the legacy table and every copied row remain,

@@ -209,9 +209,6 @@ ALLOWLIST_REGEX = re.compile(
     r"|SLA_OBSERVATIONS_ENABLED$"
     # Synthetic drill activation is a fail-closed boolean deployment control.
     r"|SYNTHETIC_DRILL_ENABLED$"
-    # The scheduler revision is non-secret provenance attached to deferred
-    # terminal receipts; PagerDuty delivery credentials stay in the matrix.
-    r"|SYNTHETIC_DRILL_WORKER_REVISION$"
     # BYOK revocation scheduling is an explicit fail-closed boolean deployment
     # control; KMS credentials remain separate matrix entries.
     r"|CORELINK_BYOK_REVOCATION_SCHEDULER_ENABLED$"

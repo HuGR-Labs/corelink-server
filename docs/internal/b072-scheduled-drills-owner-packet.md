@@ -8,7 +8,7 @@ delivery only after PagerDuty accepts the canonical dedup key and accepts
 signed acknowledgement/escalation webhooks only after that durable receipt.
 Explicit `provider_deferred` mode requires no PagerDuty credentials and records
 a terminal D1 receipt bound to the scheduled execution, the configured
-`SYNTHETIC_DRILL_WORKER_REVISION`, `SENTRY_RELEASE` source SHA, receiver
+`SENTRY_RELEASE` scheduler revision/source SHA, receiver
 version metadata, and receiver result. It makes no claim about
 alert delivery or human reachability. Repository contracts still do not prove
 that the receiver was deployed or that a live D1 row exists.

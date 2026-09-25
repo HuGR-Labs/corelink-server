@@ -10,7 +10,7 @@ on:
       - "worker/src/index_env.ts"
       - "worker/src/index_schedule.ts"
       - "worker/tests/scheduled_drills.test.ts"
-      - "migrations/d1/0146_b072_provider_deferred_receipts.sql"
+      - "migrations/d1/0150_b072_provider_deferred_receipts.sql"
       - "scripts/test_b072_migration.py"
       - "scripts/test_b072_receiver_mutations.py"
       - "scripts/test_b072_terminal_race.py"

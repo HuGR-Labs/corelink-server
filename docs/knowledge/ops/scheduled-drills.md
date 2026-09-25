@@ -51,8 +51,8 @@ separate from `provider_mode`. The default provider mode remains `pagerduty`
 and retains the configured Events API plus signed webhook lifecycle. An
 explicitly configured `provider_deferred` mode requires no PagerDuty
 credentials and records a correlated terminal D1 receipt with the configured
-`SYNTHETIC_DRILL_WORKER_REVISION`, the 40-character source SHA in
-`SENTRY_RELEASE`, receiver version metadata, and persistence result. Missing
+the configured `SENTRY_RELEASE` (used as both scheduler revision and its
+40-character serving SHA), receiver version metadata, and persistence result. Missing
 provenance fails closed. That
 receipt makes no claim that an alert was delivered or a person was reached; it
 also excludes the row from the later PagerDuty delivery sweep. See

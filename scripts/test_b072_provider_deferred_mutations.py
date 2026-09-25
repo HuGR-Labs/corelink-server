@@ -14,7 +14,7 @@ def main() -> None:
         "contract": (ROOT / "apps/synthetic-pager-worker/src/contract.ts").read_text(),
         "receiver": (ROOT / "apps/synthetic-pager-worker/src/index.ts").read_text(),
         "scheduler": (ROOT / "worker/src/index_schedule.ts").read_text(),
-        "migration": (ROOT / "migrations/d1/0146_b072_provider_deferred_receipts.sql").read_text(),
+        "migration": (ROOT / "migrations/d1/0150_b072_provider_deferred_receipts.sql").read_text(),
         "config": (ROOT / "apps/synthetic-pager-worker/wrangler.toml").read_text(),
     }
     mutations = {

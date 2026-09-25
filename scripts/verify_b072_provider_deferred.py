@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "apps/synthetic-pager-worker/src/contract.ts"
 RECEIVER = ROOT / "apps/synthetic-pager-worker/src/index.ts"
 SCHEDULER = ROOT / "worker/src/index_schedule.ts"
-MIGRATION = ROOT / "migrations/d1/0146_b072_provider_deferred_receipts.sql"
+MIGRATION = ROOT / "migrations/d1/0150_b072_provider_deferred_receipts.sql"
 RECEIVER_CONFIG = ROOT / "apps/synthetic-pager-worker/wrangler.toml"
 
 REQUIRED = {
@@ -16,7 +16,7 @@ REQUIRED = {
     "credentialless deferred validation": 'if (env.SYNTHETIC_DRILL_PROVIDER_MODE === "provider_deferred") return null;',
     "closed provider-mode values": '["pagerduty", "provider_deferred"]',
     "SHA validation": '!/^[0-9a-f]{40}$/i.test(page.serving_sha)',
-    "deferred provenance binding": "worker_revision: env.SYNTHETIC_DRILL_WORKER_REVISION ?? \"\"",
+    "deferred provenance binding": "worker_revision: env.SENTRY_RELEASE ?? \"\"",
     "receiver revision fail-closed": "receiverRevision === undefined || receiverRevision.length < 1 || receiverRevision.length > 200",
     "persist before terminal": "INSERT OR IGNORE INTO synthetic_page_provider_receipts",
     "audit on durable receipt": "INSERT OR IGNORE INTO synthetic_page_provider_audit_events",
