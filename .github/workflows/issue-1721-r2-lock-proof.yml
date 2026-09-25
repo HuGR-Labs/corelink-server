@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/issue-1721-r2-lock-proof.yml'
       - 'scripts/probe_i1721_r2_lock.sh'
+      - 'scripts/validate_i1721_r2_dispatch.sh'
       - 'tests/test_i1721_r2_lock_probe.py'
   workflow_dispatch:
     inputs:
@@ -50,6 +51,12 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout exact dispatched main commit without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          token: ''
+          persist-credentials: false
       - name: Fail closed before staging environment access
         env:
           CONFIRM: ${{ inputs.confirm }}
