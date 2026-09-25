@@ -125,6 +125,17 @@ RUNNER = re.compile(r"^    runs-on:\s*(.*?)\s*(?:#.*)?$")
 BASE_IDENTICAL_JOBS = {
     "bundle-2368": (".github/workflows/nightly.yml", "mutants-workspace"),
 }
+BASE_BOUNDARY_INVENTORIES = {"bundle-2368"}
+WORKFLOW_BOUNDARY_SECTIONS = ("on", "permissions", "concurrency")
+JOB_BOUNDARY_FIELDS = (
+    "if",
+    "needs",
+    "timeout-minutes",
+    "strategy",
+    "permissions",
+    "environment",
+    "concurrency",
+)
 
 
 def fail(message: str) -> None:
@@ -176,6 +187,54 @@ def exact_job_block(root: Path, relative: str, job_name: str) -> bytes:
     return b"".join(lines[start:end])
 
 
+def exact_workflow_section(root: Path, relative: str, section: str) -> bytes | None:
+    """Return a top-level YAML section, retaining every original byte/newline."""
+    content = (root / relative).read_bytes()
+    lines = content.splitlines(keepends=True)
+    start = None
+    end = len(lines)
+    for index, line in enumerate(lines):
+        if re.match(rb"^[A-Za-z0-9_-]+:\s*(?:#.*)?(?:\r?\n)?$", line):
+            if start is not None:
+                end = index
+                break
+            if line.split(b":", 1)[0].decode("ascii") == section:
+                start = index
+    return b"".join(lines[start:end]) if start is not None else None
+
+
+def exact_job_field(block: bytes, relative: str, job_name: str, field: str) -> bytes | None:
+    """Return a job-level YAML field, including any nested lines."""
+    lines = block.splitlines(keepends=True)
+    start = None
+    end = len(lines)
+    field_re = re.compile(rb"^    " + re.escape(field.encode("ascii")) + rb":(?:\s|$)")
+    for index, line in enumerate(lines):
+        if re.match(rb"^    [A-Za-z0-9_-]+:", line):
+            if start is not None:
+                end = index
+                break
+            if field_re.match(line):
+                start = index
+    return b"".join(lines[start:end]) if start is not None else None
+
+
+def validate_protected_boundaries(root: Path, base_root: Path, relative: str, jobs: set[str]) -> None:
+    for section in WORKFLOW_BOUNDARY_SECTIONS:
+        candidate = exact_workflow_section(root, relative, section)
+        target_base = exact_workflow_section(base_root, relative, section)
+        if candidate != target_base:
+            fail(f"{relative}:{section}: workflow protection boundary differs from target base")
+    for job_name in jobs:
+        candidate = exact_job_block(root, relative, job_name)
+        target_base = exact_job_block(base_root, relative, job_name)
+        for field in JOB_BOUNDARY_FIELDS:
+            if exact_job_field(candidate, relative, job_name, field) != exact_job_field(
+                target_base, relative, job_name, field
+            ):
+                fail(f"{relative}:{job_name}:{field}: protected job boundary differs from target base")
+
+
 def expected_exempt_block(base_block: bytes, relative: str, job_name: str) -> bytes:
     """Allow the supported hosted runner pin and credentialless checkout hardening."""
     checkout_lines = [
@@ -219,6 +278,8 @@ def validate(root: Path, inventory: str, base_root: Path | None = None) -> None:
         fail(f"unknown inventory {inventory!r}")
         raise AssertionError from error
     identical_job = BASE_IDENTICAL_JOBS.get(inventory)
+    if inventory in BASE_BOUNDARY_INVENTORIES and base_root is None:
+        fail(f"{inventory}: exact target-base checkout is required for protected-boundary comparison")
     if identical_job:
         if base_root is None:
             fail(f"{inventory}: exact target-base checkout is required")
@@ -238,6 +299,8 @@ def validate(root: Path, inventory: str, base_root: Path | None = None) -> None:
                 f"{relative}: closed job inventory drifted; "
                 f"expected {sorted(expected_jobs)}, got {sorted(jobs)}"
             )
+        if inventory in BASE_BOUNDARY_INVENTORIES:
+            validate_protected_boundaries(root, base_root, relative, expected_jobs)
         for job, lines in jobs.items():
             if identical_job == (relative, job):
                 continue
@@ -264,7 +327,8 @@ def fixture(root: Path, inventory: str) -> None:
     for relative, jobs in INVENTORIES[inventory].items():
         body = ["name: fixture", "on: pull_request", "permissions:", "  contents: read", "jobs:"]
         for job in sorted(jobs):
-            body.extend((f"  {job}:", "    name: fixture job", "    if: always()",
+            body.extend((f"  {job}:", "    name: fixture job", "    if: always()", "    timeout-minutes: 5",
+                         "    permissions:", "      contents: read",
                          "    runs-on: ubuntu-24.04", "    steps:",
                          "      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
                          "        with:", "          persist-credentials: false"))
@@ -353,6 +417,25 @@ def self_test() -> None:
             else:
                 fail("uncontracted hosted job escaped the closed inventory")
             target.write_text(original, encoding="utf-8")
+            if inventory in BASE_BOUNDARY_INVENTORIES:
+                boundary_path = root / ".github/workflows/mutation-nightly.yml"
+                original = boundary_path.read_bytes()
+                for old, new, label in (
+                    (b"permissions:\n  contents: read\n", b"permissions:\n  contents: write\n", "workflow permissions"),
+                    (b"    if: always()", b"    if: never()", "protected-ref condition"),
+                    (b"      contents: read", b"      contents: write", "job permissions"),
+                    (b"    timeout-minutes: 5", b"    timeout-minutes: 6", "job timeout"),
+                ):
+                    if old not in original:
+                        fail(f"fixture lost protected-boundary {label} mutation anchor")
+                    boundary_path.write_bytes(original.replace(old, new, 1))
+                    try:
+                        validate(root, inventory, base_root)
+                    except ContractError:
+                        pass
+                    else:
+                        fail(f"protected-boundary {label} mutation escaped the contract")
+                    boundary_path.write_bytes(original)
 
 
 def main() -> int:
@@ -372,7 +455,7 @@ def main() -> int:
         elif args.root and args.inventory and args.expected_head:
             if (args.base_root is None) != (args.expected_base is None):
                 fail("--base-root and --expected-base must be passed together")
-            if args.inventory in BASE_IDENTICAL_JOBS and args.base_root is None:
+            if args.inventory in BASE_BOUNDARY_INVENTORIES and args.base_root is None:
                 fail(f"{args.inventory} requires --base-root and --expected-base")
             if args.expected_base:
                 assert_exact_head(args.base_root, args.expected_base)
