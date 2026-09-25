@@ -36,11 +36,11 @@ expect_red() {
 expect_green baseline "${ROOT}"
 
 copy_fixture "${TMP}/route"
-sed -i.bak 's/runs-on: corelink/runs-on: ubuntu-latest/' "${TMP}/route/.github/workflows/smoke-install.yml"
+sed -i.bak 's/runs-on: ubuntu-24.04/runs-on: corelink/' "${TMP}/route/.github/workflows/smoke-install.yml"
 expect_red route "${TMP}/route"
 
 copy_fixture "${TMP}/provenance"
-sed -i.bak 's/I1672_FLEET_LABEL: corelink/I1672_FLEET_LABEL: hosted/' "${TMP}/provenance/.github/workflows/smoke-install.yml"
+sed -i.bak 's/I1672_FLEET_LABEL: github-hosted/I1672_FLEET_LABEL: corelink/' "${TMP}/provenance/.github/workflows/smoke-install.yml"
 expect_red provenance "${TMP}/provenance"
 
 copy_fixture "${TMP}/trigger"

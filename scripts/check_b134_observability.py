@@ -2,9 +2,9 @@
 """Fail-closed static contract for the B-134 Docker-shim experiment.
 
 This checker deliberately does not manufacture runtime evidence. It proves
-that the credential-free ``smoke-install`` observation reaches the
-``corelink`` fleet, records backend and runner provenance, runs the structured
-helper, and keeps the evidence ledger ``UNMEASURED`` until a real run is
+that the credential-free ``smoke-install`` observation runs on GitHub-hosted
+Ubuntu, records hosted runner and backend provenance, runs the structured
+helper, and keeps the evidence ledger ``UNMEASURED`` until a real fleet run is
 recorded. The helper observes a local fixture; it does not claim the separate
 image build, installer, doctor, publish, or deploy acceptance boundary.
 """
