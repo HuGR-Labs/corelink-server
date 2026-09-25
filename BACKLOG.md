@@ -8461,14 +8461,31 @@ the following reasons:
    independent archive proof remain operational blockers and are not claimed as
    shipped.
 
-Also record (separate, ops): `AUDIT_CHAIN_SIGNING_SEED_HEX` is committed in
-plaintext in `wrangler.toml` (prod vars, ~line 295). A repo reader holds the head-
-signing seed, which weakens CF-6's insider guarantee. It should be moved to a
-write-only Cloudflare secret and rotated. Tracked here for owner/ops.
+The former plaintext-seed claim is retired: current `wrangler.toml` has no
+`AUDIT_CHAIN_SIGNING_SEED_HEX` assignment. The remaining signing and link-key
+custody evidence is external and is tracked by #1794; no secret value, provider
+state, or production configuration was read or changed for this record.
 
-Relates to [B-009] and [B-046] (both R2 Object-Lock storage-immutability, platform-
-blocked) and the `audit-chain` OKF concept (which honestly documents the un-keyed
-per-link + signed head today).
+#### B-054 dependency ledger
+
+The repository implementation and fixture controls are merged, but they are
+readiness evidence only. B-054 remains `parked` until every child supplies its
+redacted, independently reviewable, target-bound external evidence:
+
+| Child | Current state | Exact external gate |
+| --- | --- | --- |
+| #1792 — disposable E0 to E1 workerd | OPEN; the merged fixture exercises bootstrap, persisted restart/resume, and fail-closed tamper cases with in-process D1/witness and deterministic keys. | An approved non-production target must provide full legacy-prefix verification, independently witnessed signed E0 bootstrap and E0 to E1 transition, restart readback of external witness/head/ledger/historical key, archive readback, and non-zero mutation/deletion/replay/reorder receipts. |
+| #1793 — independent audit-head witness | OPEN; repository wire checks and fixtures are readiness only. | A Security-owned account, domain, and Durable Object distinct from CoreLink production must run exact approved `main`, with authenticated append/idempotency/stale/divergent/latest-state receipts, independent signature verification, and unavailable-witness fail-closed evidence. |
+| #1794 — signing/link-key custody and rotation | OPEN; source guards do not establish custody. | Separately approved custodians must complete write-only provisioning and forward rotation, historic-key retention and malformed/missing-history `INDETERMINATE` probes, revocation/recovery, secret-absence scans, and immutable audit linkage without exposing keys. |
+| #1795 — immutable archive / B-046 | OPEN / INDETERMINATE; no approved provider target or Object-Lock receipt exists. | One approved target must supply data-and-manifest conditional create, exact-byte readback, listing/fetch, overwrite/delete denial, retention, and loss observations, then reconcile the accepted receipts with B-046/#1877. |
+| #1796 — two-person epoch administration | OPEN; route guards and distinct credential bytes do not prove separate people. | The identity/access owner must retain an access review mapping distinct eligible SRE executor and Security approver custodians with owner and expiry/review date; the protected runtime owner must retain a redacted approved E0/E1 authorization receipt bound to immutable audit/transaction evidence. |
+
+The canonical state packet is
+`evidence/owner-actions/B-054/keyed-audit-epoch-rollout.json`: it remains
+`FIXTURE_READINESS_ONLY`, with E0 `NOT_EXECUTED`, E1 `BLOCKED`, witness and
+rotation `BLOCKED`, archive `NOT_EXECUTED`, and the rollback decision to preserve
+E0. Missing, unauthenticated, partial, or unknown-version evidence stays fail
+closed. Relates to [B-009] and [B-046] and the `audit-chain` OKF concept.
 
 ```backlog
 id: B-054
@@ -8488,7 +8505,7 @@ verify-means: |
   verification proofs are provisioned. Missing key/witness or unknown version
   must remain fail-closed; this gate is not evidence that production rollout is
   complete.
-last-verified: 2026-09-05
+last-verified: 2026-09-25
 ```
 
 ### B-055 — edge-served findMissingBlobs SLI emission (resolved)
