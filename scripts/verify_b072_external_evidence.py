@@ -27,10 +27,11 @@ REQUIRED_FIELDS = {
     "receiver_run",
     "pagerduty_incident",
     "d1_row",
-    "acknowledged_at",
-    "escalated_at",
+    "terminal_outcome",
+    "terminal_at",
     "operator",
 }
+TERMINAL_OUTCOMES = {"acked", "escalated"}
 EXPECTED_CRON = "0 14 * * 1"
 CORRELATION_RE = re.compile(r"^PAT-CORRELATION-ID-001:SP-[0-9]{13}$")
 SECRET_RE = re.compile(
@@ -70,17 +71,21 @@ def verify(path: Path) -> int:
         return fail("missing required fields: " + ", ".join(missing))
     if artifact.get("schema_version") != 1:
         return fail("schema_version must be 1")
+    if artifact.get("terminal_outcome") not in TERMINAL_OUTCOMES:
+        return fail("terminal_outcome must be 'acked' or 'escalated'")
     if artifact.get("cron") != EXPECTED_CRON:
         return fail(f"cron must be {EXPECTED_CRON!r}")
     if not isinstance(artifact.get("correlation_id"), str) or not CORRELATION_RE.fullmatch(artifact["correlation_id"]):
         return fail("correlation_id must use the canonical scheduled-time format")
 
-    for field in ("captured_at", "acknowledged_at", "escalated_at"):
+    for field in ("captured_at", "terminal_at"):
         error = utc_timestamp(artifact[field], field)
         if error:
             return fail(error)
-    if artifact["acknowledged_at"] > artifact["escalated_at"]:
-        return fail("acknowledged_at must not be later than escalated_at")
+    terminal_at = datetime.fromisoformat(artifact["terminal_at"][:-1] + "+00:00")
+    captured_at = datetime.fromisoformat(artifact["captured_at"][:-1] + "+00:00")
+    if terminal_at > captured_at:
+        return fail("terminal_at must not be later than captured_at")
 
     for field in ("receiver_run", "pagerduty_incident", "d1_row"):
         value = artifact[field]
@@ -95,7 +100,7 @@ def verify(path: Path) -> int:
     serialized = json.dumps(artifact, ensure_ascii=False)
     if SECRET_RE.search(serialized):
         return fail("artifact contains a credential-like field or value")
-    print("B-072 EVIDENCE PASS: redacted cron-to-receiver-PagerDuty-D1 acknowledgement/escalation artifact is admissible")
+    print("B-072 EVIDENCE PASS: redacted cron-to-receiver-PagerDuty-D1 terminal-outcome artifact is admissible")
     return 0
 
 
