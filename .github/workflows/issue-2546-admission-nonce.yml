@@ -6,9 +6,16 @@ on:
       - main
     paths:
       - .github/workflows/issue-2546-admission-nonce.yml
+      - Cargo.lock
+      - Cargo.toml
+      - crates/corelink-container/Cargo.toml
+      - crates/corelink-container/src/storage/d1_http.rs
       - crates/corelink-container/src/storage.rs
       - crates/corelink-container/src/storage/staging_load_test_admission.rs
-      - migrations/d1/0148_staging_load_test_admission_nonce.sql
+      - crates/corelink-container/src/storage/staging_load_test_ownership.rs
+      - migrations/d1/**
+      - rust-toolchain.toml
+      - scripts/check_migration_prefixes.py
       - tests/test_issue_2546_staging_admission_nonce.py
 
 permissions:
@@ -24,7 +31,7 @@ jobs:
       github.repository == 'HuGR-dev/corelink-server' &&
       github.repository_id == '1232040291' && github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 35
     permissions:
       contents: read
     steps:
@@ -58,8 +65,19 @@ jobs:
       - name: Run SQLite migration and transaction contract
         run: python3 -m unittest -q tests.test_issue_2546_staging_admission_nonce
 
+      - name: Check D1 migration prefix compatibility
+        run: python3 scripts/check_migration_prefixes.py
+
       - name: Check formatting for changed Rust files
         run: rustfmt --check --edition 2021 crates/corelink-container/src/storage.rs crates/corelink-container/src/storage/staging_load_test_admission.rs
+
+      - name: Compile the complete corelink-server library API
+        timeout-minutes: 15
+        run: timeout 900s cargo check --locked --package corelink-server --lib
+
+      - name: Lint the complete corelink-server library
+        timeout-minutes: 15
+        run: timeout 900s cargo clippy --locked --package corelink-server --lib -- -D warnings
 
       - name: Run focused credentialless admission tests
         timeout-minutes: 10

@@ -25,6 +25,7 @@ const SQL_INSERT_NONCE: &str = "INSERT INTO staging_load_test_admission_nonces \
     VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
 
 /// Exact identity expected by the later trusted admission consumer.
+#[derive(Debug)]
 pub struct StagingLoadTestAdmissionExpectation<'a> {
     /// Canonical positive decimal GitHub Actions run ID.
     pub run_id: &'a str,
@@ -354,7 +355,10 @@ mod tests {
         assert!(digest
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
-        assert_ne!(digest, admission.nonce);
+        assert_eq!(
+            digest,
+            "9f63cc029a697ac9ee38185a6addd368b3eb427124198a2cca56379039de0f96"
+        );
     }
 
     #[test]
@@ -372,6 +376,35 @@ mod tests {
             validate_claim(&mismatch, &claim(), 1_500),
             Err(StagingLoadTestAdmissionError::MismatchedIdentity)
         );
+
+        let mut scenario_mismatch = expectation();
+        scenario_mismatch.scenario = StagingLoadTestScenario::Webhook;
+        assert_eq!(
+            validate_claim(&scenario_mismatch, &claim(), 1_500),
+            Err(StagingLoadTestAdmissionError::MismatchedIdentity)
+        );
+
+        let mut sha_mismatch = expectation();
+        sha_mismatch.target_deployment_sha = "1123456789abcdef0123456789abcdef01234567";
+        assert_eq!(
+            validate_claim(&sha_mismatch, &claim(), 1_500),
+            Err(StagingLoadTestAdmissionError::MismatchedIdentity)
+        );
+
+        let mut malformed_run_id = expectation();
+        malformed_run_id.run_id = "012345";
+        assert_eq!(
+            validate_claim(&malformed_run_id, &claim(), 1_500),
+            Err(StagingLoadTestAdmissionError::InvalidIdentity)
+        );
+
+        let mut malformed_sha = expectation();
+        malformed_sha.target_deployment_sha = "A123456789abcdef0123456789abcdef01234567";
+        assert_eq!(
+            validate_claim(&malformed_sha, &claim(), 1_500),
+            Err(StagingLoadTestAdmissionError::InvalidIdentity)
+        );
+
         assert_eq!(
             validate_claim(&expectation(), &claim(), 2_000),
             Err(StagingLoadTestAdmissionError::Expired)
@@ -385,12 +418,32 @@ mod tests {
             Err(StagingLoadTestAdmissionError::InvalidLifetime)
         );
 
-        let mut malformed = claim();
-        malformed.nonce = "A".repeat(64);
-        assert_eq!(
-            validate_claim(&expectation(), &malformed, 1_500),
-            Err(StagingLoadTestAdmissionError::InvalidNonce)
-        );
+        for (issued_at_ms, expires_at_ms) in [
+            (-1, 1_000),
+            (1_000, 1_000),
+            (1_000, 1_000 + MAX_LIFETIME_MS + 1),
+        ] {
+            let mut invalid_lifetime = claim();
+            invalid_lifetime.issued_at_ms = issued_at_ms;
+            invalid_lifetime.expires_at_ms = expires_at_ms;
+            assert_eq!(
+                validate_claim(&expectation(), &invalid_lifetime, 1_500),
+                Err(StagingLoadTestAdmissionError::InvalidLifetime)
+            );
+        }
+
+        for nonce in [
+            "A".repeat(64),
+            "a".repeat(62),
+            format!("{}g", "a".repeat(63)),
+        ] {
+            let mut malformed = claim();
+            malformed.nonce = nonce;
+            assert_eq!(
+                validate_claim(&expectation(), &malformed, 1_500),
+                Err(StagingLoadTestAdmissionError::InvalidNonce)
+            );
+        }
     }
 
     #[test]

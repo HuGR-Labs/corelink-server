@@ -14,6 +14,9 @@ MIGRATIONS = (
 )
 RUN = ("123456", "signup", "staging", "a" * 40, "open", 1)
 NONCE = ("b" * 64, "123456", "signup", 1, 10_000, 2)
+ADMISSION_SOURCE = (
+    ROOT / "crates/corelink-container/src/storage/staging_load_test_admission.rs"
+)
 
 
 class Issue2546AdmissionNonceTests(unittest.TestCase):
@@ -86,6 +89,32 @@ class Issue2546AdmissionNonceTests(unittest.TestCase):
         self.add_nonce()
         with self.assertRaises(sqlite3.IntegrityError):
             self.add_nonce()
+
+    def test_migration_0148_is_additive_after_0147_and_tracks_exact_run_identity(self) -> None:
+        self.assertEqual(MIGRATIONS[0].name[:4], "0147")
+        self.assertEqual(MIGRATIONS[1].name[:4], "0148")
+        self.assertLess(MIGRATIONS[0].name, MIGRATIONS[1].name)
+
+        migration = MIGRATIONS[1].read_text(encoding="utf-8")
+        self.assertIn("PRIMARY KEY (nonce_digest)", migration)
+        self.assertIn("UNIQUE (run_id, scenario)", migration)
+        self.assertIn(
+            "FOREIGN KEY (run_id, scenario)\n        REFERENCES staging_load_test_runs(run_id, scenario)",
+            migration,
+        )
+        self.assertIn("trg_staging_load_test_admission_nonce_no_update", migration)
+        self.assertIn("trg_staging_load_test_admission_nonce_no_delete", migration)
+
+    def test_adapter_uses_one_ordered_d1_transaction_for_run_and_nonce(self) -> None:
+        source = ADMISSION_SOURCE.read_text(encoding="utf-8")
+        start = source.index("pub async fn consume_verified_admission")
+        end = source.index("\nfn unix_time_ms", start)
+        method = source[start:end]
+
+        self.assertEqual(method.count("D1BatchStatement::new("), 2)
+        self.assertEqual(method.count("self.d1.batch(batch).await"), 1)
+        self.assertLess(method.index("SQL_INSERT_RUN"), method.index("SQL_INSERT_NONCE"))
+        self.assertIn("let batch = vec![", method)
 
 
 if __name__ == "__main__":
