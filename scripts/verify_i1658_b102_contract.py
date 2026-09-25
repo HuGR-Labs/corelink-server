@@ -75,6 +75,8 @@ def main() -> int:
         '"p50_ms"',
         '"p90_ms"',
         'concurrent.futures.ThreadPoolExecutor(max_workers=level)',
+        'finally:',
+        'def unauthenticated_control(',
     ):
         require(probe, required, required)
     if "urlopen" not in probe or '"retry_after"' not in probe or "for attempt" in probe:
