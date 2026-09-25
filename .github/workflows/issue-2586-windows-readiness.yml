@@ -1,0 +1,58 @@
+name: issue-2586-windows-readiness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2586-windows-readiness-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  readiness:
+    name: protected Windows credential binding readiness
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.repository_id == '1232040291' &&
+      github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: windows-2022
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the exact workflow commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate protected Authenticode identity without using it
+        shell: pwsh
+        env:
+          WINDOWS_CODE_SIGNING_CERT: ${{ secrets.WINDOWS_CODE_SIGNING_CERT }}
+          WINDOWS_CODE_SIGNING_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
+          WINDOWS_CODE_SIGNING_FINGERPRINT: ${{ secrets.WINDOWS_CODE_SIGNING_FINGERPRINT }}
+          WINDOWS_CODE_SIGNING_SUBJECT: ${{ secrets.WINDOWS_CODE_SIGNING_SUBJECT }}
+          WINDOWS_CODE_SIGNING_ISSUER: ${{ vars.WINDOWS_CODE_SIGNING_ISSUER }}
+          WINDOWS_CODE_SIGNING_NOT_BEFORE: ${{ vars.WINDOWS_CODE_SIGNING_NOT_BEFORE }}
+          WINDOWS_CODE_SIGNING_EXPIRES_AT: ${{ vars.WINDOWS_CODE_SIGNING_EXPIRES_AT }}
+          WINDOWS_SIGNING_RENEWAL_OWNER: ${{ vars.WINDOWS_SIGNING_RENEWAL_OWNER }}
+          WINDOWS_SIGNING_RENEWAL_DATE: ${{ vars.WINDOWS_SIGNING_RENEWAL_DATE }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_NAME: issue-2586-windows-readiness
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          ./scripts/windows_signing_readiness.ps1
+          -Repository $env:REPOSITORY
+          -WorkflowName $env:WORKFLOW_NAME
+          -CommitSha $env:COMMIT_SHA
+          -RunId $env:RUN_ID
+          -RunUrl $env:RUN_URL
+          -TimestampPolicy 'DigiCert RFC 3161 http://timestamp.digicert.com; SHA-256 file and timestamp digests; not invoked'
+          -ExpectedOperation 'authenticode-credential-binding-metadata-only'

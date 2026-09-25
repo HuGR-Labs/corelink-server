@@ -76,6 +76,11 @@ config-variables:
   - OBJECT_LOCK_PROBE_ROLE_ARN
   - R2_TEST_BUCKET
   - STRIPE_PRICE_ID_STARTER
+  - WINDOWS_CODE_SIGNING_EXPIRES_AT
+  - WINDOWS_CODE_SIGNING_ISSUER
+  - WINDOWS_CODE_SIGNING_NOT_BEFORE
+  - WINDOWS_SIGNING_RENEWAL_DATE
+  - WINDOWS_SIGNING_RENEWAL_OWNER
 
 # actionlint 1.7.12 predates GitHub's documented vulnerability-alerts token
 # scope and flags this valid read-only permission. Keep the exception on the
