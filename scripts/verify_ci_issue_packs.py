@@ -45,7 +45,7 @@ CHECK_IDS = {
 REQUIRED_PACK_CHECKS = {
     "issue-2440-ci-scoping": {"actionlint", "ci-pack-contract"},
     "issue-2437-worker-three-arm": {"ci-pack-contract", "rust-worker-three-arm"},
-    "issue-1948-mutants-receipt": {"ci-pack-contract", "python-mutants-receipt"},
+    "issue-1948-mutants-receipt": {"actionlint", "ci-pack-contract", "python-mutants-receipt"},
     "issue-2457-mutants-shards": {"actionlint", "ci-pack-contract", "python-mutants-shards", "cargo-mutants-v27-inventory"},
     "issue-1677-b170-owner-actions": {"ci-pack-contract", "python-b170-owner-actions"},
     "issue-1667-phase-regions": {"actionlint", "ci-pack-contract", "rust-b122-phase-regions"},
@@ -59,7 +59,7 @@ TARGET_BASE_RULE = (
 
 
 def validate_workflow_contract(workflow_text: str) -> list[str]:
-    actionlint_condition = "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'"
+    actionlint_condition = "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-1948-mutants-receipt' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'"
     required = (
         "github.ref == 'refs/heads/main' && github.ref_protected",
         "path: candidate",
@@ -73,7 +73,7 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "id: cargo-mutants-v27-inventory",
         "id: python-b170-owner-actions",
         "id: rust-b122-phase-regions",
-        "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'",
+        actionlint_condition,
         "if: inputs.pack_id == 'issue-2437-worker-three-arm'",
         "if: inputs.pack_id == 'issue-1948-mutants-receipt'",
         "if: inputs.pack_id == 'issue-2457-mutants-shards'",
@@ -131,7 +131,7 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
     if found:
         errors.append("central workflow contains forbidden inventory-pack controls: " + ", ".join(found))
     if workflow_text.count(actionlint_condition) != 2:
-        errors.append("issue 1667 must run actionlint at both install and validation steps")
+        errors.append("issue packs must run actionlint at both install and validation steps")
     triggers = mapping_child_keys(workflow_text, "on")
     if triggers != ["workflow_dispatch"]:
         errors.append(f"central issue pack workflow must have only workflow_dispatch triggers; found {triggers}")
@@ -336,14 +336,39 @@ def self_test(catalog: dict) -> list[str]:
     if not validate_workflow_contract(token_workflow):
         failures.append("workflow adding a credential route was accepted")
     actionlint_omitted = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8").replace(
+        "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-1948-mutants-receipt' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'",
         "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'",
-        "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards'",
         1,
     )
     if not validate_workflow_contract(actionlint_omitted):
-        failures.append("workflow omitting issue 1667 from one actionlint step was accepted")
+        failures.append("workflow omitting issue 1948 from one actionlint step was accepted")
     if not paths_outside_pack(["crates/corelink-server/src/lib.rs"], catalog["packs"][0]["changed_surfaces"]):
         failures.append("out-of-pack changed file was accepted")
+    issue_1948 = select_pack(catalog, "issue-1948-mutants-receipt")
+    if len(issue_1948) != 1:
+        failures.append("issue 1948 pack is missing or ambiguous")
+    else:
+        pack_1948 = issue_1948[0]
+        expected_surfaces = {
+            ".github/workflows/issue-1863-mutants-contract.yml",
+            ".github/workflows/issue-ci-pack.yml",
+            "scripts/verify_i1863_mutants_hosted.py",
+            "tests/test_i1863_mutants_hosted_receipt.py",
+        }
+        if set(pack_1948["changed_surfaces"]) != expected_surfaces:
+            failures.append("issue 1948 changed-file boundary is not the exact reviewed surface")
+        if set(pack_1948["workflow_files_to_lint"]) != {
+            ".github/workflows/issue-1863-mutants-contract.yml",
+            ".github/workflows/issue-ci-pack.yml",
+        }:
+            failures.append("issue 1948 actionlint boundary is not the exact reviewed workflow surface")
+        if not paths_outside_pack([".github/workflows/unrelated.yml"], pack_1948["changed_surfaces"]):
+            failures.append("issue 1948 accepted an unrelated changed path")
+        unlinted_workflow = ".github/workflows/issue-1863-mutants-hosted.yml"
+        if unlinted_workflow in pack_1948["workflow_files_to_lint"] or not paths_outside_pack(
+            [unlinted_workflow], pack_1948["changed_surfaces"]
+        ):
+            failures.append("issue 1948 accepted an out-of-scope, unlinted workflow")
     return failures
 
 

@@ -141,14 +141,20 @@
       "pack_id": "issue-1948-mutants-receipt",
       "issue": 1948,
       "changed_surfaces": [
+        ".github/workflows/issue-1863-mutants-contract.yml",
+        ".github/workflows/issue-ci-pack.yml",
         "scripts/verify_i1863_mutants_hosted.py",
         "tests/test_i1863_mutants_hosted_receipt.py"
       ],
-      "workflow_files_to_lint": [],
+      "workflow_files_to_lint": [
+        ".github/workflows/issue-1863-mutants-contract.yml",
+        ".github/workflows/issue-ci-pack.yml"
+      ],
       "required_focused_jobs": [
         "issue-pack"
       ],
       "focused_checks": [
+        "actionlint",
         "ci-pack-contract",
         "python-mutants-receipt"
       ],
@@ -161,6 +167,7 @@
         "unit tests reject in-progress and failed run receipts",
         "unit tests reject wrong SHA and run identity",
         "unit tests reject non-main protected-ref receipts",
+        "unrelated changed paths and workflow paths outside the two linted workflows are rejected",
         "do not dispatch cargo-mutants or any workspace-wide suite"
       ],
       "exact_sha": {
