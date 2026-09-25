@@ -696,14 +696,11 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "github.ref == 'refs/heads/main'",
         "github.ref_protected",
         "SHARD_COUNT: 27",
-        "BASELINE_SHARD_TIMEOUT_MINUTES: 45",
-        "MUTATION_SHARD_TIMEOUT_MINUTES: 255",
-        "MUTATION_STEP_TIMEOUT_MINUTES: 240",
         "TOTAL_RUNNER_MINUTE_CAP: 8155",
         "max-parallel: 9",
-        "timeout-minutes: ${{ fromJSON(env.BASELINE_SHARD_TIMEOUT_MINUTES) }}",
-        "timeout-minutes: ${{ fromJSON(env.MUTATION_SHARD_TIMEOUT_MINUTES) }}",
-        "timeout-minutes: ${{ fromJSON(env.MUTATION_STEP_TIMEOUT_MINUTES) }}",
+        "timeout-minutes: 45",
+        "timeout-minutes: 255",
+        "timeout-minutes: 240",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --jobs=8 --build-timeout=60 --timeout=60 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output \"$output\"",
@@ -732,7 +729,7 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         raise VerificationError("workflow must retain each of the six bounded evidence artifacts for exactly 30 days")
     if text.count("max-parallel: 9") != 2:
         raise VerificationError("workflow must retain the reviewed nine-runner baseline and mutation concurrency")
-    if text.count("timeout-minutes: ${{ fromJSON(env.BASELINE_SHARD_TIMEOUT_MINUTES) }}") != 1 or text.count("timeout-minutes: ${{ fromJSON(env.MUTATION_SHARD_TIMEOUT_MINUTES) }}") != 1 or text.count("timeout-minutes: ${{ fromJSON(env.MUTATION_STEP_TIMEOUT_MINUTES) }}") != 1:
+    if text.count("timeout-minutes: 45") != 1 or text.count("timeout-minutes: 255") != 1 or text.count("timeout-minutes: 240") != 1:
         raise VerificationError("workflow must retain the reviewed baseline and mutation time budgets")
     if text.count("--no-config") != 3:
         raise VerificationError("all three cargo-mutants inventory and shard commands must disable repository config")

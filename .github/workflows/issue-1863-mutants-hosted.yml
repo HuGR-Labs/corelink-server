@@ -17,9 +17,6 @@ concurrency:
 env:
   SHARD_COUNT: 27
   SHARDING: round-robin
-  BASELINE_SHARD_TIMEOUT_MINUTES: 45
-  MUTATION_SHARD_TIMEOUT_MINUTES: 255
-  MUTATION_STEP_TIMEOUT_MINUTES: 240
   # Cargo-mutants v27 runs one worker unless --jobs is explicit.  The complete
   # 24,463-member inventory needs eight bounded workers per shard: each cargo
   # build and test is capped at 60 seconds, while the 240-minute step still
@@ -41,7 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$SHARD_COUNT" = 27
-          test "$TOTAL_RUNNER_MINUTE_CAP" = "$((10 + 35 + SHARD_COUNT * BASELINE_SHARD_TIMEOUT_MINUTES + 10 + SHARD_COUNT * MUTATION_SHARD_TIMEOUT_MINUTES + 10))"
+          test "$TOTAL_RUNNER_MINUTE_CAP" = "$((10 + 35 + SHARD_COUNT * 45 + 10 + SHARD_COUNT * 255 + 10))"
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
@@ -141,7 +138,7 @@ jobs:
     needs: [inventory, baseline-plan]
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ fromJSON(env.BASELINE_SHARD_TIMEOUT_MINUTES) }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       max-parallel: 9
@@ -254,7 +251,7 @@ jobs:
     needs: [inventory, baseline-aggregate]
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ fromJSON(env.MUTATION_SHARD_TIMEOUT_MINUTES) }}
+    timeout-minutes: 255
     strategy:
       fail-fast: false
       max-parallel: 9
@@ -297,7 +294,7 @@ jobs:
           tool: cargo-mutants@27.0.0
           fallback: cargo-binstall
       - name: Enumerate and run this deterministic shard after the green baseline
-        timeout-minutes: ${{ fromJSON(env.MUTATION_STEP_TIMEOUT_MINUTES) }}
+        timeout-minutes: 240
         run: |
           set +e
           output="${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}"

@@ -21,7 +21,7 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
             ("SHARD_COUNT: 27", "SHARD_COUNT: 26"),
             ("TOTAL_RUNNER_MINUTE_CAP: 8155", "TOTAL_RUNNER_MINUTE_CAP: 2550"),
             ("max-parallel: 9", "max-parallel: 27"),
-            ("MUTATION_SHARD_TIMEOUT_MINUTES: 255", "MUTATION_SHARD_TIMEOUT_MINUTES: 45"),
+            ("timeout-minutes: 255", "timeout-minutes: 45"),
             ("--jobs=8", "--jobs=1"),
             ("--build-timeout=60", "--build-timeout=300"),
             ("--timeout=60", "--timeout=300"),
