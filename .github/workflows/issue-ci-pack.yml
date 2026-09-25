@@ -84,7 +84,7 @@ jobs:
           esac
 
       - name: Install pinned actionlint
-        if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'
+        if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-1948-mutants-receipt' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'
         shell: bash
         run: |
           set -euo pipefail
@@ -100,7 +100,7 @@ jobs:
 
       - name: Validate declared workflow surface
         id: actionlint
-        if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'
+        if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-1948-mutants-receipt' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'
         env:
           PACK_ID: ${{ inputs.pack_id }}
         shell: bash
@@ -109,6 +109,7 @@ jobs:
           case "$PACK_ID" in
             issue-2440-ci-scoping) workflows=(.github/workflows/issue-ci-pack.yml) ;;
             issue-2437-worker-three-arm) workflows=(.github/workflows/corelink-worker.yml) ;;
+            issue-1948-mutants-receipt) workflows=(.github/workflows/issue-1863-mutants-contract.yml .github/workflows/issue-ci-pack.yml) ;;
             issue-2457-mutants-shards) workflows=(.github/workflows/issue-1863-mutants-hosted.yml .github/workflows/issue-1863-mutants-contract.yml .github/workflows/issue-1666-mutants-evidence-contract.yml .github/workflows/issue-ci-pack.yml) ;;
             issue-1667-phase-regions) workflows=(.github/workflows/issue-ci-pack.yml) ;;
             *) echo "::error::no workflow surface for this pack" >&2; exit 1 ;;
