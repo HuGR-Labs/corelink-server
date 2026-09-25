@@ -214,10 +214,10 @@ def main() -> int:
         fail("declared deployed SHA does not match dispatch SHA")
     if not SHA.fullmatch(args.deployed_sha) or not UUID.fullmatch(args.tenant) or not TOKEN.fullmatch(args.cargo_key) or not TOKEN.fullmatch(args.deployed_region):
         fail("invalid target, tenant, cargo key, or deployed SHA")
+    target_origin = resolve_target_origin(args.target, os.environ.get("CORELINK_PERF_BASE", ""))
     token = os.environ.get("CORELINK_DOGFOOD_PAT")
     if not token:
         fail("CORELINK_DOGFOOD_PAT is required")
-    target_origin = resolve_target_origin(args.target, os.environ.get("CORELINK_PERF_BASE", ""))
     target = urllib.parse.urlsplit(target_origin)
     base = target_origin + "/cargo/" + args.tenant + "/" + args.cargo_key
     url = urllib.parse.urlsplit(base)
