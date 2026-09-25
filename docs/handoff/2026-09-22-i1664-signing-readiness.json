@@ -1,7 +1,7 @@
 {
   "schema_version": "i1664.signing-readiness.v1",
   "status": "blocked",
-  "captured_at": "2026-09-22T00:00:00Z",
+  "captured_at": "2026-09-25T10:08:07Z",
   "owner": "release-engineering",
   "credentialless": true,
   "redaction": {
@@ -10,23 +10,23 @@
   },
   "lanes": {
     "gpg": {
-      "status": "blocked",
+      "status": "preflight_ready",
       "identity": {
-        "fingerprint": null,
+        "fingerprint": "795253CEBD6D54C862CFC4A3EC0AD89A75EC6756",
         "issuer": "self-generated release key",
-        "subject_or_team": null,
+        "subject_or_team": "CoreLink Release Signing (corelink-cli release signing key) <releases@humangr.com>",
         "chain_or_profile": "4096-bit RSA release key"
       },
       "access": {
         "secret_names": ["GPG_PRIVATE_KEY", "GPG_PRIVATE_KEY_PASS", "GPG_KEY_ID", "GPG_KEY_FINGERPRINT"],
-        "scope": "release-cli signing workflow only",
+        "scope": "release-cli/sign-linux signing path; public fingerprint also used by the credentialless dry-run; private key and key ID were read by the disabled one-shot identity audit",
         "rotation_owner": "Release Engineering",
         "last_rotated_at": null,
-        "access_status": "missing"
+        "access_status": "verified"
       },
-      "expiry": {"expires_at": null, "status": "missing"},
+      "expiry": {"expires_at": "2028-08-29T16:05:40Z", "status": "valid"},
       "verification": {"status": "missing", "receipt_reference": null, "verified_at": null, "method": "gpg --status-fd verification receipt"},
-      "blockers": ["GPG public fingerprint, key expiry, secret access review, and a successful detached-signature receipt are external inputs."]
+      "blockers": ["A hosted release run must produce and verify the fingerprint-bound Linux detached-signature receipt against the exact release assets."]
     },
     "windows": {
       "status": "blocked",
