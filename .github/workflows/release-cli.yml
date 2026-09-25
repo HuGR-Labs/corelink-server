@@ -218,8 +218,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8
-          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"
+          # taiki-e/install-action selects the pinned version above. Probe only
+          # the executable's supported CLI surface here; cargo-zigbuild does
+          # not provide a --version option.
+          command -v cargo-zigbuild
+          cargo-zigbuild --help >/dev/null
           ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"
           mkdir -p "$ZIGBUILD_CACHE"
           echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"

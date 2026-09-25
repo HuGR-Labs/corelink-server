@@ -634,17 +634,21 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         value for _line, value in _yaml_key_values(release, "tool")
     ]:
         errors.append("missing semantic cargo-zigbuild version pin")
-    commands_by_line: dict[int, set[tuple[str, ...]]] = {}
-    for line, command in _shell_commands(release):
-        if command:
-            commands_by_line.setdefault(line, set()).add(tuple(command))
-    version_probe = ("cargo-zigbuild", "--version")
-    version_match = ("grep", "-Fx", "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}")
     if not any(
-        version_probe in commands and version_match in commands
-        for commands in commands_by_line.values()
+        args[:1] == ["--help"]
+        for _line, args in _active_commands(release, "cargo-zigbuild")
     ):
-        errors.append("cargo-zigbuild version probe must directly match the pinned version")
+        errors.append("cargo-zigbuild executable must be called with its supported --help option")
+    if "command -v cargo-zigbuild" not in _active_shell_lines(release):
+        errors.append("release-cli must verify that cargo-zigbuild is installed on PATH")
+    if any(
+        args[:1] in (["--version"], ["-V"])
+        for _line, args in _active_commands(release, "cargo-zigbuild")
+    ) or any(
+        args[:2] in (["zigbuild", "--version"], ["zigbuild", "-V"])
+        for _line, args in _active_commands(release, "cargo")
+    ):
+        errors.append("release-cli must not use unsupported cargo-zigbuild version probes")
     errors.extend(_isolation_errors(release))
     if not _env_export_lines(release, "CARGO_ZIGBUILD_CACHE_DIR", "ZIGBUILD_CACHE"):
         errors.append("missing active cargo-zigbuild cache export")
@@ -762,7 +766,7 @@ def _mutate_b112_status(backlog: str) -> str:
 
 def _inject_run_command(release: str, command: str) -> str:
     """Place a mutation inside the first real build run scalar."""
-    needle = '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n'
+    needle = "          cargo-zigbuild --help >/dev/null\n"
     if needle not in release:
         raise RuntimeError("B-112 mutation could not find semantic build command")
     return release.replace(needle, needle + f"          {command}\n", 1)
@@ -812,11 +816,11 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
         "unclosed heredoc": (_inject_run_command(release, "cat <<'B112_EOF'"), cosign, backlog),
         "shared artifact path": (release.replace(ARTIFACT_PATH, 'SRC="target/${TARGET_TRIPLE}/release/corelink"', 1), cosign, backlog),
         "cache assignment order": (release.replace(
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n'
+            "          cargo-zigbuild --help >/dev/null\n"
             '          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"\n'
             '          mkdir -p "$ZIGBUILD_CACHE"\n'
             '          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"\n',
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n'
+            "          cargo-zigbuild --help >/dev/null\n"
             '          mkdir -p "$ZIGBUILD_CACHE"\n'
             '          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"\n'
             '          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"\n', 1), cosign, backlog),
@@ -832,8 +836,8 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
             "        run: git config --global core.longpaths true\n", "", 1
         ), cosign, backlog),
         "invalid cargo-zigbuild version probe": (release.replace(
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n',
-            '          cargo zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n', 1
+            "          cargo-zigbuild --help >/dev/null\n",
+            "          cargo-zigbuild --version\n", 1
         ), cosign, backlog),
         "pinned target installation order": (release.replace(
             '          bash scripts/ci-assert-pinned-toolchain.sh\n'
@@ -852,9 +856,9 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
         "tool echo bait": (release.replace(
             "          tool: cargo-zigbuild@0.19.8\n", "          tool: cargo-zigbuild@0.19.7\n", 1
         ).replace(
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n',
+            "          cargo-zigbuild --help >/dev/null\n",
             "          echo 'tool: cargo-zigbuild@0.19.8'\n"
-            '          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"\n', 1), cosign, backlog),
+            "          cargo-zigbuild --help >/dev/null\n", 1), cosign, backlog),
     }
     for name, (mutated_release, mutated_cosign, mutated_backlog) in mutations.items():
         try:
