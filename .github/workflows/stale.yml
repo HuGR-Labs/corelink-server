@@ -33,8 +33,8 @@ concurrency:
 jobs:
   stale:
     name: Apply stale + close policy
-    # zero-hosted (WP-CI): só actions/stale (JS action, roda na box)
-    runs-on: corelink
+    # The pinned stale action runs on an isolated GitHub-hosted runner.
+    runs-on: ubuntu-24.04
     steps:
       - name: Mark + close stale items
         uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10.4.0

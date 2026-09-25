@@ -81,7 +81,7 @@ fi
 
 echo "==> generating per-crate summary → $COV_OUT/SUMMARY.txt"
 # shellcheck disable=SC2086
-cargo llvm-cov report --workspace --summary-only $COV_FLAGS \
+cargo llvm-cov report --summary-only $COV_FLAGS \
     > "$COV_OUT/SUMMARY.txt"
 
 echo "==> coverage report ready:"
