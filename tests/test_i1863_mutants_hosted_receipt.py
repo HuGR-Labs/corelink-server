@@ -39,6 +39,7 @@ class HostedReceiptValidationTests(unittest.TestCase):
             ],
             "attempt_lineage": [1, 2],
             "status": "success",
+            "outcome_counts": {"caught": 27, "missed": 0, "success": 0, "timeout": 0, "unviable": 0},
         }
         self.receipt["coverage_digest"] = digest(
             {
@@ -46,6 +47,7 @@ class HostedReceiptValidationTests(unittest.TestCase):
                 "per_shard_occurrence_counts": self.receipt["per_shard_occurrence_counts"],
             }
         )
+        self.receipt["outcome_digest"] = digest(self.receipt["outcome_counts"])
         self.run = {
             "databaseId": 1234,
             "attempt": 2,
@@ -114,6 +116,13 @@ class HostedReceiptValidationTests(unittest.TestCase):
         self.receipt["covered_mutant_counts"] = [{"identity": "sha256:" + "1" * 64, "count": 27}]
         self.receipt["per_shard_occurrence_counts"] = self.receipt["per_shard_occurrence_counts"][:-1]
         with self.assertRaisesRegex(ValueError, "per-shard occurrence"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+
+    def test_rejects_success_that_hides_terminal_survivors_or_timeouts(self) -> None:
+        self.receipt["outcome_counts"]["missed"] = 1
+        self.receipt["outcome_counts"]["caught"] = 26
+        self.receipt["outcome_digest"] = digest(self.receipt["outcome_counts"])
+        with self.assertRaisesRegex(ValueError, "hides missed"):
             validate_successful_receipt(self.receipt, self.run, self.sha)
 
     def test_rejects_boolean_per_shard_occurrence_index(self) -> None:

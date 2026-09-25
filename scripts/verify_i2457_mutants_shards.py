@@ -25,9 +25,9 @@ TOOL_VERSION = "27.0.0"
 IDENTITY_SCHEMA = "cargo-mutants-v27.full-list-record.sha256.multiset.v1"
 INVENTORY_SCHEMA = "corelink.hosted-mutants-inventory.v5"
 BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v6"
-SHARD_SCHEMA = "corelink.hosted-mutants-shard-receipt.v5"
-AGGREGATE_SCHEMA = "corelink.hosted-mutants-aggregate-receipt.v5"
-EVIDENCE_SCHEMA = "corelink.hosted-mutants-shard-evidence.v1"
+SHARD_SCHEMA = "corelink.hosted-mutants-shard-receipt.v6"
+AGGREGATE_SCHEMA = "corelink.hosted-mutants-aggregate-receipt.v6"
+EVIDENCE_SCHEMA = "corelink.hosted-mutants-shard-evidence.v2"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 CANONICAL_ARGUMENTS = (
@@ -35,11 +35,22 @@ CANONICAL_ARGUMENTS = (
     "--no-config",
     "--no-shuffle",
     "--minimum-test-timeout=600",
+    "--jobs=8",
+    "--build-timeout=60",
+    "--timeout=60",
     "--sharding=round-robin",
 )
 CARGO_MUTANTS_LIST_FIELDS = frozenset(
     {"name", "package", "file", "function", "span", "replacement", "genre", "diff"}
 )
+OUTCOME_SUMMARIES = {
+    "CaughtMutant": "caught",
+    "MissedMutant": "missed",
+    "Timeout": "timeout",
+    "Unviable": "unviable",
+    "Success": "success",
+}
+OUTCOME_COUNT_FIELDS = tuple(sorted(set(OUTCOME_SUMMARIES.values())))
 
 
 class VerificationError(ValueError):
@@ -179,6 +190,52 @@ def mutant_counts(ids: list[str]) -> list[dict[str, Any]]:
     ]
 
 
+def outcome_counts(records: list[dict[str, str]]) -> dict[str, int]:
+    counts = Counter(record["outcome"] for record in records)
+    return {field: counts[field] for field in OUTCOME_COUNT_FIELDS}
+
+
+def terminal_outcome_records(raw: Any, expected_raw: Any, expected_ids: list[str]) -> list[dict[str, str]]:
+    """Redact a terminal cargo-mutants outcome set to exact inventory identities."""
+    expected = mutant_ids(expected_raw)
+    if expected != expected_ids:
+        raise VerificationError("cargo-mutants shard list disagrees with frozen inventory")
+    if not isinstance(raw, Mapping) or not isinstance(raw.get("end_time"), str):
+        raise VerificationError("cargo-mutants outcomes are not terminal")
+    if raw.get("cargo_mutants_version") != TOOL_VERSION:
+        raise VerificationError("cargo-mutants outcomes do not use the pinned tool version")
+    outcomes = raw.get("outcomes")
+    if not isinstance(outcomes, list):
+        raise VerificationError("cargo-mutants outcomes must be a JSON array")
+    if raw.get("total_mutants") != len(expected_ids):
+        raise VerificationError("cargo-mutants terminal outcome total does not equal the frozen shard")
+    ids_by_name: dict[str, list[str]] = defaultdict(list)
+    for item, identity in zip(expected_raw, expected_ids, strict=True):
+        ids_by_name[item["name"]].append(identity)
+    if any(len(set(identities)) > 1 for identities in ids_by_name.values()):
+        raise VerificationError("cargo-mutants outcome names cannot uniquely bind frozen identities")
+    records: list[dict[str, str]] = []
+    for index, outcome in enumerate(outcomes):
+        if not isinstance(outcome, Mapping):
+            raise VerificationError(f"outcome[{index}] must be an object")
+        scenario = outcome.get("scenario")
+        if not isinstance(scenario, Mapping) or set(scenario) != {"Mutant"}:
+            raise VerificationError("terminal outcome includes a non-mutant scenario")
+        mutant = scenario["Mutant"]
+        if not isinstance(mutant, Mapping):
+            raise VerificationError("terminal outcome mutant is invalid")
+        name = mutant.get("name")
+        summary = outcome.get("summary")
+        if not isinstance(name, str) or summary not in OUTCOME_SUMMARIES or not ids_by_name.get(name):
+            raise VerificationError("terminal outcome does not bind a frozen mutant identity")
+        records.append({"identity": ids_by_name[name].pop(), "outcome": OUTCOME_SUMMARIES[summary]})
+    if sorted(record["identity"] for record in records) != sorted(expected_ids):
+        raise VerificationError("terminal outcomes do not cover the frozen shard exactly once")
+    if sum(outcome_counts(records).values()) != len(expected_ids):
+        raise VerificationError("terminal outcome summary does not equal the frozen shard")
+    return sorted(records, key=lambda record: (record["identity"], record["outcome"]))
+
+
 def inventory_mutant_ids(value: Any) -> list[str]:
     """Validate the ordered, occurrence-preserving redacted identity list."""
     if not isinstance(value, list):
@@ -291,10 +348,23 @@ def validate_shard_receipt(receipt: Mapping[str, Any], inventory: Mapping[str, A
     require_digest(receipt.get("artifact_digest"), "shard.artifact_digest")
     if receipt.get("evidence_present") is not True:
         raise VerificationError(f"shard {index} evidence artifact is missing")
-    if receipt.get("status") != "success" or receipt.get("cargo_exit_code") != 0:
-        raise VerificationError(f"shard {index} did not complete successfully")
     if receipt.get("outcomes_complete") is not True:
         raise VerificationError(f"shard {index} does not prove complete outcomes")
+    counts = receipt.get("outcome_counts")
+    if not isinstance(counts, Mapping) or set(counts) != set(OUTCOME_COUNT_FIELDS):
+        raise VerificationError(f"shard {index} outcome summary is invalid")
+    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts.values()):
+        raise VerificationError(f"shard {index} outcome summary is invalid")
+    if sum(counts.values()) != len(expected):
+        raise VerificationError(f"shard {index} outcome summary does not cover its frozen membership")
+    status = receipt.get("status")
+    exit_code = receipt.get("cargo_exit_code")
+    if status not in {"success", "failure"} or isinstance(exit_code, bool) or not isinstance(exit_code, int):
+        raise VerificationError(f"shard {index} terminal status is invalid")
+    if status == "success" and (exit_code != 0 or counts["missed"] != 0 or counts["timeout"] != 0):
+        raise VerificationError(f"shard {index} successful status disagrees with terminal outcomes")
+    if status == "failure" and exit_code == 0:
+        raise VerificationError(f"shard {index} failed status has a zero cargo exit")
     return index
 
 
@@ -320,7 +390,7 @@ def aggregate_receipts(
     current_attempt: int,
     downloaded_shard_digests: Mapping[tuple[int, int], Mapping[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """Select latest same-run attempt evidence and prove a complete 27-way union."""
+    """Select latest same-run terminal evidence and prove a complete 27-way union."""
     expected_sha = require_sha(expected_sha, "expected_sha")
     current_run_id = require_string(current_run_id, "current_run_id")
     current_attempt = require_attempt(current_attempt, "current_attempt")
@@ -388,6 +458,12 @@ def aggregate_receipts(
     ]
     if sum(item["occurrences"] for item in shard_counts) != len(ids) or union_counts != inventory_counts:
         raise VerificationError("shard occurrence counts are not the complete unsharded inventory")
+    aggregate_outcomes = {
+        field: sum(receipt["outcome_counts"][field] for receipt in selected)
+        for field in OUTCOME_COUNT_FIELDS
+    }
+    if sum(aggregate_outcomes.values()) != len(ids):
+        raise VerificationError("terminal mutation outcome summary does not cover the complete inventory")
     lineage = sorted({inventory["run_attempt"], baseline["run_attempt"], *(item["run_attempt"] for item in selected)})
     return {
         "schema": AGGREGATE_SCHEMA,
@@ -405,9 +481,11 @@ def aggregate_receipts(
         "covered_mutant_counts": union_counts,
         "per_shard_occurrence_counts": shard_counts,
         "coverage_digest": digest({"mutant_counts": union_counts, "per_shard_occurrence_counts": shard_counts}),
+        "outcome_counts": aggregate_outcomes,
+        "outcome_digest": digest(aggregate_outcomes),
         "shard_artifact_digests": aggregate_artifacts,
         "attempt_lineage": lineage,
-        "status": "success",
+        "status": "success" if all(receipt["status"] == "success" for receipt in selected) else "failure",
     }
 
 
@@ -445,7 +523,7 @@ def shard_artifact_digest(evidence: Path) -> str:
 
 
 def validate_redacted_evidence(evidence: Path, receipt: Mapping[str, Any]) -> None:
-    """Require retained redacted list evidence to prove observed occurrence equality."""
+    """Require retained redacted terminal outcome evidence to bind exact membership."""
     manifest = read_json(evidence / "shard-evidence-manifest.json")
     if manifest.get("schema") != EVIDENCE_SCHEMA:
         raise VerificationError("redacted shard evidence has an unsupported schema")
@@ -453,11 +531,15 @@ def validate_redacted_evidence(evidence: Path, receipt: Mapping[str, Any]) -> No
     expected_counts = receipt.get("mutant_counts")
     if manifest.get("expected_mutant_ids") != expected_ids or manifest.get("expected_mutant_counts") != expected_counts:
         raise VerificationError("redacted shard evidence expected list does not bind the receipt")
-    if receipt.get("status") == "success":
-        if manifest.get("observed_mutant_ids") != expected_ids or manifest.get("observed_mutant_counts") != expected_counts:
-            raise VerificationError("redacted shard evidence observed list does not equal expected multiplicity")
-        if manifest.get("raw_outcomes_present") is not True:
-            raise VerificationError("redacted shard evidence does not prove observed outcomes")
+    if manifest.get("observed_mutant_ids") != expected_ids or manifest.get("observed_mutant_counts") != expected_counts:
+        raise VerificationError("redacted shard evidence observed list does not equal expected multiplicity")
+    records = manifest.get("terminal_outcomes")
+    if not isinstance(records, list) or manifest.get("outcome_counts") != receipt.get("outcome_counts"):
+        raise VerificationError("redacted shard evidence does not bind terminal outcomes")
+    if outcome_counts(records) != receipt.get("outcome_counts"):
+        raise VerificationError("redacted shard evidence terminal summary drifted")
+    if sorted(record.get("identity") for record in records if isinstance(record, Mapping)) != sorted(expected_ids):
+        raise VerificationError("redacted shard evidence terminal identities are incomplete")
 
 
 def command_build_inventory(args: argparse.Namespace) -> None:
@@ -477,15 +559,15 @@ def command_write_shard(args: argparse.Namespace) -> None:
     validate_baseline(baseline, inventory)
     expected_ids = membership(ids, args.shard)
     expected_counts = mutant_counts(expected_ids)
-    if args.exit_code == 0:
-        if not args.expected.is_file() or not args.observed.is_file():
-            raise VerificationError("successful shard lacks list/output inventory")
-        expected = mutant_ids(read_json(args.expected))
-        observed = mutant_ids(read_json(args.observed))
-        if expected != expected_ids or observed != expected_ids or mutant_counts(expected) != expected_counts or mutant_counts(observed) != expected_counts:
-            raise VerificationError("cargo-mutants shard list/output disagrees with frozen inventory")
-    raw_evidence = Path(args.evidence)
-    outcomes = raw_evidence / "outcomes.json"
+    if not args.expected.is_file() or not args.observed.is_file() or not args.outcomes.is_file():
+        raise VerificationError("shard lacks a terminal list, output inventory, or outcome set")
+    expected_raw = read_json(args.expected)
+    expected = mutant_ids(expected_raw)
+    observed = mutant_ids(read_json(args.observed))
+    if expected != expected_ids or observed != expected_ids or mutant_counts(expected) != expected_counts or mutant_counts(observed) != expected_counts:
+        raise VerificationError("cargo-mutants shard list/output disagrees with frozen inventory")
+    terminal_records = terminal_outcome_records(read_json(args.outcomes), expected_raw, expected_ids)
+    terminal_counts = outcome_counts(terminal_records)
     redacted_evidence = Path(args.redacted_evidence)
     redacted_evidence.mkdir(parents=True, exist_ok=True)
     write_json(
@@ -494,9 +576,10 @@ def command_write_shard(args: argparse.Namespace) -> None:
             "schema": EVIDENCE_SCHEMA,
             "expected_mutant_ids": expected_ids,
             "expected_mutant_counts": expected_counts,
-            "observed_mutant_ids": observed if args.exit_code == 0 else None,
-            "observed_mutant_counts": mutant_counts(observed) if args.exit_code == 0 else None,
-            "raw_outcomes_present": outcomes.is_file(),
+            "observed_mutant_ids": observed,
+            "observed_mutant_counts": mutant_counts(observed),
+            "terminal_outcomes": terminal_records,
+            "outcome_counts": terminal_counts,
         },
     )
     evidence_present = True
@@ -519,7 +602,8 @@ def command_write_shard(args: argparse.Namespace) -> None:
         "evidence_present": evidence_present,
         "status": "success" if args.exit_code == 0 else "failure",
         "cargo_exit_code": args.exit_code,
-        "outcomes_complete": args.exit_code == 0 and outcomes.is_file(),
+        "outcomes_complete": True,
+        "outcome_counts": terminal_counts,
     }
     write_json(args.out, receipt)
 
@@ -582,12 +666,14 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "github.ref == 'refs/heads/main'",
         "github.ref_protected",
         "SHARD_COUNT: 27",
-        "TOTAL_RUNNER_MINUTE_CAP: 2550",
+        "TOTAL_RUNNER_MINUTE_CAP: 8200",
         "max-parallel: 9",
-        "timeout-minutes: 45",
+        "timeout-minutes: 255",
+        "timeout-minutes: 240",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json",
-        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output \"$output\"",
+        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --jobs=8 --build-timeout=60 --timeout=60 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output \"$output\"",
+        "--outcomes \"${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}/mutants.out/outcomes.json\"",
         "--redacted-evidence \"${RUNNER_TEMP}/redacted-evidence\"",
         "${{ runner.temp }}/redacted-evidence/",
         "cargo test --workspace --locked",
@@ -610,6 +696,10 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         raise VerificationError("workflow is missing required #2457 controls: " + ", ".join(missing))
     if text.count("retention-days: 30") != 6 or text.count("retention-days:") != 6:
         raise VerificationError("workflow must retain each of the six bounded evidence artifacts for exactly 30 days")
+    if text.count("max-parallel: 9") != 2:
+        raise VerificationError("workflow must retain the reviewed nine-runner baseline and mutation concurrency")
+    if text.count("timeout-minutes: 45") != 1 or text.count("timeout-minutes: 255") != 1 or text.count("timeout-minutes: 240") != 1:
+        raise VerificationError("workflow must retain the reviewed baseline and mutation time budgets")
     if text.count("--no-config") != 3:
         raise VerificationError("all three cargo-mutants inventory and shard commands must disable repository config")
     forbidden = (
@@ -655,6 +745,7 @@ def parser() -> argparse.ArgumentParser:
     shard.add_argument("--baseline", type=Path, required=True)
     shard.add_argument("--expected", type=Path, required=True)
     shard.add_argument("--observed", type=Path, required=True)
+    shard.add_argument("--outcomes", type=Path, required=True)
     shard.add_argument("--evidence", type=Path, required=True)
     shard.add_argument("--redacted-evidence", type=Path, required=True)
     shard.add_argument("--sha", required=True)
