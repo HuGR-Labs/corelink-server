@@ -208,7 +208,7 @@ def main() -> int:
     except (OSError, json.JSONDecodeError, ContractError) as exc:
         print(f"signing readiness contract failed: {exc}", file=sys.stderr)
         return 1
-    if args.emit_ready:
+    if args.emit_ready or args.emit_preflight_ready:
         print("true" if ready else "false")
     else:
         if args.emit_preflight_ready:

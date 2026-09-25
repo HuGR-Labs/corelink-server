@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +58,16 @@ class SigningReadinessTest(unittest.TestCase):
         self.assertTrue(readiness.validate_preflight(packet))
         for lane in packet["lanes"].values():
             self.assertEqual(lane["verification"]["status"], "missing")
+
+    def test_preflight_cli_emits_machine_readable_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            packet_path = Path(directory) / "packet.json"
+            packet_path.write_text(json.dumps(packet_with_preflight_inputs()), encoding="utf-8")
+            stdout = StringIO()
+            argv = ["verify_i1664_signing_readiness.py", "--packet", str(packet_path), "--emit-preflight-ready"]
+            with patch.object(sys, "argv", argv), redirect_stdout(stdout):
+                self.assertEqual(readiness.main(), 0)
+        self.assertEqual(stdout.getvalue(), "true\n")
 
     def test_preflight_rejects_unscoped_or_overbroad_apple_and_windows_access(self) -> None:
         rejected_scopes = ("", "unscoped", "*", "all workflows", "release-cli signing workflow")
