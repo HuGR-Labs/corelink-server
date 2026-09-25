@@ -60,10 +60,9 @@ concurrency:
 jobs:
   generate:
     name: Generate release notes draft
-    # Runner: `corelink` (zero-hosted). Pure stdlib python3
-    # (generate-release-notes.py) + `gh` (pr create) + the softprops release
-    # action (node) — all provided by the box image (gh 2.97.0 at increment 3).
-    runs-on: corelink
+    # Hosted Ubuntu supplies Python and GitHub CLI; the existing bot-token
+    # permission boundary and publication commands remain unchanged.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Mint repository-scoped bot token
@@ -81,6 +80,7 @@ jobs:
       - name: Checkout full history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.sha }}
           # GITHUB_TOKEN branch pushes suppress push workflows, while the PR
@@ -198,7 +198,14 @@ jobs:
 
           Signed-off-by: corelink-release-bot <release-bot@humangr.com>
           "
-          git push -u origin "$BRANCH"
+          # Checkout credential persistence is disabled. Supply this one push
+          # with the repository-scoped App token through ephemeral Git config;
+          # do not write credentials into the checkout's .git/config.
+          auth="$(printf 'x-access-token:%s' "$BOT_APP_TOKEN" | base64 | tr -d '\n')"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0='http.https://github.com/.extraheader' \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${auth}" \
+            git push -u origin "$BRANCH"
 
       - name: Open editorial PR
         if: github.event_name == 'push'

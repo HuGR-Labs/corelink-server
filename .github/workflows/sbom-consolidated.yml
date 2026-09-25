@@ -41,20 +41,23 @@ concurrency:
 jobs:
   sbom-consolidated:
     name: aggregate workspace CycloneDX SBOM
-    # Runner: `corelink` (zero-hosted). Needs a working cargo (cargo-cyclonedx
-    # resolves the workspace) + jq — both provided by the box image; cargo-cyclonedx
-    # arrives via the SHA-pinned taiki-e prebuilt.
-    runs-on: corelink
+    # Hosted Ubuntu provides jq; cargo-cyclonedx arrives via the SHA-pinned
+    # taiki-e prebuilt and the exact workspace Rust toolchain is installed below.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
 
-      # `dtolnay/rust-toolchain` removed — validate_no_shared_rustup_mutation
-      # forbids it on self-hosted (`corelink`). The box image bakes the pinned
-      # channel; assert it is on PATH instead (mirrors corelink-server.yml).
+      # The ephemeral hosted VM can safely install the exact channel before
+      # this helper verifies it against rust-toolchain.toml.
+      - name: Install workspace-pinned Rust toolchain on hosted VM
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: 1.91.1
       - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
         run: bash scripts/ci-assert-pinned-toolchain.sh
 

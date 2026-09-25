@@ -46,20 +46,22 @@ concurrency:
 jobs:
   license-policy:
     name: cargo-license + allowlist policy gate
-    # zero-hosted (WP-CI): cargo + taiki-e/install-action (tool-cache da frota é gravável)
-    runs-on: corelink
+    # Hosted Ubuntu uses the pinned workspace toolchain and the existing
+    # cargo-license allowlist check.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      # Hosted runners are isolated VMs, so installing the exact workspace pin
+      # here cannot mutate the shared rustup state of another job.
+      - name: Install workspace-pinned Rust toolchain on hosted VM
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: 1.91.1
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         run: bash scripts/ci-use-host-toolchain.sh
 
