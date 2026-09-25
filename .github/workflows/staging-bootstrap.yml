@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/staging-bootstrap.yml'
+      - 'infra/staging/README.md'
       - 'scripts/render_staging_wrangler.py'
       - 'scripts/staging_bootstrap_provider.py'
       - 'tests/test_render_staging_wrangler.py'
