@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Safe hosted contract for the policy and PR automation migration (#2374).
 
-The candidate workflows are inspected as data. Read-only policy checks run on
-local fixtures; paths that write labels, comments, auto-merge state, artifacts,
-or stale state are represented by a deny-by-default dry-run sink. No GitHub API
-write or provider operation is available to this proof.
+The candidate workflows are inspected as data. Cargo may refresh only the
+disposable policy fixture's lockfile; every copied manifest and source target
+remains read-only. Paths that write labels, comments, auto-merge state, or stale
+state use a deny-by-default mock. No GitHub API write or provider operation is
+available to this proof.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import textwrap
@@ -84,6 +86,12 @@ POLICY_CARGO_DENY_COMMAND = (
 POLICY_CARGO_DENY_OLD_INVALID_COMMAND = (
     'cargo deny --manifest-path "$POLICY_TREE/Cargo.toml" --config "$DENY_CONFIG" check licenses bans'
 )
+POLICY_CARGO_LOCKFILE_WRITE_GUARD = (
+    'if [ -f "$POLICY_TREE/Cargo.lock" ] && [ ! -L "$POLICY_TREE/Cargo.lock" ]; then\n'
+    '  chmod u+w "$POLICY_TREE/Cargo.lock"\n'
+    'fi'
+)
+POLICY_CARGO_LOCKFILE_WRITE_GUARD_NORMALIZED = POLICY_CARGO_LOCKFILE_WRITE_GUARD.replace("\n  chmod", "\nchmod")
 
 
 def fail(message: str) -> None:
@@ -166,6 +174,7 @@ def run_blocks(lines: list[str]) -> tuple[str, ...]:
 def commands_preserve_intent(relative: str, job: str, original: tuple[str, ...], candidate: tuple[str, ...]) -> bool:
     if relative == ".github/workflows/dependabot-policy.yml" and job == "policy-gate":
         original = tuple(block.replace(POLICY_CARGO_DENY_OLD_INVALID_COMMAND, POLICY_CARGO_DENY_COMMAND) for block in original)
+        candidate = tuple(block.replace(POLICY_CARGO_LOCKFILE_WRITE_GUARD_NORMALIZED, "") for block in candidate)
     return original == candidate
 
 
@@ -311,6 +320,10 @@ def verify_inventory(root: Path) -> None:
         fail("Dependabot policy must use the pinned cargo-deny command with `check --config` ordering")
     if POLICY_CARGO_DENY_OLD_INVALID_COMMAND in policy_text:
         fail("Dependabot policy still contains cargo-deny's invalid `--config ... check` ordering")
+    preparation = named_run_block(root, ".github/workflows/dependabot-policy.yml", "policy-gate",
+                                  "Prepare isolated Cargo policy tree (PR data only)")
+    if POLICY_CARGO_LOCKFILE_WRITE_GUARD not in preparation:
+        fail("Cargo policy preparation must make only the disposable Cargo.lock writable")
 
     for relative, expected in FILES.items():
         jobs = job_blocks((root / relative).read_text(encoding="utf-8"), relative)
@@ -435,6 +448,7 @@ def verify_read_only_fixtures(root: Path) -> None:
     subprocess.run([sys.executable, "scripts/validate_permission_matrix.py", "--self-test"], cwd=root, check=True)
     subprocess.run([sys.executable, "scripts/validate_permission_matrix.py"], cwd=root, check=True)
     subprocess.run(["bash", "scripts/test_ci_use_host_toolchain.sh"], cwd=root, check=True)
+    verify_policy_tree_write_boundary_self_test()
 
 
 def named_run_block(root: Path, relative: str, job: str, step_name: str) -> str:
@@ -1102,7 +1116,9 @@ def verify_policy_gate_cargo_deny(root: Path, baseline: Path) -> None:
         prepared = subprocess.run(["bash", "-euo", "pipefail", "-c", prepare], cwd=baseline, env=env, capture_output=True, text=True)
         if prepared.returncode != 0:
             fail(f"Dependabot policy fixture preparation failed: {prepared.stderr[-1000:]}")
-        materialize_minimal_cargo_targets(Path(env["POLICY_TREE"]))
+        policy_tree = Path(env["POLICY_TREE"])
+        materialize_minimal_cargo_targets(policy_tree)
+        verify_policy_tree_write_boundary(policy_tree)
         policy = named_run_block(root, ".github/workflows/dependabot-policy.yml", "policy-gate", "Run cargo-deny licenses (fail-closed)")
         checked = subprocess.run(["bash", "-euo", "pipefail", "-c", policy], cwd=baseline, env=env, capture_output=True, text=True)
         if checked.returncode != 0:
@@ -1116,6 +1132,50 @@ def verify_policy_gate_cargo_deny(root: Path, baseline: Path) -> None:
             fail("cargo-deny old-order negative control was not rejected as invalid syntax: "
                  f"rc={rejected.returncode} stderr={rejected.stderr[-700:]}")
         print("cargo-deny syntax negative control: old `--config ... check` ordering rejected")
+
+
+def verify_policy_tree_write_boundary(policy_tree: Path) -> None:
+    """Allow Cargo metadata to refresh only its disposable lockfile."""
+    lockfile = policy_tree / "Cargo.lock"
+    if not lockfile.is_file() or lockfile.is_symlink() or not (lockfile.stat().st_mode & stat.S_IWUSR):
+        fail("isolated Cargo policy tree must have one regular writable Cargo.lock")
+    protected = [path for path in sorted(policy_tree.rglob("*"))
+                 if path.is_file() and path != lockfile]
+    if not protected:
+        fail("isolated Cargo policy tree has no protected manifest/source files")
+    for path in protected:
+        if path.is_symlink() or path.stat().st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
+            fail(f"isolated Cargo policy tree unexpectedly permits writes to {path.relative_to(policy_tree)}")
+    probe = protected[0]
+    write_probe = subprocess.run(
+        [sys.executable, "-c", "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('forbidden')", str(probe)],
+        capture_output=True, text=True,
+    )
+    if write_probe.returncode == 0 or "PermissionError" not in write_probe.stderr:
+        fail(f"isolated Cargo policy tree did not reject a non-lockfile write to {probe.relative_to(policy_tree)}")
+
+
+def verify_policy_tree_write_boundary_self_test() -> None:
+    """Negative regression: a writable copied manifest must invalidate the fixture."""
+    with tempfile.TemporaryDirectory(prefix="i2374-policy-mode-guard-") as directory:
+        policy_tree = Path(directory)
+        lockfile = policy_tree / "Cargo.lock"
+        manifest = policy_tree / "Cargo.toml"
+        target = policy_tree / "src/lib.rs"
+        target.parent.mkdir()
+        lockfile.write_text("version = 4\n", encoding="utf-8")
+        manifest.write_text('[package]\nname = "fixture"\nversion = "0.1.0"\n', encoding="utf-8")
+        target.write_text("pub fn fixture() {}\n", encoding="utf-8")
+        lockfile.chmod(0o644)
+        manifest.chmod(0o444)
+        target.chmod(0o444)
+        verify_policy_tree_write_boundary(policy_tree)
+        manifest.chmod(0o644)
+        try:
+            verify_policy_tree_write_boundary(policy_tree)
+        except ContractError:
+            return
+        fail("policy fixture write-boundary negative control accepted a writable manifest")
 
 
 def verify_negative_controls(root: Path, baseline: Path | None) -> None:

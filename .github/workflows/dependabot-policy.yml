@@ -178,6 +178,11 @@ jobs:
           done < <(find "$UNTRUSTED_TREE" -type f -name Cargo.toml -print0)
           cp -p --no-preserve=mode,ownership deny.toml "$DENY_CONFIG"
           find "$POLICY_TREE" -type f -exec chmod a-w {} +
+          # cargo metadata must refresh the disposable lockfile; keep every
+          # copied manifest and generated fixture source read-only.
+          if [ -f "$POLICY_TREE/Cargo.lock" ] && [ ! -L "$POLICY_TREE/Cargo.lock" ]; then
+            chmod u+w "$POLICY_TREE/Cargo.lock"
+          fi
           chmod a-w "$DENY_CONFIG"
 
       # ---------------------------------------------------------------------
