@@ -48,6 +48,10 @@ AUDIT_OPERATION_SECTIONS = (
         "emit_list_sli",
     ),
 )
+ATTEMPTED_AUDIT_FAILURES = (
+    ("lookup", "AcAuditEventKind::LookupAttempted", "emit_lookup_sli"),
+    ("list", "AcAuditEventKind::ListAttempted", "emit_list_sli"),
+)
 
 
 def storage_source(root: Path) -> str:
@@ -64,6 +68,26 @@ def _section(source: str, start: str, end: str) -> str:
     if finish < 0:
         raise ContractError(f"missing section terminator {end}")
     return source[begin:finish]
+
+
+def attempted_audit_failure_section(storage: str, operation: str, event: str) -> str:
+    contract = next(
+        (item for item in AUDIT_OPERATION_SECTIONS if item[0] == operation), None
+    )
+    if contract is None:
+        raise ContractError(f"missing audit operation section {operation}")
+    _, start, end, _ = contract
+    section = _section(storage, start, end)
+    event_at = section.find(event)
+    if event_at < 0:
+        raise ContractError(f"missing attempted audit event {event}")
+    branch_start = section.rfind("if let Err(e) = self.audit.emit(", 0, event_at)
+    if branch_start < 0:
+        raise ContractError(f"missing attempted audit failure branch for {event}")
+    branch_end = section.find("let mut byok_guard", event_at)
+    if branch_end < 0:
+        raise ContractError(f"missing attempted audit failure terminator for {event}")
+    return section[branch_start:branch_end]
 
 
 def assess_source(storage: str, aggregate: str, docs: str) -> list[str]:
@@ -136,6 +160,18 @@ def assess_source(storage: str, aggregate: str, docs: str) -> list[str]:
             gaps.append(f"audit-failure-sli-{operation}")
         if operation == "list" and "self.emit_lookup_sli(" in section:
             gaps.append("latency-catalog-list-is-hit")
+
+    for operation, event, emit in ATTEMPTED_AUDIT_FAILURES:
+        try:
+            attempted = attempted_audit_failure_section(storage, operation, event)
+        except ContractError:
+            gaps.append(f"audit-failure-sli-{operation}-attempted-section")
+            continue
+        if (
+            "AcHandlerError::AuditFailed(e)" not in attempted
+            or f"self.{emit}(true, elapsed_us(started));" not in attempted
+        ):
+            gaps.append(f"audit-failure-sli-{operation}-attempted")
 
     try:
         list_helper = _section(storage, "fn emit_list_sli", "    fn emit_update_sli")
