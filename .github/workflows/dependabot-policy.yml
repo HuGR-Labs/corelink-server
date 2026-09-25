@@ -74,9 +74,8 @@ jobs:
     name: dependabot-policy sentinel
     # This no-op sentinel is still needed as a required check for ordinary PRs,
     # but it must not allocate the ephemeral fabric for an untrusted actor.
-    # Keep it on the watched Mac pool; the actual Dependabot gate below remains
-    # actor-gated on `corelink`.
-    runs-on: [self-hosted, mac, corelink-builder]
+    # Keep this non-Dependabot metadata lane off the PR write gate.
+    runs-on: ubuntu-24.04
     timeout-minutes: 1
     if: github.actor != 'dependabot[bot]'
     steps:
@@ -89,8 +88,8 @@ jobs:
   # -----------------------------------------------------------------------
   policy-gate:
     name: Dependabot policy gate
-    # zero-hosted (WP-CI): gh + cargo-deny assados; e o merge-ref do PR passa a ser avaliado em microVM descartável, não no Mac do owner
-    runs-on: corelink
+    # GitHub-hosted Ubuntu runs the policy gate on an isolated runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
 
@@ -192,14 +191,7 @@ jobs:
       # so an unparseable SPDX (e.g., `SEE LICENSE IN <file>`) fails the
       # gate and forces human review.
       # ---------------------------------------------------------------------
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
-      #
+      # Install Rust only in this disposable hosted VM. Its rustup state is not shared.
       # ⚠️ `HOST_TRIPLE` is set EXPLICITLY, and that is what keeps this PR
       # independent of merge order. The script on `main` today resolves the
       # triple as `HOST_TRIPLE="${HOST_TRIPLE:-x86_64-apple-darwin}"` — a default
@@ -210,6 +202,12 @@ jobs:
       # supply-chain gate. #1501 teaches the script to detect the triple from
       # `uname`, but naming it here costs two lines and removes the coupling
       # entirely — correct whether #1501 lands first, later, or never.
+      - name: Install the workspace-pinned toolchain on the hosted runner
+        if: hashFiles('_pr-data/Cargo.toml') != ''
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # 1.91.1 action pin
+        with:
+          toolchain: 1.91.1
+
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         working-directory: _base
         if: hashFiles('_pr-data/Cargo.toml') != ''

@@ -46,8 +46,8 @@ jobs:
       github.event.pull_request.author_association == 'OWNER' ||
       github.event.pull_request.author_association == 'MEMBER' ||
       github.event.pull_request.author_association == 'COLLABORATOR'
-    # zero-hosted (WP-CI): gh + actions/labeler (JS action) — gh assado na imagem
-    runs-on: corelink
+    # GitHub-hosted Ubuntu supplies gh; actions/labeler is SHA-pinned.
+    runs-on: ubuntu-24.04
     steps:
       - name: Apply labels
         uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d # v6.2.0
@@ -65,8 +65,8 @@ jobs:
       github.event.pull_request.author_association == 'OWNER' ||
       github.event.pull_request.author_association == 'MEMBER' ||
       github.event.pull_request.author_association == 'COLLABORATOR'
-    # zero-hosted (WP-CI): gh + actions/labeler (JS action) — gh assado na imagem
-    runs-on: corelink
+    # GitHub-hosted Ubuntu supplies gh; actions/labeler is SHA-pinned.
+    runs-on: ubuntu-24.04
     steps:
       # Native implementation (no container action). The previous
       # `codelytv/pr-size-labeler` is a Docker container action — Linux-only —

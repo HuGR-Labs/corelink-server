@@ -1,0 +1,129 @@
+name: issue 2374 hosted runner migration contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/bot-pr-has-checks.yml"
+      - ".github/workflows/coverage.yml"
+      - ".github/workflows/dependabot-auto-merge.yml"
+      - ".github/workflows/dependabot-policy-trust-boundary.yml"
+      - ".github/workflows/dependabot-policy.yml"
+      - ".github/workflows/lockfile-diff.yml"
+      - ".github/workflows/permission-matrix.yml"
+      - ".github/workflows/pr-labels.yml"
+      - ".github/workflows/stale.yml"
+      - ".github/workflows/welcome-first-pr.yml"
+      - ".github/workflows/issue-2374-migration-contract.yml"
+      - "scripts/verify_issue_2374_runner_migration.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2374-migration-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  migration-contract:
+    name: census, immutable baselines, and mocked write denial
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Python and pinned YAML parser
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install checksum-pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+
+      - name: Install pinned PyYAML
+        run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
+
+      - name: Lint all migrated workflows and the proof workflow
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml \
+            .github/workflows/bot-pr-has-checks.yml \
+            .github/workflows/coverage.yml \
+            .github/workflows/dependabot-auto-merge.yml \
+            .github/workflows/dependabot-policy-trust-boundary.yml \
+            .github/workflows/dependabot-policy.yml \
+            .github/workflows/lockfile-diff.yml \
+            .github/workflows/permission-matrix.yml \
+            .github/workflows/pr-labels.yml \
+            .github/workflows/stale.yml \
+            .github/workflows/welcome-first-pr.yml \
+            .github/workflows/issue-2374-migration-contract.yml
+
+      - name: Check exact-base migration and adversarial controls
+        run: >-
+          python scripts/verify_issue_2374_runner_migration.py
+          --base-sha "${{ github.event.pull_request.base.sha }}" --self-test
+
+  coverage-receipt:
+    name: real read-only coverage workload and report receipt
+    needs: migration-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Install Rust toolchain (stable + llvm-tools-preview)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        with:
+          components: llvm-tools-preview
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-llvm-cov@0.6.16
+
+      - name: Run actual coverage workload
+        run: bash scripts/coverage.sh
+
+      - name: Validate same-run coverage receipt
+        run: |
+          set -euo pipefail
+          test -s target/coverage/SUMMARY.txt
+          test -s target/coverage/html/index.html
+          echo "Coverage workload completed for exact PR head $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          sha256sum target/coverage/SUMMARY.txt target/coverage/html/index.html >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain coverage report receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-2374-coverage-${{ github.event.pull_request.number }}
+          path: |
+            target/coverage/SUMMARY.txt
+            target/coverage/html/index.html
+          retention-days: 90
+          if-no-files-found: error

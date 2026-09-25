@@ -22,7 +22,7 @@ permissions:
 jobs:
   trust-boundary-teeth:
     name: Dependabot trust-boundary teeth (BASE-only execution)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
     steps:

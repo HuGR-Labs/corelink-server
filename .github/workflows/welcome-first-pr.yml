@@ -56,7 +56,7 @@ jobs:
     #
     # The Mac watcher handles queued jobs in this separate pool; the timeout
     # below bounds running work only.
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Greet first-time contributor

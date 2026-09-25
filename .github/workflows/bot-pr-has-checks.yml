@@ -72,8 +72,8 @@ concurrency:
 jobs:
   audit:
     name: every automation PR has at least one check
-    # Self-hosted fleet — zero GitHub-hosted spend, per the standing mandate.
-    runs-on: corelink
+    # GitHub-hosted runner keeps this read-only watchdog independent of CoreLink capacity.
+    runs-on: ubuntu-24.04
     if: github.repository_id == '1232040291'
     timeout-minutes: 10
     steps:
