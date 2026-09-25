@@ -673,6 +673,38 @@ describe("handleStripeWebhook", () => {
         ).toBeDefined();
     });
 
+    it("specialized D1 fixture batches delegate statements in order and stop on failure", async () => {
+        const claimDb = fakeDbClaimThrows();
+        const beforeClaim = claimDb.prepare("UPDATE fixture_before_claim");
+        const failedClaim = claimDb.prepare(
+            "INSERT OR IGNORE INTO stripe_webhook_events_processed VALUES (?1)",
+        );
+        expect(claimDb.batch).toBeTypeOf("function");
+        await expect(claimDb.batch([beforeClaim, failedClaim])).rejects.toThrow("D1_UNAVAILABLE");
+        expect(claimDb.runCalls.map((call) => call.sql)).toEqual(["UPDATE fixture_before_claim"]);
+
+        let failWrite = true;
+        const writeDb = fakeDbFailableWrite((sql) => failWrite && sql.includes("fixture_failure"));
+        const firstWrite = writeDb.prepare("UPDATE fixture_first");
+        const failedWrite = writeDb.prepare("UPDATE fixture_failure");
+        const laterWrite = writeDb.prepare("UPDATE fixture_later");
+        expect(writeDb.batch).toBeTypeOf("function");
+        await expect(writeDb.batch([firstWrite, failedWrite, laterWrite])).rejects.toThrow(
+            "D1_WRITE_FAILED",
+        );
+        expect(writeDb.runCalls.map((call) => call.sql)).toEqual(["UPDATE fixture_first"]);
+
+        failWrite = false;
+        await writeDb.batch([firstWrite, failedWrite, laterWrite]);
+        expect(writeDb.runCalls.map((call) => call.sql)).toEqual([
+            "UPDATE fixture_first",
+            "UPDATE fixture_first",
+            "UPDATE fixture_failure",
+            "UPDATE fixture_later",
+        ]);
+        expect(writeDb.batch).toHaveBeenCalledTimes(2);
+    });
+
     it("dedup: an UNKNOWN event type is claimed with outcome 'acknowledged_unknown'", async () => {
         const db = fakeDb();
         const nowMs = Date.now();
