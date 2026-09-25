@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from probe_i1662_b106 import NoRedirectHandler, PRODUCTION_ORIGIN, ProbeError, origin
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/issue-1662-b106-cold-warm.yml"
@@ -21,6 +23,42 @@ def require(text: str, fragment: str, label: str) -> None:
         raise SystemExit(f"B-106 contract missing {label}: {fragment}")
 
 
+def verify_target_guard() -> None:
+    if origin(PRODUCTION_ORIGIN) != PRODUCTION_ORIGIN:
+        raise SystemExit("B-106 production origin did not remain canonical")
+
+    rejected = (
+        "https://evil.example",
+        "https://user:pass@corelink-api.humangr.com",
+        "https://corelink-api.humangr.com:443",
+        "https://corelink-api.humangr.com:0443",
+        "https://corelink-api.humangr.com:8443",
+        "https://CORELINK-API.humangr.com",
+        "https://corelink-api.humangr.com.",
+        "https://corelink-api.humangr.com/",
+        "https://corelink-api.humangr.com/path",
+        "https://corelink-api.humangr.com?next=https://evil.example",
+        "https://corelink-api.humangr.com#fragment",
+        "https://corelink-api.humangr.com\\@evil.example",
+        "https://corelink-api.humangr.com@evil.example",
+        "https://corelink-api.humangr.com%2eevil.example",
+        "http://corelink-api.humangr.com",
+    )
+    for target in rejected:
+        try:
+            origin(target)
+        except ProbeError:
+            continue
+        raise SystemExit(f"B-106 target guard accepted a non-canonical target: {target!r}")
+
+    for status in (301, 302, 303, 307, 308):
+        redirect = NoRedirectHandler().redirect_request(
+            None, None, status, "Redirect", {}, "https://evil.example/collect"
+        )
+        if redirect is not None:
+            raise SystemExit("B-106 HTTP client must reject redirects before forwarding credentials")
+
+
 def main() -> int:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     probe = PROBE.read_text(encoding="utf-8")
@@ -30,6 +68,9 @@ def main() -> int:
         if forbidden in workflow:
             raise SystemExit(f"B-106 lane must remain manual; found {forbidden}")
     require(workflow, "environment: production", "protected production environment")
+    require(workflow, "TARGET: https://corelink-api.humangr.com", "canonical production target")
+    if "inputs.target" in workflow:
+        raise SystemExit("B-106 target must not be a caller-controlled workflow input")
     require(workflow, "github.ref == 'refs/heads/main'", "main guard")
     require(workflow, "github.ref_protected", "protected-ref guard")
     require(workflow, "test \"$CONFIRM\" = run-1662-b106-cold-warm", "exact confirmation")
@@ -48,6 +89,8 @@ def main() -> int:
         raise SystemExit("session/token must not be passed as a command-line argument")
 
     require(probe, "MIN_IDLE_SECONDS = 61", "61-second cold interval")
+    require(probe, 'PRODUCTION_ORIGIN = "https://corelink-api.humangr.com"', "production origin allowlist")
+    require(probe, "HTTP_OPENER.open(request", "redirect-disabled HTTP opener")
     require(probe, 'cold["auth_source"] != "d1"', "cold d1 proof")
     require(probe, 'warm["auth_source"] not in {"l1", "kv"}', "warm cache proof")
     require(probe, 'warm["colo"] != cold["colo"]', "same-colo proof")
@@ -69,6 +112,8 @@ def main() -> int:
         raise SystemExit("probe must never print token material")
     if re.search(r"method=\"(?:PUT|PATCH|DELETE)\"", probe):
         raise SystemExit("B-106 probe contains a forbidden data-plane mutation")
+
+    verify_target_guard()
 
     print("B-106 static contract: PASS (credentialless; no dispatch)")
     return 0
