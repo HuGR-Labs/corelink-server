@@ -231,6 +231,8 @@ export async function startContainer(
           AUDIT_WITNESS_PUBLIC_KEYS_JSON: ctx.env.AUDIT_WITNESS_PUBLIC_KEYS_JSON ?? "",
           AUDIT_CHAIN_TRUST_ROOT_PUBLIC_KEYS_JSON:
             ctx.env.AUDIT_CHAIN_TRUST_ROOT_PUBLIC_KEYS_JSON ?? "",
+          CORELINK_ADMIN_APPROVAL_TRUST_ROOTS_JSON:
+            ctx.env.CORELINK_ADMIN_APPROVAL_TRUST_ROOTS_JSON ?? "",
           AUDIT_CHAIN_TRUST_UNSIGNED_RESUME: ctx.env.AUDIT_CHAIN_TRUST_UNSIGNED_RESUME ?? "",
           // Non-secret tuning knob (secrets-matrix #189): per-call row budget for
           // the audit/drain sweep. "" ⇒ container default (200). Forwarded so a

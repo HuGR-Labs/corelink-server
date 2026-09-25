@@ -27,6 +27,9 @@ pub struct AuditDrainState {
     /// Operator-pinned audit signing trust roots. D1 registry rows can never
     /// populate this map or authenticate themselves.
     trust_roots: Option<Arc<std::collections::BTreeMap<String, ed25519_dalek::VerifyingKey>>>,
+    /// Separately pinned trust roots for provider-issued two-person admin approvals.
+    admin_approval_roots:
+        Option<Arc<std::collections::BTreeMap<String, ed25519_dalek::VerifyingKey>>>,
     /// SECURE DEFAULT `false`: with a seed configured, a resumed head carrying a
     /// NULL signature or a foreign `signing_key_id` is UNVERIFIABLE and treated as
     /// TAMPER (fail-CLOSED) — an insider with D1 write (but no seed) cannot strip
@@ -578,6 +581,18 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
         }
         _ => None,
     };
+    let admin_approval_roots = match std::env::var("CORELINK_ADMIN_APPROVAL_TRUST_ROOTS_JSON") {
+        Ok(raw) if !raw.trim().is_empty() => {
+            match b054_epoch_admin::b054_parse_trust_root_public_keys(&raw) {
+                Ok(roots) => Some(Arc::new(roots)),
+                Err(error) => {
+                    tracing::warn!(error = %error, "audit/epoch-admin: invalid approval trust-root registry; route NOT mounted (fail-CLOSED)");
+                    return None;
+                }
+            }
+        }
+        _ => None,
+    };
     if signing_seed.is_none() {
         tracing::warn!(
             "audit/drain: no AUDIT_CHAIN_SIGNING_SEED_HEX / ERASURE_ATTESTATION_SEED_HEX \
@@ -626,6 +641,7 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
         link_keyring,
         witness,
         trust_roots,
+        admin_approval_roots,
         trust_unsigned_resume,
         batch_limit,
         lease_enabled,

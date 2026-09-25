@@ -5,8 +5,7 @@
         link: &B054AuthenticatedLinkKey,
         key: &[u8; 32],
     ) -> Result<(), String> {
-        if hash_domain_payload(B054_ADMIN_LINK_COMMITMENT_DOMAIN, key)
-            != link.record.key_commitment_hex
+        if hash_domain_payload(B054_ADMIN_LINK_COMMITMENT_DOMAIN, key) != link.record.key_commitment_hex
         {
             return Err("B054 configured link key does not match signed commitment".to_owned());
         }
@@ -16,6 +15,40 @@
     #[derive(Debug, serde::Deserialize)]
     #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
     pub(super) enum B054EpochAdminRequest {
+        ProvisionSigningKey {
+            registry_jcs_b64: String,
+            registry_signature_b64: String,
+            approval_jcs_b64: String,
+            approval_signature_b64: String,
+            executor_signature_b64: String,
+        },
+        ProvisionLinkKey {
+            link_key_id: u64,
+            registered_at_ms: u64,
+            approval_jcs_b64: String,
+            approval_signature_b64: String,
+            executor_signature_b64: String,
+        },
+        BootstrapE0 {
+            tenant_id: String,
+            region: String,
+            approval_jcs_b64: String,
+            approval_signature_b64: String,
+            executor_signature_b64: String,
+        },
+        TransitionE1 {
+            tenant_id: String,
+            region: String,
+            link_key_id: u64,
+            approval_jcs_b64: String,
+            approval_signature_b64: String,
+            executor_signature_b64: String,
+        },
+    }
+
+    #[derive(Debug, serde::Serialize)]
+    #[serde(tag = "operation", rename_all = "snake_case")]
+    enum B054EpochAdminOperation {
         ProvisionSigningKey {
             registry_jcs_b64: String,
             registry_signature_b64: String,
@@ -33,6 +66,222 @@
             region: String,
             link_key_id: u64,
         },
+    }
+
+    #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+    #[serde(deny_unknown_fields)]
+    struct B054AdminApprovalJcs {
+        approval_id: String,
+        approval_version: u8,
+        approver_role: String,
+        approver_subject_id: String,
+        audience: String,
+        approver_eligible: bool,
+        executor_role: String,
+        executor_eligible: bool,
+        executor_public_key_b64: String,
+        executor_subject_id: String,
+        expires_at_ms: u64,
+        issuer: String,
+        issued_at_ms: u64,
+        nonce: String,
+        operation_digest_hex: String,
+        trust_root_key_id: String,
+    }
+
+    struct B054VerifiedAdminApproval {
+        claims: B054AdminApprovalJcs,
+        claims_jcs: Vec<u8>,
+        signature_b64: String,
+    }
+
+    impl B054EpochAdminRequest {
+        fn operation(&self) -> B054EpochAdminOperation {
+            match self {
+                Self::ProvisionSigningKey {
+                    registry_jcs_b64,
+                    registry_signature_b64,
+                    ..
+                } => B054EpochAdminOperation::ProvisionSigningKey {
+                    registry_jcs_b64: registry_jcs_b64.clone(),
+                    registry_signature_b64: registry_signature_b64.clone(),
+                },
+                Self::ProvisionLinkKey {
+                    link_key_id,
+                    registered_at_ms,
+                    ..
+                } => B054EpochAdminOperation::ProvisionLinkKey {
+                    link_key_id: *link_key_id,
+                    registered_at_ms: *registered_at_ms,
+                },
+                Self::BootstrapE0 {
+                    tenant_id, region, ..
+                } => B054EpochAdminOperation::BootstrapE0 {
+                    tenant_id: tenant_id.clone(),
+                    region: region.clone(),
+                },
+                Self::TransitionE1 {
+                    tenant_id,
+                    region,
+                    link_key_id,
+                    ..
+                } => B054EpochAdminOperation::TransitionE1 {
+                    tenant_id: tenant_id.clone(),
+                    region: region.clone(),
+                    link_key_id: *link_key_id,
+                },
+            }
+        }
+
+        fn approval_artifact(&self) -> (&str, &str, &str) {
+            match self {
+                Self::ProvisionSigningKey {
+                    approval_jcs_b64,
+                    approval_signature_b64,
+                    executor_signature_b64,
+                    ..
+                }
+                | Self::ProvisionLinkKey {
+                    approval_jcs_b64,
+                    approval_signature_b64,
+                    executor_signature_b64,
+                    ..
+                }
+                | Self::BootstrapE0 {
+                    approval_jcs_b64,
+                    approval_signature_b64,
+                    executor_signature_b64,
+                    ..
+                }
+                | Self::TransitionE1 {
+                    approval_jcs_b64,
+                    approval_signature_b64,
+                    executor_signature_b64,
+                    ..
+                } => (approval_jcs_b64, approval_signature_b64, executor_signature_b64),
+            }
+        }
+    }
+
+    const B054_ADMIN_APPROVAL_DOMAIN: &[u8] = b"corelink/audit-chain/admin-approval/v1\0";
+    const B054_ADMIN_APPROVAL_AUDIENCE: &str = "corelink-b054-epoch-admin-v1";
+    const B054_ADMIN_APPROVAL_MAX_AGE_MS: u64 = 5 * 60 * 1000;
+
+    fn b054_admin_now_ms() -> Result<u64, String> {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "B054 approval clock before Unix epoch".to_owned())?
+            .as_millis()
+            .try_into()
+            .map_err(|_| "B054 approval clock exceeds supported range".to_owned())
+    }
+
+    fn b054_admin_operation_digest(operation: &B054EpochAdminOperation) -> Result<String, String> {
+        let canonical =
+            serde_jcs::to_vec(operation).map_err(|error| format!("B054 operation JCS: {error}"))?;
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"corelink/audit-chain/admin-operation/v1\0");
+        hasher.update(&canonical);
+        Ok(hasher.finalize().to_hex().to_string())
+    }
+
+    const B054_ADMIN_EXECUTOR_DOMAIN: &[u8] = b"corelink/audit-chain/admin-executor/v1\0";
+
+    fn b054_admin_executor_message(claims: &B054AdminApprovalJcs) -> Vec<u8> {
+        let mut message = B054_ADMIN_EXECUTOR_DOMAIN.to_vec();
+        message.extend_from_slice(claims.approval_id.as_bytes());
+        message.push(0);
+        message.extend_from_slice(claims.nonce.as_bytes());
+        message.push(0);
+        message.extend_from_slice(claims.operation_digest_hex.as_bytes());
+        message
+    }
+    fn b054_verify_admin_approval(
+        operation: &B054EpochAdminOperation,
+        approval_jcs_b64: &str,
+        signature_b64: &str,
+        executor_signature_b64: &str,
+        roots: &std::collections::BTreeMap<String, ed25519_dalek::VerifyingKey>,
+        now_ms: u64,
+    ) -> Result<B054VerifiedAdminApproval, String> {
+        let claims_jcs = decode_canonical_base64(approval_jcs_b64, None)?;
+        let claims: B054AdminApprovalJcs =
+            b054_admin_parse_exact(&claims_jcs, "B054 admin approval JCS")?;
+        let max_int = i64::MAX as u64;
+        if claims.approval_version != 1
+            || claims.audience != B054_ADMIN_APPROVAL_AUDIENCE
+            || claims.executor_role != "SRE executor"
+            || claims.approver_role != "Security approver"
+            || !claims.executor_eligible
+            || !claims.approver_eligible
+            || claims.executor_subject_id.is_empty()
+            || claims.approver_subject_id.is_empty()
+            || claims.executor_subject_id.len() > 256
+            || claims.approver_subject_id.len() > 256
+            || !claims
+                .executor_subject_id
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic())
+            || !claims
+                .approver_subject_id
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic())
+            || claims.executor_subject_id == claims.approver_subject_id
+            || !b054_admin_root_id(&claims.approval_id)
+            || !b054_admin_root_id(&claims.trust_root_key_id)
+            || claims.issuer != claims.trust_root_key_id
+            || claims.nonce.len() != 64
+            || !claims
+                .nonce
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            || claims.issued_at_ms > max_int
+            || claims.expires_at_ms > max_int
+            || claims.expires_at_ms <= claims.issued_at_ms
+            || claims.expires_at_ms - claims.issued_at_ms > B054_ADMIN_APPROVAL_MAX_AGE_MS
+            || now_ms < claims.issued_at_ms
+            || now_ms >= claims.expires_at_ms
+            || claims.operation_digest_hex != b054_admin_operation_digest(operation)?
+        {
+            return Err("B054 admin approval claims do not authorize this operation".to_owned());
+        }
+        let root = roots
+            .get(&claims.trust_root_key_id)
+            .ok_or("B054 admin approval names unknown pinned trust root")?;
+        let mut signed = Vec::with_capacity(B054_ADMIN_APPROVAL_DOMAIN.len() + claims_jcs.len());
+        signed.extend_from_slice(B054_ADMIN_APPROVAL_DOMAIN);
+        signed.extend_from_slice(&claims_jcs);
+        b054_admin_verify_raw_signature(root, &signed, signature_b64, "B054 admin approval")?;
+        let executor_public_key: [u8; 32] = decode_canonical_base64(&claims.executor_public_key_b64, Some(32))?
+            .try_into()
+            .map_err(|_| "B054 executor public-key length mismatch")?;
+        let executor_key = ed25519_dalek::VerifyingKey::from_bytes(&executor_public_key)
+            .map_err(|_| "B054 executor public key malformed")?;
+        b054_admin_verify_raw_signature(
+            &executor_key,
+            &b054_admin_executor_message(&claims),
+            executor_signature_b64,
+            "B054 executor possession",
+        )?;
+        Ok(B054VerifiedAdminApproval {
+            claims,
+            claims_jcs,
+            signature_b64: signature_b64.to_owned(),
+        })
+    }
+
+    async fn b054_consume_admin_approval(
+        d1: &D1HttpClient,
+        approval: &B054VerifiedAdminApproval,
+        now_ms: u64,
+    ) -> Result<(), String> {
+        let nonce_hash = blake3::hash(approval.claims.nonce.as_bytes())
+            .to_hex()
+            .to_string();
+        d1.batch(vec![D1BatchStatement::new(
+                    "INSERT INTO audit_chain_admin_approval (approval_id,nonce_hash,executor_subject_id,approver_subject_id,operation_digest_hex,approval_jcs_b64,approval_signature_b64,issued_at_ms,expires_at_ms,consumed_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                    vec![json!(approval.claims.approval_id), json!(nonce_hash), json!(approval.claims.executor_subject_id), json!(approval.claims.approver_subject_id), json!(approval.claims.operation_digest_hex), json!(base64::engine::general_purpose::STANDARD.encode(&approval.claims_jcs)), json!(approval.signature_b64), json!(approval.claims.issued_at_ms as i64), json!(approval.claims.expires_at_ms as i64), json!(now_ms as i64)],
+                )]).await.map(|_| ()).map_err(|error| format!("B054 admin approval replay/ledger rejection: {}", error.message))
     }
 
     fn admin_response(status: StatusCode, operation: &str, result: &str) -> Response {
@@ -71,11 +320,11 @@
         roots: &std::collections::BTreeMap<String, ed25519_dalek::VerifyingKey>,
     ) -> Result<B054AuthenticatedSigningKey, String> {
         let rows = d1
-            .query(
-                "SELECT registry_jcs,registry_signature_b64 FROM audit_chain_signing_key_registry WHERE signing_key_id=?1",
-                &[json!(b054_admin_i64(key_id, "signing key id")?)],
-            )
-            .await?;
+                    .query(
+                        "SELECT registry_jcs,registry_signature_b64 FROM audit_chain_signing_key_registry WHERE signing_key_id=?1",
+                        &[json!(b054_admin_i64(key_id, "signing key id")?)],
+                    )
+                    .await?;
         if rows.len() != 1 {
             return Err("B054 current signing registry is absent or ambiguous".to_owned());
         }
@@ -132,11 +381,11 @@
         region: &str,
     ) -> Result<B054SignedArtifact, String> {
         let rows = d1
-            .query(
-                "SELECT entry_jcs,signature_b64 FROM audit_chain_epoch_ledger WHERE tenant_id=?1 AND region=?2 AND ledger_sequence=0 AND epoch_id=0",
-                &[json!(tenant_id), json!(region)],
-            )
-            .await?;
+                    .query(
+                        "SELECT entry_jcs,signature_b64 FROM audit_chain_epoch_ledger WHERE tenant_id=?1 AND region=?2 AND ledger_sequence=0 AND epoch_id=0",
+                        &[json!(tenant_id), json!(region)],
+                    )
+                    .await?;
         if rows.len() != 1 {
             return Err("B054 E0 ledger is absent or ambiguous".to_owned());
         }
@@ -165,11 +414,11 @@
         signing: &B054AuthenticatedSigningKey,
     ) -> Result<B054AuthenticatedLinkKey, String> {
         let rows = d1
-            .query(
-                "SELECT registry_jcs,registry_signature_b64 FROM audit_chain_link_key_registry WHERE link_key_id=?1",
-                &[json!(b054_admin_i64(link_key_id, "link key id")?)],
-            )
-            .await?;
+                    .query(
+                        "SELECT registry_jcs,registry_signature_b64 FROM audit_chain_link_key_registry WHERE link_key_id=?1",
+                        &[json!(b054_admin_i64(link_key_id, "link key id")?)],
+                    )
+                    .await?;
         if rows.len() != 1 {
             return Err("B054 link registry is absent or ambiguous".to_owned());
         }
@@ -207,9 +456,9 @@
         witness_hash: &str,
     ) -> Result<VerifiedWitness, String> {
         let rows = d1.query(
-            "SELECT witness_jcs,receipt_jcs,receipt_signature_b64,witness_key_id,witness_record_hash,witness_sequence FROM audit_chain_witness_receipt WHERE tenant_id=?1 AND region=?2 AND witness_sequence=?3 AND witness_record_hash=?4",
-            &[json!(tenant_id),json!(region),json!(b054_admin_i64(witness_sequence, "witness sequence")?),json!(witness_hash)],
-        ).await?;
+                    "SELECT witness_jcs,receipt_jcs,receipt_signature_b64,witness_key_id,witness_record_hash,witness_sequence FROM audit_chain_witness_receipt WHERE tenant_id=?1 AND region=?2 AND witness_sequence=?3 AND witness_record_hash=?4",
+                    &[json!(tenant_id),json!(region),json!(b054_admin_i64(witness_sequence, "witness sequence")?),json!(witness_hash)],
+                ).await?;
         if rows.len() != 1 {
             return Err("B054 D1 witness predecessor is absent or ambiguous".to_owned());
         }
@@ -320,11 +569,11 @@
             let remaining = expected_next_sequence - cursor;
             let limit = remaining.min(1_000);
             let rows = d1
-                .query(
-                    "SELECT sequence_number,prev_hash,chain_hash,CAST(canonical_jcs AS TEXT) AS canonical_jcs FROM audit_outbox WHERE tenant_id=?1 AND region=?2 AND emitted_at IS NOT NULL AND sequence_number>=?3 ORDER BY sequence_number LIMIT ?4",
-                    &[json!(tenant_id), json!(region), json!(b054_admin_i64(cursor, "legacy cursor")?), json!(b054_admin_i64(limit, "legacy page limit")?)],
-                )
-                .await?;
+                        .query(
+                            "SELECT sequence_number,prev_hash,chain_hash,CAST(canonical_jcs AS TEXT) AS canonical_jcs FROM audit_outbox WHERE tenant_id=?1 AND region=?2 AND emitted_at IS NOT NULL AND sequence_number>=?3 ORDER BY sequence_number LIMIT ?4",
+                            &[json!(tenant_id), json!(region), json!(b054_admin_i64(cursor, "legacy cursor")?), json!(b054_admin_i64(limit, "legacy page limit")?)],
+                        )
+                        .await?;
             if rows.is_empty() {
                 return Err("B054 legacy prefix ended before signed head".to_owned());
             }
@@ -377,11 +626,11 @@
             }
         }
         let extras = d1
-            .query(
-                "SELECT sequence_number FROM audit_outbox WHERE tenant_id=?1 AND region=?2 AND emitted_at IS NOT NULL AND sequence_number>=?3 LIMIT 1",
-                &[json!(tenant_id), json!(region), json!(b054_admin_i64(expected_next_sequence, "legacy signed sequence")?)],
-            )
-            .await?;
+                    .query(
+                        "SELECT sequence_number FROM audit_outbox WHERE tenant_id=?1 AND region=?2 AND emitted_at IS NOT NULL AND sequence_number>=?3 LIMIT 1",
+                        &[json!(tenant_id), json!(region), json!(b054_admin_i64(expected_next_sequence, "legacy signed sequence")?)],
+                    )
+                    .await?;
         if !extras.is_empty() {
             return Err("B054 sealed legacy rows extend beyond signed head".to_owned());
         }
@@ -415,11 +664,11 @@
         let renewed_at = now_ms();
         let expires = renewed_at.saturating_add(AUDIT_DRAIN_LEASE_TTL_MS);
         let rows = d1
-            .query(
-                "UPDATE audit_drain_lease SET acquired_ms=?1,expires_ms=?2 WHERE tenant_id=?3 AND region=?4 AND holder=?5 AND expires_ms>=?1 RETURNING holder",
-                &[json!(renewed_at), json!(expires), json!(tenant_id), json!(region), json!(holder)],
-            )
-            .await?;
+                    .query(
+                        "UPDATE audit_drain_lease SET acquired_ms=?1,expires_ms=?2 WHERE tenant_id=?3 AND region=?4 AND holder=?5 AND expires_ms>=?1 RETURNING holder",
+                        &[json!(renewed_at), json!(expires), json!(tenant_id), json!(region), json!(holder)],
+                    )
+                    .await?;
         if rows.len() != 1 {
             return Err("B054 administrative lease expired or changed owner".to_owned());
         }
@@ -440,9 +689,7 @@
         }
     }
 
-    async fn bootstrap_e0_locked(
-        context: B054LockedEpochContext<'_>,
-    ) -> Result<&'static str, String> {
+    async fn bootstrap_e0_locked(context: B054LockedEpochContext<'_>) -> Result<&'static str, String> {
         let B054LockedEpochContext {
             state,
             roots,
@@ -459,8 +706,7 @@
         let checkpoint = read_checkpoint(&state.d1, tenant_id, region)
             .await?
             .ok_or("B054 bootstrap requires an existing signed v1 head")?;
-        let signing =
-            load_authenticated_signing_key(&state.d1, state.signing_key_id, roots).await?;
+        let signing = load_authenticated_signing_key(&state.d1, state.signing_key_id, roots).await?;
         require_current_seed_key(&signing, seed, region)?;
         let latest = witness_client.latest(tenant_id, region).await?;
         if checkpoint.head_message_version == Some(2) {
@@ -468,14 +714,7 @@
                 .as_ref()
                 .ok_or("B054 bootstrapped D1 head lacks witness latest")?;
             let ledger = load_e0_ledger_artifact(&state.d1, tenant_id, region).await?;
-            b054_authenticate_e0_checkpoint(
-                &checkpoint,
-                tenant_id,
-                region,
-                &signing,
-                &ledger,
-                latest,
-            )?;
+            b054_authenticate_e0_checkpoint(&checkpoint, tenant_id, region, &signing, &ledger, latest)?;
             return Ok("already_committed");
         }
         if checkpoint.epoch_id.is_some()
@@ -607,8 +846,7 @@
         let checkpoint = read_checkpoint(&state.d1, tenant_id, region)
             .await?
             .ok_or("B054 transition head missing")?;
-        let signing =
-            load_authenticated_signing_key(&state.d1, state.signing_key_id, roots).await?;
+        let signing = load_authenticated_signing_key(&state.d1, state.signing_key_id, roots).await?;
         require_current_seed_key(&signing, seed, region)?;
         let latest = witness_client
             .latest(tenant_id, region)
@@ -806,6 +1044,13 @@
         ) {
             return admin_response(StatusCode::UNAUTHORIZED, "unknown", "unauthorized");
         }
+        let Some(approval_roots) = state.admin_approval_roots.as_deref() else {
+            return admin_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "unknown",
+                "approval_trust_roots_unavailable",
+            );
+        };
         let Some(roots) = state.trust_roots.as_deref() else {
             return admin_response(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -813,10 +1058,41 @@
                 "trust_roots_unavailable",
             );
         };
+        let operation = request.operation();
+        let (approval_jcs_b64, approval_signature_b64, executor_signature_b64) = request.approval_artifact();
+        let now_ms = match b054_admin_now_ms() {
+            Ok(value) => value,
+            Err(_) => {
+                return admin_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "unknown",
+                    "approval_clock_unavailable",
+                )
+            }
+        };
+        let approval = match b054_verify_admin_approval(
+            &operation,
+            approval_jcs_b64,
+            approval_signature_b64,
+            executor_signature_b64,
+            approval_roots,
+            now_ms,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(error = %error, "B054 epoch admin approval rejected");
+                return admin_response(StatusCode::UNAUTHORIZED, "unknown", "approval_rejected");
+            }
+        };
+        if let Err(error) = b054_consume_admin_approval(&state.d1, &approval, now_ms).await {
+            tracing::warn!(error = %error, "B054 epoch admin approval replay rejected");
+            return admin_response(StatusCode::CONFLICT, "unknown", "approval_replayed");
+        }
         let result = match request {
             B054EpochAdminRequest::ProvisionSigningKey {
                 registry_jcs_b64,
                 registry_signature_b64,
+                ..
             } => {
                 let result = async {
                     let artifact = artifact_from_b64(&registry_jcs_b64, &registry_signature_b64)?;
@@ -842,6 +1118,7 @@
             B054EpochAdminRequest::ProvisionLinkKey {
                 link_key_id,
                 registered_at_ms,
+                ..
             } => {
                 let result = async {
                     let seed = state
@@ -849,8 +1126,7 @@
                         .as_deref()
                         .ok_or("B054 link registration requires signing seed")?;
                     let signing =
-                        load_authenticated_signing_key(&state.d1, state.signing_key_id, roots)
-                            .await?;
+                        load_authenticated_signing_key(&state.d1, state.signing_key_id, roots).await?;
                     let secret = state
                         .link_keyring
                         .as_deref()
@@ -881,7 +1157,9 @@
                 .await;
                 ("provision_link_key", result)
             }
-            B054EpochAdminRequest::BootstrapE0 { tenant_id, region } => {
+            B054EpochAdminRequest::BootstrapE0 {
+                tenant_id, region, ..
+            } => {
                 let result = if !state.lease_enabled {
                     Err("B054 bootstrap requires AUDIT_DRAIN_LEASE_ENABLED".to_owned())
                 } else {
@@ -901,6 +1179,7 @@
                 tenant_id,
                 region,
                 link_key_id,
+                ..
             } => {
                 let result = if !state.lease_enabled {
                     Err("B054 transition requires AUDIT_DRAIN_LEASE_ENABLED".to_owned())
@@ -933,5 +1212,113 @@
                 tracing::error!(operation, error = %error, "B054 epoch admin failed closed");
                 admin_response(StatusCode::CONFLICT, operation, "indeterminate")
             }
+        }
+
+    }
+
+    #[cfg(test)]
+    mod admin_approval_tests {
+        use super::*;
+        use ed25519_dalek::Signer;
+
+        fn signed_proof(
+            operation: &B054EpochAdminOperation,
+            executor: &str,
+            approver: &str,
+            approver_role: &str,
+            issued_at_ms: u64,
+            expires_at_ms: u64,
+        ) -> (
+            String,
+            String,
+            String,
+            std::collections::BTreeMap<String, ed25519_dalek::VerifyingKey>,
+        ) {
+            let provider = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+            let executor_key = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
+            let claims = B054AdminApprovalJcs {
+                approval_id: "approval-001".to_owned(),
+                approval_version: 1,
+                approver_role: approver_role.to_owned(),
+                approver_subject_id: approver.to_owned(),
+                audience: B054_ADMIN_APPROVAL_AUDIENCE.to_owned(),
+                approver_eligible: true,
+                executor_role: "SRE executor".to_owned(),
+                executor_eligible: true,
+                executor_public_key_b64: base64::engine::general_purpose::STANDARD
+                    .encode(executor_key.verifying_key().as_bytes()),
+                executor_subject_id: executor.to_owned(),
+                expires_at_ms,
+                issuer: "identity-provider-v1".to_owned(),
+                issued_at_ms,
+                nonce: "01".repeat(32),
+                operation_digest_hex: b054_admin_operation_digest(operation).unwrap(),
+                trust_root_key_id: "identity-provider-v1".to_owned(),
+            };
+            let claims_jcs = b054_admin_canonical_jcs(&claims).unwrap();
+            let mut provider_message = B054_ADMIN_APPROVAL_DOMAIN.to_vec();
+            provider_message.extend_from_slice(&claims_jcs);
+            let provider_signature = base64::engine::general_purpose::STANDARD
+                .encode(provider.sign(&provider_message).to_bytes());
+            let executor_signature = base64::engine::general_purpose::STANDARD
+                .encode(executor_key.sign(&b054_admin_executor_message(&claims)).to_bytes());
+            let roots = [("identity-provider-v1".to_owned(), provider.verifying_key())]
+                .into_iter()
+                .collect();
+            (
+                base64::engine::general_purpose::STANDARD.encode(claims_jcs),
+                provider_signature,
+                executor_signature,
+                roots,
+            )
+        }
+
+        fn operation() -> B054EpochAdminOperation {
+            B054EpochAdminOperation::BootstrapE0 {
+                tenant_id: "tenant-1".to_owned(),
+                region: "weur".to_owned(),
+            }
+        }
+
+        #[test]
+        fn accepts_fresh_distinct_provider_bound_executor() {
+            let operation = operation();
+            let (claims, provider, executor, roots) =
+                signed_proof(&operation, "opaque-sre-1", "opaque-sec-2", "Security approver", 1_000, 3_000);
+            assert!(b054_verify_admin_approval(&operation, &claims, &provider, &executor, &roots, 2_000).is_ok());
+        }
+
+        #[test]
+        fn rejects_same_or_unapproved_subjects() {
+            let operation = operation();
+            let (same, provider, executor, roots) =
+                signed_proof(&operation, "same", "same", "Security approver", 1_000, 3_000);
+            assert!(b054_verify_admin_approval(&operation, &same, &provider, &executor, &roots, 2_000).is_err());
+            let (role, provider, executor, roots) =
+                signed_proof(&operation, "opaque-sre-1", "opaque-sec-2", "unapproved", 1_000, 3_000);
+            assert!(b054_verify_admin_approval(&operation, &role, &provider, &executor, &roots, 2_000).is_err());
+        }
+
+        #[test]
+        fn rejects_digest_mismatch_and_expiry() {
+            let operation = operation();
+            let (claims, provider, executor, roots) =
+                signed_proof(&operation, "opaque-sre-1", "opaque-sec-2", "Security approver", 1_000, 3_000);
+            let other = B054EpochAdminOperation::BootstrapE0 {
+                tenant_id: "tenant-2".to_owned(),
+                region: "weur".to_owned(),
+            };
+            assert!(b054_verify_admin_approval(&other, &claims, &provider, &executor, &roots, 2_000).is_err());
+            assert!(b054_verify_admin_approval(&operation, &claims, &provider, &executor, &roots, 3_000).is_err());
+        }
+
+        #[test]
+        fn rejects_invalid_provider_unknown_root_and_wrong_executor_key() {
+            let operation = operation();
+            let (claims, provider, executor, roots) =
+                signed_proof(&operation, "opaque-sre-1", "opaque-sec-2", "Security approver", 1_000, 3_000);
+            assert!(b054_verify_admin_approval(&operation, &claims, "AA==", &executor, &roots, 2_000).is_err());
+            assert!(b054_verify_admin_approval(&operation, &claims, &provider, &executor, &std::collections::BTreeMap::new(), 2_000).is_err());
+            assert!(b054_verify_admin_approval(&operation, &claims, &provider, &provider, &roots, 2_000).is_err());
         }
     }
