@@ -9,6 +9,15 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
     assert_publication_inventory_contract(&workflow);
     assert_retry_manifest_contract(&workflow);
 
+    let unsupported_zigbuild_probe = workflow.replace(
+        "cargo-zigbuild --help >/dev/null",
+        "cargo-zigbuild --version",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&unsupported_zigbuild_probe)).is_err(),
+        "the unsupported cargo-zigbuild version probe must fail the structural control"
+    );
+
     let unvalidated_release_command = workflow.replace(
         "gh release upload \"${TAG}\"",
         "gh release upload \"${{ inputs.release_tag }}\"",

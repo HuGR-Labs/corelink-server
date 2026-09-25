@@ -33,7 +33,9 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "description: \"Existing cli-vMAJOR.MINOR.PATCH tag to build and publish\"",
         "HuGR-Labs/corelink-cli",
         "EXPECTED_ZIG_VERSION=0.16.0",
-        "EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8",
+        "tool: cargo-zigbuild@0.19.8",
+        "command -v cargo-zigbuild",
+        "cargo-zigbuild --help >/dev/null",
         "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}",
         "corelink-package-${TARGET_NAME}",
         "Validate matrix target values before shell use",
@@ -76,6 +78,17 @@ pub(super) fn assert_release_contract(workflow: &str) {
         assert!(
             workflow.contains(required),
             "missing release invariant: {required}"
+        );
+    }
+    for unsupported in [
+        "cargo-zigbuild --version",
+        "cargo-zigbuild -V",
+        "cargo zigbuild --version",
+        "cargo zigbuild -V",
+    ] {
+        assert!(
+            !workflow.contains(unsupported),
+            "unsupported cargo-zigbuild probe must not return: {unsupported}"
         );
     }
     assert!(
