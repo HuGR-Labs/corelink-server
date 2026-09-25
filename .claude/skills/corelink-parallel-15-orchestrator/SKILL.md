@@ -28,7 +28,7 @@ Use this skill only with:
 3. Give one implementation agent one issue, one branch, one isolated worktree, the five acceptance sections, exact paths, CI pack, stop conditions, and compact return schema.
 4. Refill a released slot immediately while useful ready work exists. Keep up to 12 Luna agents in flight, reserving capacity for independent cold reviewers.
 5. Run all tests, builds, lints, and long work asynchronously on GitHub-hosted Actions at the exact PR SHA. Never use `runs-on: corelink`.
-6. Cold-review the exact head once. Permit at most one consolidated correction. Then return `MERGE_READY`, `BLOCKED`, or `TERMINAL_REJECT`.
+6. Cold-review the exact head once. Permit at most one consolidated correction. The same reviewer then verifies the corrected exact SHA only against that defect list and regressions introduced by the correction, and returns final `APPROVE` or a terminal disposition. This is one bounded review lifecycle, not a new review cycle.
 7. Deliver the green PR to the central merge owner. Do not merge or close the issue.
 8. Remove the worktree and temporary refs after the PR is safely pushed and evidence recorded.
 
@@ -51,9 +51,8 @@ Every issue packet and PR must preserve the issue's:
 - Invariants
 - Quality standards
 
-The cold reviewer receives the issue contract, exact diff, exact head SHA, and hosted receipts without the author's reasoning. The only useful verdicts are `APPROVE`, `FIX-FIRST` with one consolidated defect list, `BLOCKED`, or `TERMINAL_REJECT`.
+The cold reviewer receives the issue contract, exact diff, exact head SHA, and hosted receipts without the author's reasoning. The only useful initial verdicts are `APPROVE`, `FIX-FIRST` with one consolidated defect list, `BLOCKED`, or `TERMINAL_REJECT`. After `FIX-FIRST`, the same reviewer verifies the single correction on its exact SHA and may only return final `APPROVE` or a terminal disposition; it may not start a new defect-discovery loop.
 
 ## Return firewall
 
 Return one compact row per issue: repository/issue, status, PR, base SHA, head SHA, changed paths, hosted run IDs, cold verdict, closure eligibility, blocker, and cleanup state. Put long evidence in the issue or final handoff, not in chat.
-

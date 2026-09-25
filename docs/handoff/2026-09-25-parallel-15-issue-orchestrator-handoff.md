@@ -65,7 +65,7 @@ Use a rolling scheduler rather than batches that wait for the slowest member.
 4. Give one Luna implementer one issue, one branch, one isolated worktree, one bounded outcome, and one CI pack.
 5. While implementation proceeds, a separate Luna slot may prepare the cold review packet but must not review until the exact head and receipts exist.
 6. When an agent returns, triage immediately. Dispatch the next ready disjoint node into the freed slot.
-7. On green exact-head proof, run one cold review. One consolidated correction is allowed. Re-run only the affected CI pack.
+7. On green exact-head proof, run one cold review. One consolidated correction is allowed. Re-run only the affected CI pack, then have the same reviewer verify the corrected exact SHA against the original defect list and any regression introduced by that correction.
 8. Send `MERGE_READY` to the central session and clean the worktree. Do not wait for central merge before using the slot on a disjoint node.
 
 Keep up to 12 active agents when the DAG and file ownership support it. Never create artificial parallelism by assigning two agents to the same files or by spawning reviewers with no exact head to review.
@@ -119,7 +119,7 @@ Allowed outcomes:
 - `BLOCKED`: a named dependency or external authority is absent; record the exact unblock event.
 - `TERMINAL_REJECT`: the proposed approach cannot satisfy the contract without a new charter. Stop that branch; do not create successor PR loops.
 
-No second review cycle after the one correction. The orchestrator either accepts the corrected exact-head proof or records a terminal state.
+After the one correction, the same cold reviewer performs one bounded final verification on the corrected exact SHA. That verification is limited to the original consolidated defects and regressions introduced by the correction; it cannot open a new discovery cycle. It returns final `APPROVE` or a terminal disposition. The orchestrator never marks an unreviewed SHA `MERGE_READY`.
 
 ## 8. Dependency and collision graph
 
@@ -301,4 +301,3 @@ For every PR, send one compact row:
 The central session independently verifies live head, checks, cold verdict, ownership, and mergeability, then decides merge and issue closure. A green PR may be merge-ready while its parent remains open for runtime evidence.
 
 At campaign end, write one final handoff in `docs/handoff/` with all 15 rows, central dependencies, remaining runtime evidence, workflow restoration, and proof that no worktrees or temporary refs remain.
-
