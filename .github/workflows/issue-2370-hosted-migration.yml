@@ -53,8 +53,10 @@ jobs:
           if ! command -v actionlint >/dev/null 2>&1; then
             bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
             printf '%s\n' "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+            ./actionlint -version
+          else
+            actionlint -version
           fi
-          actionlint -version
 
       - name: Lint only the scoped candidate workflows
         working-directory: candidate

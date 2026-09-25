@@ -108,6 +108,14 @@ def load_tree(root: Path) -> dict[str, dict[str, Any]]:
     return result
 
 
+def load_proof_workflow(root: Path) -> dict[str, Any]:
+    path = ".github/workflows/issue-2370-hosted-migration.yml"
+    try:
+        return parse_yaml((root / path).read_text(encoding="utf-8"), path)
+    except OSError as error:
+        fail(f"{path}: unreadable: {error}")
+
+
 def iter_checkout_steps(job: dict[str, Any]):
     for step in job.get("steps", []):
         if isinstance(step, dict) and str(step.get("uses", "")).startswith("actions/checkout@"):
@@ -169,6 +177,21 @@ def validate_release_push_auth(baseline: dict[str, dict[str, Any]], candidate: d
         ({**step, "run": old_run} if step.get("name") == "Commit notes to releases branch" else step)
         for step in new_job["steps"]
     ]
+
+
+def validate_actionlint_installer(workflow: dict[str, Any]) -> None:
+    steps = workflow.get("jobs", {}).get("static-contract", {}).get("steps", [])
+    step = next((step for step in steps if step.get("name") == "Install actionlint if runner image does not provide it"), None)
+    run = step.get("run", "") if isinstance(step, dict) else ""
+    required = (
+        "if ! command -v actionlint >/dev/null 2>&1; then",
+        "download-actionlint.bash) 1.7.12",
+        'printf \'%s\\n\' "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"',
+        "./actionlint -version",
+        "else\n  actionlint -version",
+    )
+    if not isinstance(run, str) or any(token not in run for token in required):
+        fail("hosted proof: downloaded actionlint must be invoked in the installing step and exported for later steps")
 
 
 def validate_pair(
@@ -272,7 +295,11 @@ def verify(root: Path, base_root: Path, base_sha: str, head_sha: str) -> None:
     validate_pair(load_tree(base_root), load_tree(root), changed)
 
 
-def self_test(baseline: dict[str, dict[str, Any]], candidate: dict[str, dict[str, Any]]) -> None:
+def self_test(
+    baseline: dict[str, dict[str, Any]],
+    candidate: dict[str, dict[str, Any]],
+    proof_workflow: dict[str, Any],
+) -> None:
     validate_pair(baseline, candidate)
     cases = []
     bad_runner = copy.deepcopy(candidate)
@@ -304,7 +331,19 @@ def self_test(baseline: dict[str, dict[str, Any]], candidate: dict[str, dict[str
         except ContractError:
             continue
         fail(f"negative control escaped: {label}")
-    print("PASS: 17-job census, semantic immutability, and 5 negative controls")
+    bad_installer = copy.deepcopy(proof_workflow)
+    install_step = next(
+        step for step in bad_installer["jobs"]["static-contract"]["steps"]
+        if step.get("name") == "Install actionlint if runner image does not provide it"
+    )
+    install_step["run"] = install_step["run"].replace("./actionlint -version", "actionlint -version", 1)
+    try:
+        validate_actionlint_installer(bad_installer)
+    except ContractError:
+        pass
+    else:
+        fail("negative control escaped: same-step actionlint bootstrap")
+    print("PASS: 17-job census, semantic immutability, and 6 negative controls")
 
 
 def main() -> int:
@@ -318,7 +357,9 @@ def main() -> int:
     try:
         if args.self_test:
             verify(args.root, args.base_root, args.base_sha, args.head_sha)
-            self_test(load_tree(args.base_root), load_tree(args.root))
+            proof_workflow = load_proof_workflow(args.root)
+            validate_actionlint_installer(proof_workflow)
+            self_test(load_tree(args.base_root), load_tree(args.root), proof_workflow)
         else:
             verify(args.root, args.base_root, args.base_sha, args.head_sha)
             print("PASS: exact SHA, 17 hosted jobs, credentialless checkout, immutable workflow semantics")
