@@ -75,10 +75,14 @@ cannot provision one via setup-python (see action-sha-audit.yml).
 
 from __future__ import annotations
 
+import argparse
+from collections import Counter
+from dataclasses import dataclass
 import os
 import re
 import subprocess
 import sys
+from typing import Sequence
 
 WORKFLOW_DIR = os.path.join(".github", "workflows")
 
@@ -92,10 +96,10 @@ _ITEM = re.compile(r"^(?P<indent>\s*)-\s+(?P<value>.+?)\s*$")
 _ALLOW = re.compile(r"#\s*path-filter-allow:\s*(?P<reason>.+?)\s*$")
 
 
-def tracked_files() -> list[str]:
+def tracked_files(repo_root: str) -> list[str]:
     """Every path git tracks at HEAD, as forward-slash relative paths."""
     out = subprocess.run(
-        ["git", "ls-files", "-z"],
+        ["git", "-C", repo_root, "ls-files", "-z"],
         check=True,
         capture_output=True,
         text=True,
@@ -193,20 +197,46 @@ def extract_patterns(path: str) -> list[tuple[int, str, str | None]]:
     return found
 
 
-def main() -> int:
-    if not os.path.isdir(WORKFLOW_DIR):
-        print(f"FAIL: {WORKFLOW_DIR} not found (run from the repo root)")
-        return 2
+class PathFilterError(ValueError):
+    """A path-filter scan could not establish a non-vacuous population."""
 
-    files = sorted(tracked_files())
+
+@dataclass(frozen=True)
+class Finding:
+    workflow: str
+    pattern: str
+    rule: str
+    lineno: int
+    hint: str = ""
+
+    @property
+    def identity(self) -> tuple[str, str, str]:
+        return (self.workflow, self.pattern, self.rule)
+
+
+@dataclass(frozen=True)
+class Scan:
+    findings: list[Finding]
+    checked: int
+    allowed: int
+    workflows: int
+
+
+def _repo_root(workflow_dir: str) -> str:
+    return os.path.abspath(os.path.join(workflow_dir, "..", ".."))
+
+
+def scan(workflow_dir: str, files: list[str]) -> Scan:
+    """Scan one checked-out workflow tree using its own tracked-file population."""
+    if not os.path.isdir(workflow_dir):
+        raise PathFilterError(f"{workflow_dir} not found")
+
     workflows = sorted(
-        os.path.join(WORKFLOW_DIR, name)
-        for name in os.listdir(WORKFLOW_DIR)
+        os.path.join(workflow_dir, name)
+        for name in os.listdir(workflow_dir)
         if name.endswith((".yml", ".yaml"))
     )
-
-    offenders: list[tuple[str, int, str, str]] = []
-    stale_markers: list[tuple[str, int, str]] = []
+    findings: list[Finding] = []
     checked = 0
     allowed = 0
 
@@ -217,67 +247,76 @@ def main() -> int:
             if not bare:
                 continue
             matched = any(glob_to_regex(bare).match(f) for f in files)
-
+            display = os.path.join(".github", "workflows", os.path.basename(workflow))
             if reason is not None:
-                # Opted out. Valid only while the glob really matches nothing;
-                # once the file lands, the exception has expired.
                 if matched:
-                    stale_markers.append((workflow, lineno, pattern))
+                    findings.append(Finding(display, pattern, "stale-marker", lineno))
                 else:
                     allowed += 1
                 continue
-
             if matched:
                 continue
-            # No file matched. Is it a bare directory that just needs "/**"?
-            hint = ""
             probe = bare.rstrip("/") + "/"
+            hint = ""
             if any(f.startswith(probe) for f in files):
                 hint = f" (directory exists — did you mean '{bare.rstrip('/')}/**'?)"
-            offenders.append((workflow, lineno, pattern, hint))
+            findings.append(Finding(display, pattern, "dead-pattern", lineno, hint))
 
     if checked == 0:
-        print("FAIL: inspected 0 path-filter patterns — the parser is broken.")
+        raise PathFilterError("inspected 0 path-filter patterns — the parser is broken")
+    return Scan(findings, checked, allowed, len(workflows))
+
+
+def new_findings(head: list[Finding], baseline: list[Finding]) -> list[Finding]:
+    inherited = Counter(finding.identity for finding in baseline)
+    result: list[Finding] = []
+    for finding in head:
+        if inherited[finding.identity]:
+            inherited[finding.identity] -= 1
+        else:
+            result.append(finding)
+    return result
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--baseline-workflows", help="compare against this immutable workflow tree")
+    args = parser.parse_args(argv)
+    try:
+        head = scan(WORKFLOW_DIR, sorted(tracked_files(_repo_root(WORKFLOW_DIR))))
+        baseline = None
+        findings = head.findings
+        if args.baseline_workflows:
+            baseline = scan(
+                args.baseline_workflows,
+                sorted(tracked_files(_repo_root(args.baseline_workflows))),
+            )
+            findings = new_findings(head.findings, baseline.findings)
+    except (PathFilterError, OSError, subprocess.CalledProcessError) as exc:
+        print(f"FAIL: path-filter parser failure: {exc}")
         return 2
 
-    failed = False
-
-    if offenders:
-        failed = True
-        print("FAIL: workflow path filters that match ZERO tracked files.\n")
-        print("A `paths:` glob matching nothing means the workflow is never")
-        print("triggered by that entry. It goes silent instead of going red.\n")
-        for workflow, lineno, pattern, hint in offenders:
-            print(f"  {workflow}:{lineno}: '{pattern}' matches no tracked file{hint}")
-        print(
-            f"\n{len(offenders)} dead pattern(s) of {checked} checked "
-            f"across {len(workflows)} workflow(s)."
-        )
-        print("Repoint each glob at the code it was written to guard, or delete it.")
-        print(
-            "If the glob is deliberately forward-looking, justify it inline with"
-            "\n  # path-filter-allow: <why this must fire for a file that does not exist yet>"
-        )
-
-    if stale_markers:
-        failed = True
-        if offenders:
-            print()
-        print("FAIL: stale `path-filter-allow` markers — the file they waited")
-        print("for now EXISTS, so the exception has expired. Delete the marker.\n")
-        for workflow, lineno, pattern in stale_markers:
-            print(f"  {workflow}:{lineno}: '{pattern}' now matches tracked files")
-
-    if failed:
+    if findings:
+        prefix = "new " if baseline is not None else ""
+        print(f"FAIL: {len(findings)} {prefix}workflow path-filter finding(s).\n")
+        for finding in findings:
+            if finding.rule == "stale-marker":
+                print(f"  {finding.workflow}:{finding.lineno}: '{finding.pattern}' has a stale path-filter-allow marker")
+            else:
+                print(f"  {finding.workflow}:{finding.lineno}: '{finding.pattern}' matches no tracked file{finding.hint}")
         return 1
 
+    if baseline is not None:
+        print(
+            f"OK: {head.checked} candidate and {baseline.checked} baseline path-filter pattern(s) inspected; no new findings."
+        )
+        return 0
     print(
-        f"OK: all {checked} path-filter pattern(s) across {len(workflows)} "
-        f"workflow(s) match at least one tracked file "
-        f"({allowed} deliberately forward-looking, justified inline)."
+        f"OK: all {head.checked} path-filter pattern(s) across {head.workflows} workflow(s) match at least one tracked file "
+        f"({head.allowed} deliberately forward-looking, justified inline)."
     )
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

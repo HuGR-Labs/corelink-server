@@ -184,7 +184,13 @@ jobs:
       # resolves), so this gate does. stdlib-only python3, same as its siblings.
       - name: Workflow path filters must match at least one tracked file
         shell: bash
-        run: python3 scripts/validate_workflow_path_filters.py
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            python3 scripts/validate_workflow_path_filters.py \
+              --baseline-workflows baseline/.github/workflows
+          else
+            python3 scripts/validate_workflow_path_filters.py
+          fi
 
       # B-141: every pull_request_target job that can allocate the ephemeral
       # fabric must be actor-gated, and write scopes must stay least-privilege.
