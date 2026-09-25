@@ -16,16 +16,17 @@ evidence from a credentialless lane:
 
 | Required signal | Current state | Why this blocks a claim |
 | --- | --- | --- |
-| Same lane on a GitHub-hosted runner | The existing B-105 collector is called by `perf-production-evidence.yml`, whose job uses `runs-on: corelink`. | That workflow does not satisfy the hosted-runner constraint. |
+| Same lane on a GitHub-hosted runner | `perf-production-evidence.yml` runs on `ubuntu-24.04`. | This repository prerequisite is satisfied; it does not prove a production measurement ran. |
 | Cache-on arm | `scripts/collect_b105_same_lane.py` requires `CORELINK_PERF_BASE`, `CORELINK_PERF_TENANT`, and `CORELINK_PERF_PAT`. | No staging endpoint or credentialless WebDAV surface is present. A public production endpoint without an owner credential is not a measurement. |
-| Isolated cache state | The collector addresses `/cargo/<tenant>` and has no run namespace or cleanup step. | Reusing the dogfood tenant can read or write artifacts from other runs, so a pair cannot be attributed to this run. |
-| Cache transfer bytes | The collector retains only sccache hit/miss/error counters and hashes of raw output. | Counters cannot establish bytes downloaded, uploaded, or stored. |
+| Isolated cache state | The collector's isolated mode uses a run-scoped namespace and exact-key cleanup; the production workflow must invoke that mode. | Until the protected workflow runs with owner-provided inputs, no isolated production receipt exists. |
+| Cache transfer bytes | Isolated mode records successful GET payload bytes, PUT request bytes, retained indexed payload bytes, and exact-key cleanup. | These are client-boundary observations; a server/provider receipt is still needed to establish backend transfer, retention, and cleanup quantities. |
 | Storage and compute cost | The repository has no provider billing or server-side byte receipt bound to this experiment. | Duration is not a currency cost, and client-side hit counts cannot establish R2/storage cost. |
 
-Consequently, adding a `workflow_dispatch` trigger alone would create a
-plausible-looking receipt that cannot satisfy the B-105 success condition. The
-repository contract correctly keeps the item at
-`open_external_measurement_required`.
+The production workflow already has a protected manual dispatch and the hosted
+isolated collector has credentialless behavior proof. Its B-105 call must use
+isolated mode before any production run can produce an attributable receipt.
+These repository changes do not satisfy the paired performance or provider-cost
+gate; the contract remains `open_external_measurement_required`.
 
 ## Owner prerequisites
 

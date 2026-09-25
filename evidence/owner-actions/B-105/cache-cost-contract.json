@@ -9,6 +9,7 @@
   "runner_contract": "github-hosted",
   "sources": {
     "pilot_workflow": ".github/workflows/corelink-reapi.yml",
+    "production_evidence_workflow": ".github/workflows/perf-production-evidence.yml",
     "customer_recipe": "apps/docs/docs/integrations/sccache-cargo.md",
     "server_auth_path": "crates/corelink-container/src/adapter_pat_verifier.rs",
     "server_gate": "crates/corelink-container/src/adapter_pat_gate.rs",
@@ -18,7 +19,7 @@
   },
   "current_path": {
     "workload": "corelink-reapi pr-gate",
-    "runner": "corelink",
+    "runner": "ubuntu-24.04",
     "pilot_toggle": "vars.CORELINK_SCCACHE_PILOT == 'on'",
     "wrapper": "RUSTC_WRAPPER=sccache",
     "endpoint": "https://corelink-api.humangr.com/cargo/<tenant>",
