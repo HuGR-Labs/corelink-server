@@ -670,8 +670,11 @@ def assert_backlog_verify_boundary(
     test.assertIn("if: github.event_name == 'push' || github.event_name == 'schedule'", raw)
     trusted = jobs["trusted_semantic"]
     test.assertEqual(trusted.get("if"), "github.event_name == 'push' || github.event_name == 'schedule'")
-    test.assertEqual(trusted.get("permissions"), {"contents": "read", "vulnerability-alerts": "read"})
     trusted_block = raw[verify_block.end() :]
+    test.assertRegex(
+        trusted_block,
+        r"(?ms)^  trusted_semantic:.*?^    permissions:\n      contents: read\n      vulnerability-alerts: read$",
+    )
     test.assertIn("GH_TOKEN: ${{ github.token }}", trusted_block)
 
 
