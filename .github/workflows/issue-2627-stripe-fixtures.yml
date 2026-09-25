@@ -1,0 +1,67 @@
+name: issue 2627 Stripe fixture checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "apps/signup-worker/tests/stripe_handler_helpers.ts"
+      - "apps/signup-worker/tests/stripe.test.ts"
+      - ".github/workflows/issue-2627-stripe-fixtures.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2627-stripe-fixtures-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  stripe-fixtures:
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.event.pull_request.base.ref == 'main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact PR head without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact head, base, and changed paths
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git cat-file -e "$EXPECTED_BASE^{commit}"
+          changed_paths="$(git diff --name-only "$EXPECTED_BASE...$EXPECTED_HEAD")"
+          while IFS= read -r path; do
+            case "$path" in
+              .github/workflows/issue-2627-stripe-fixtures.yml|\
+              apps/signup-worker/tests/stripe.test.ts|\
+              apps/signup-worker/tests/stripe_handler_helpers.ts) ;;
+              *) echo "Unexpected changed path: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed_paths"
+          test -n "$changed_paths"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Install signup-worker dependencies
+        run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
+
+      - name: Typecheck signup-worker
+        run: pnpm --filter @corelink/signup-worker typecheck
+
+      - name: Run focused Stripe tests
+        working-directory: apps/signup-worker
+        run: pnpm exec vitest run tests/stripe.test.ts
