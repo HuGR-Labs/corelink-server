@@ -14,7 +14,6 @@ plane calls are two GETs, so it cannot write B-102/B-103/B-107 state.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -48,10 +47,6 @@ class ProbeError(RuntimeError):
 
 def fail(message: str) -> None:
     raise ProbeError(message)
-
-
-def sha256(value: str) -> str:
-    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def origin(value: str) -> str:
@@ -147,7 +142,7 @@ def mint_pat(base: str, session: str, name: str) -> dict[str, str]:
     scopes = pat.get("scopes")
     if not isinstance(scopes, list) or "cas:rw" not in scopes:
         fail("PAT mint response did not grant the expected cache-read scope")
-    return {"pat_id": pat_id, "token": token, "token_fingerprint": sha256(token), "name": name}
+    return {"pat_id": pat_id, "token": token, "name": name}
 
 
 def response_header(headers: dict[str, str], name: str) -> str:
@@ -208,14 +203,12 @@ def probe_get_allow_404(base: str, tenant: str, token: str, operation: str) -> d
     elapsed_ms = round((time.monotonic() - started) * 1000, 3)
     auth_ms, auth_source = parse_auth_timing(headers)
     return {
-        "operation_id": operation,
+        "captured_at_epoch": time.time(),
         "status": status,
         "wall_ms": elapsed_ms,
         "auth_ms": round(auth_ms, 3),
         "auth_source": auth_source,
         "colo": parse_colo(headers),
-        "response_body_sha256": sha256(body.decode("utf-8", errors="replace")),
-        "request_id": response_header(headers, "x-request-id"),
     }
 
 
@@ -249,7 +242,9 @@ def load_state(path: Path) -> dict[str, Any]:
 
 def run(args: argparse.Namespace) -> int:
     base = origin(args.target)
-    tenant = args.tenant.lower()
+    tenant = os.environ.get("B106_DOGFOOD_TENANT", "").lower()
+    if not tenant:
+        fail("protected dogfood tenant secret is missing")
     if not TENANT_RE.fullmatch(tenant):
         fail("tenant must be a canonical v4 UUID")
     owner_session = os.environ.get("CORELINK_B106_OWNER_SESSION", "")
@@ -266,13 +261,12 @@ def run(args: argparse.Namespace) -> int:
         "valid": False,
         "captured_at_epoch": captured,
         "target_origin": base,
-        "tenant_id": tenant,
         "pat_name": args.name,
         "requests": [],
         "cleanup": {"attempted": False, "revoked": False},
     }
     write_json(args.receipt, receipt)
-    state: dict[str, Any] = {"target": base, "tenant": tenant, "pat_id": None}
+    state: dict[str, Any] = {"pat_id": None}
     write_json(args.state, state)
     try:
         minted = mint_pat(base, owner_session, args.name)
@@ -280,8 +274,6 @@ def run(args: argparse.Namespace) -> int:
         # The bearer remains in this process's memory and never enters state.
         state["pat_id"] = minted["pat_id"]
         write_json(args.state, state)
-        receipt["pat_id"] = minted["pat_id"]
-        receipt["token_fingerprint"] = minted["token_fingerprint"]
         receipt["minted_at_epoch"] = time.time()
         write_json(args.receipt, receipt)
 
@@ -361,7 +353,6 @@ def parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
     run_parser = sub.add_parser("run")
     run_parser.add_argument("--target", required=True)
-    run_parser.add_argument("--tenant", required=True)
     run_parser.add_argument("--name", required=True)
     run_parser.add_argument("--state", type=Path, required=True)
     run_parser.add_argument("--receipt", type=Path, required=True)

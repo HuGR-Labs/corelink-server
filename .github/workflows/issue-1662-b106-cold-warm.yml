@@ -12,10 +12,6 @@ on:
         description: "HTTPS production origin (no path, query, or credentials)"
         required: true
         type: string
-      tenant:
-        description: "Owner-approved dogfood tenant UUID"
-        required: true
-        type: string
       confirm:
         description: 'Type exactly "run-1662-b106-cold-warm" to authorize one bounded probe'
         required: true
@@ -46,7 +42,7 @@ jobs:
         env:
           CONFIRM: ${{ inputs.confirm }}
           TARGET: ${{ inputs.target }}
-          TENANT: ${{ inputs.tenant }}
+          TENANT: ${{ secrets.CORELINK_B106_DOGFOOD_TENANT }}
         shell: bash
         run: |
           set -euo pipefail
@@ -54,12 +50,15 @@ jobs:
           test "$GITHUB_REPOSITORY" = HuGR-dev/corelink-server
           test "$GITHUB_REF" = refs/heads/main
           test "$CONFIRM" = run-1662-b106-cold-warm
-          python3 - "$TARGET" "$TENANT" <<'PY'
+          test -n "${TENANT:-}"
+          python3 - "$TARGET" <<'PY'
+          import os
           import re
           import sys
           from urllib.parse import urlsplit
 
-          target, tenant = sys.argv[1:]
+          target = sys.argv[1]
+          tenant = os.environ["TENANT"]
           parsed = urlsplit(target)
           if (parsed.scheme != "https" or not parsed.hostname or parsed.username or
                   parsed.password or parsed.path not in ("", "/") or parsed.query or
@@ -83,7 +82,7 @@ jobs:
       - name: Mint one disposable PAT and capture cold-to-warm evidence
         env:
           TARGET: ${{ inputs.target }}
-          TENANT: ${{ inputs.tenant }}
+          B106_DOGFOOD_TENANT: ${{ secrets.CORELINK_B106_DOGFOOD_TENANT }}
           CORELINK_B106_OWNER_SESSION: ${{ secrets.CORELINK_B106_OWNER_SESSION }}
           STATE: ${{ runner.temp }}/issue-1662-b106-state.json
           RECEIPT: artifacts/issue-1662-b106-receipt.json
@@ -96,7 +95,7 @@ jobs:
           name="b106-cold-warm-${RUN_ID}-${RUN_ATTEMPT}"
           umask 077
           python3 scripts/probe_i1662_b106.py run \
-            --target "$TARGET" --tenant "$TENANT" --name "$name" \
+            --target "$TARGET" --name "$name" \
             --state "$STATE" --receipt "$RECEIPT"
 
       - name: Revoke disposable PAT (always)
