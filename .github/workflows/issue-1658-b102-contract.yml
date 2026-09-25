@@ -10,6 +10,7 @@ on:
       - "evidence/owner-actions/B-102/hot-cargo-put-contract.json"
       - "scripts/probe_i1658_cargo_put_latency.py"
       - "scripts/verify_i1658_b102_contract.py"
+      - "tests/test_probe_i1658_cleanup.py"
       - "specs/_runbooks/RB-B102-HOT-CARGO-PUT.md"
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - "evidence/owner-actions/B-102/hot-cargo-put-contract.json"
       - "scripts/probe_i1658_cargo_put_latency.py"
       - "scripts/verify_i1658_b102_contract.py"
+      - "tests/test_probe_i1658_cleanup.py"
       - "specs/_runbooks/RB-B102-HOT-CARGO-PUT.md"
 
 permissions:
@@ -41,3 +43,5 @@ jobs:
           persist-credentials: false
       - name: Verify B-102 staging boundary and attribution contract
         run: python3 -S scripts/verify_i1658_b102_contract.py
+      - name: Verify cleanup on failed and ambiguous writes
+        run: python3 -S -m unittest discover -s tests -p test_probe_i1658_cleanup.py -v

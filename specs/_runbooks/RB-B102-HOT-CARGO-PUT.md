@@ -5,7 +5,7 @@ doc_status: "DRAFT"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-09-22"
-updated: "2026-09-23"
+updated: "2026-09-25"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -31,6 +31,13 @@ lane is manual:
 confirmation. If the staging PAT or target is unavailable, the lane fails
 closed and retains an indeterminate artifact.
 
+After every authenticated PUT attempt, the probe attempts a DELETE for that
+exact generated key even when the response is ambiguous or its timing data is
+missing or malformed. A failed DELETE keeps the sample indeterminate and is
+recorded in the redacted failure artifact; the PUT is never retried. If the
+unauthenticated control unexpectedly appears accepted, the probe attempts to
+remove only that control's exact key using the staging PAT before failing.
+
 ## Attribution contract
 
 The probe retains status, retry metadata, request and response digests,
@@ -55,8 +62,9 @@ and checks the origin phase budget within one millisecond of Server-Timing
 rounding.
 
 The direct HTTP client never retries. A 429 or 5xx response is retained with
-its `Retry-After` value and makes the lane fail, so retry behavior cannot be
-mistaken for a successful latency sample.
+its `Retry-After` value, followed by the exact-key cleanup attempt, and makes
+the lane fail, so retry behavior cannot be mistaken for a successful latency
+sample.
 
 ## Closure
 

@@ -11,7 +11,7 @@
     "request": "PUT /cargo/<tenant>/<unique-key> with a 1 KiB body",
     "serial_samples": 10,
     "concurrency_control": [1, 4],
-    "cleanup": "DELETE each map key immediately after its PUT observation",
+    "cleanup": "Always attempt exact-key DELETE in a finally path after every authenticated PUT call, including malformed timing and ambiguous responses; delete an unexpectedly accepted unauthenticated control with the valid staging token",
     "controls": [
       "GET /health without credentials -> 200",
       "PUT /cargo/<tenant>/<unique-key> without credentials -> 401 or 403"
