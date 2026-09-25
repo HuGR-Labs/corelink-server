@@ -52,6 +52,7 @@ jobs:
           set -euo pipefail
           if ! command -v actionlint >/dev/null 2>&1; then
             bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+            export PATH="$GITHUB_WORKSPACE:$PATH"
             printf '%s\n' "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
           fi
           actionlint -version
