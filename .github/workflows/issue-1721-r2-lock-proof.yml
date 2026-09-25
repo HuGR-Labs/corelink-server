@@ -37,7 +37,22 @@ jobs:
       - name: Checkout without write credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - name: Bind contract pack to exact PR head and record receipt
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGET_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
+          {
+            echo '### Issue 2604 exact-head CI receipt'
+            echo "- Candidate SHA: \`$CANDIDATE_SHA\`"
+            echo "- Target base SHA: \`$TARGET_BASE_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Check shell syntax and fail-closed contract
         run: |
           bash -n scripts/probe_i1721_r2_lock.sh
@@ -55,8 +70,22 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.sha }}
-          token: ''
+          token: ${{ github.token }}
           persist-credentials: false
+      - name: Assert checkout left no repository credentials
+        run: |
+          set -euo pipefail
+          if git config --local --get-regexp '^(http\..*\.extraheader|credential\..*\.helper)$' >/dev/null; then
+            echo "::error::checkout left a repository credential setting" >&2
+            exit 1
+          fi
+      - name: Verify exact requested checkout before validation
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
       - name: Fail closed before staging environment access
         env:
           CONFIRM: ${{ inputs.confirm }}
@@ -86,8 +115,22 @@ jobs:
       - name: Checkout exact dispatched main commit
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.expected_sha }}
           persist-credentials: false
+      - name: Assert checkout left no repository credentials
+        run: |
+          set -euo pipefail
+          if git config --local --get-regexp '^(http\..*\.extraheader|credential\..*\.helper)$' >/dev/null; then
+            echo "::error::checkout left a repository credential setting" >&2
+            exit 1
+          fi
+      - name: Verify exact requested checkout before Terraform
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
       - name: Set up Terraform 1.11.4
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:

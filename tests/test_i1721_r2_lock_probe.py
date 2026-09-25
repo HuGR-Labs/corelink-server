@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/issue-1721-r2-lock-proof.yml"
@@ -45,7 +46,7 @@ if tf[:2] == ["state", "pull"]:
 if tf[0] == "plan" and "first.tfplan" in " ".join(tf):
     lock.parent.mkdir(parents=True, exist_ok=True)
     lock.write_text(json.dumps({"ID":"LOCK-TEST-ID"}))
-    time.sleep(0.4)
+    time.sleep(3)
     if os.environ.get("FAKE_PLAN_FAIL") == "1":
         print("SENSITIVE_RAW_PLAN_SENTINEL", file=sys.stderr); lock.unlink(); sys.exit(1)
     lock.unlink(); sys.exit(0)
@@ -73,25 +74,75 @@ def base_env(**updates: str) -> dict[str, str]:
 
 class I1721R2LockProbeTests(unittest.TestCase):
     def test_hosted_contract_remains_staging_only_and_pinned(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
+        workflow = yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
         probe = PROBE.read_text(encoding="utf-8")
-        preflight = workflow.split("  preflight:", 1)[1].split("  proof:", 1)[0]
-        preflight_steps = preflight.split("    steps:\n", 1)[1]
-        checkout = "Checkout exact dispatched main commit without write credentials"
-        validator = "Fail closed before staging environment access"
-        self.assertIn("pull_request:", workflow)
-        self.assertIn("workflow_dispatch:", workflow)
-        self.assertIn("environment: staging", workflow)
-        self.assertIn("runs-on: ubuntu-24.04", workflow)
-        self.assertIn("terraform_version: '1.11.4'", workflow)
-        self.assertIn("if-no-files-found: error", workflow)
-        self.assertIn("actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", preflight)
-        self.assertIn("ref: ${{ github.sha }}", preflight)
-        self.assertIn("token: ''", preflight)
-        self.assertIn("persist-credentials: false", preflight)
-        self.assertIn("bash scripts/validate_i1721_r2_dispatch.sh", preflight)
-        self.assertLess(preflight_steps.index(checkout), preflight_steps.index(validator))
-        self.assertIn("'scripts/validate_i1721_r2_dispatch.sh'", workflow)
+        self.assertEqual(workflow["on"]["pull_request"]["paths"], [
+            ".github/workflows/issue-1721-r2-lock-proof.yml",
+            "scripts/probe_i1721_r2_lock.sh",
+            "scripts/validate_i1721_r2_dispatch.sh",
+            "tests/test_i1721_r2_lock_probe.py",
+        ])
+        self.assertIn("workflow_dispatch", workflow["on"])
+        self.assertEqual(workflow["permissions"]["contents"], "read")
+        self.assertEqual(workflow["jobs"]["proof"]["environment"], "staging")
+        self.assertEqual(workflow["jobs"]["preflight"]["runs-on"], "ubuntu-24.04")
+        self.assertEqual(workflow["jobs"]["proof"]["runs-on"], "ubuntu-24.04")
+        self.assertEqual(workflow["jobs"]["proof"]["timeout-minutes"], "12")
+        contract_steps = workflow["jobs"]["contract"]["steps"]
+        contract_checkout_index = next(i for i, step in enumerate(contract_steps) if step.get("uses", "").startswith("actions/checkout@"))
+        contract_receipt_index = next(i for i, step in enumerate(contract_steps) if step.get("name") == "Bind contract pack to exact PR head and record receipt")
+        contract_tests_index = next(i for i, step in enumerate(contract_steps) if "unittest discover" in step.get("run", ""))
+        self.assertEqual(contract_steps[contract_checkout_index]["with"]["ref"], "${{ github.event.pull_request.head.sha }}")
+        contract_receipt = contract_steps[contract_receipt_index]
+        self.assertIn('"$(git rev-parse HEAD)" == "$CANDIDATE_SHA"', contract_receipt["run"])
+        self.assertIn("CANDIDATE_SHA", contract_receipt["env"])
+        self.assertIn("TARGET_BASE_SHA", contract_receipt["env"])
+        self.assertIn("$GITHUB_STEP_SUMMARY", contract_receipt["run"])
+        self.assertLess(contract_checkout_index, contract_receipt_index)
+        self.assertLess(contract_receipt_index, contract_tests_index)
+        proof_steps = workflow["jobs"]["proof"]["steps"]
+        terraform_setup = next(step for step in proof_steps if step.get("uses", "").startswith("hashicorp/setup-terraform@"))
+        self.assertEqual(terraform_setup["with"]["terraform_version"], "1.11.4")
+        self.assertEqual(proof_steps[-1]["with"]["if-no-files-found"], "error")
+
+        checkout_action = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+        for job in workflow["jobs"].values():
+            for step in job.get("steps", []):
+                if step.get("uses", "").startswith("actions/checkout@"):
+                    self.assertEqual(step["uses"], checkout_action)
+                    self.assertEqual(step["with"].get("persist-credentials"), "false")
+
+        preflight_steps = workflow["jobs"]["preflight"]["steps"]
+        checkout_index = next(i for i, step in enumerate(preflight_steps) if step.get("uses", "").startswith("actions/checkout@"))
+        credentials_index = next(i for i, step in enumerate(preflight_steps) if step.get("name") == "Assert checkout left no repository credentials")
+        sha_index = next(i for i, step in enumerate(preflight_steps) if step.get("name") == "Verify exact requested checkout before validation")
+        validator_index = next(i for i, step in enumerate(preflight_steps) if "validate_i1721_r2_dispatch.sh" in step.get("run", ""))
+        checkout = preflight_steps[checkout_index]
+        self.assertEqual(checkout["with"]["ref"], "${{ github.sha }}")
+        self.assertEqual(checkout["with"]["token"], "${{ github.token }}")
+        self.assertIn("git config --local --get-regexp", preflight_steps[credentials_index]["run"])
+        self.assertIn("http\\..*\\.extraheader|credential\\..*\\.helper", preflight_steps[credentials_index]["run"])
+        sha_check = preflight_steps[sha_index]
+        self.assertEqual(sha_check["env"]["EXPECTED_SHA"], "${{ inputs.expected_sha }}")
+        self.assertIn('"$(git rev-parse HEAD)" == "$EXPECTED_SHA"', sha_check["run"])
+        self.assertLess(checkout_index, sha_index)
+        self.assertLess(checkout_index, credentials_index)
+        self.assertLess(credentials_index, sha_index)
+        self.assertLess(sha_index, validator_index)
+
+        proof_checkout_index = next(i for i, step in enumerate(proof_steps) if step.get("uses", "").startswith("actions/checkout@"))
+        proof_credentials_index = next(i for i, step in enumerate(proof_steps) if step.get("name") == "Assert checkout left no repository credentials")
+        proof_sha_index = next(i for i, step in enumerate(proof_steps) if step.get("name") == "Verify exact requested checkout before Terraform")
+        terraform_setup_index = next(i for i, step in enumerate(proof_steps) if step.get("uses", "").startswith("hashicorp/setup-terraform@"))
+        self.assertEqual(proof_steps[proof_checkout_index]["with"]["ref"], "${{ inputs.expected_sha }}")
+        self.assertIn("git config --local --get-regexp", proof_steps[proof_credentials_index]["run"])
+        self.assertIn('"$(git rev-parse HEAD)" == "$EXPECTED_SHA"', proof_steps[proof_sha_index]["run"])
+        self.assertLess(proof_checkout_index, proof_sha_index)
+        self.assertLess(proof_checkout_index, proof_credentials_index)
+        self.assertLess(proof_credentials_index, proof_sha_index)
+        self.assertLess(proof_sha_index, terraform_setup_index)
+        self.assertIn("needs.preflight.result == 'success'", workflow["jobs"]["proof"]["if"])
+        self.assertEqual(workflow["jobs"]["proof"]["needs"], "preflight")
         self.assertIn("corelink-terraform-staging-state", probe)
         self.assertIn("corelink/issue-1721/$run/terraform.tfstate", probe)
         self.assertIn("use_lockfile=true", probe)
