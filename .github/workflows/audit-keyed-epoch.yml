@@ -65,6 +65,11 @@ jobs:
         with:
           toolchain: 1.91.1
 
+      - name: Install the pinned Protobuf compiler required by corelink-reapi
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Exercise archive contract primitives
         run: |
           set -euo pipefail
