@@ -29,6 +29,8 @@ def verify_target_guard() -> None:
 
     rejected = (
         "https://evil.example",
+        "https://edge.corelink-api.humangr.com",
+        "https://corelink-api.humangr.com.evil.example",
         "https://user:pass@corelink-api.humangr.com",
         "https://corelink-api.humangr.com:443",
         "https://corelink-api.humangr.com:0443",
