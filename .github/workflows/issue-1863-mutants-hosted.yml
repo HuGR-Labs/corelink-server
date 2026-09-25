@@ -18,7 +18,9 @@ env:
   SHARD_COUNT: 27
   SHARDING: round-robin
   SHARD_TIMEOUT_MINUTES: 45
-  TOTAL_RUNNER_MINUTE_CAP: 1270
+  # Inventory/aggregate control jobs plus 27 bounded baseline and mutation
+  # lanes have a 2,505-minute worst-case timeout sum; the cap leaves 45 minutes.
+  TOTAL_RUNNER_MINUTE_CAP: 2550
 
 jobs:
   inventory:
@@ -69,8 +71,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  baseline:
-    name: unmutated workspace baseline
+  baseline-plan:
+    name: freeze complete unmutated workspace test mapping
     needs: inventory
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
@@ -102,24 +104,130 @@ jobs:
         timeout-minutes: 8
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run the unmutated baseline before every shard
-        timeout-minutes: 30
+      - name: Compile the exact cargo test workspace target set without running it
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          cargo metadata --no-deps --format-version=1 > "${RUNNER_TEMP}/workspace-metadata.json"
+          cargo test --workspace --locked --no-run --message-format=json > "${RUNNER_TEMP}/cargo-test-artifacts.jsonl"
+          python3 scripts/verify_i2478_mutants_baseline.py build-plan \
+            --metadata "${RUNNER_TEMP}/workspace-metadata.json" \
+            --artifacts "${RUNNER_TEMP}/cargo-test-artifacts.jsonl" --workspace "$GITHUB_WORKSPACE" --target-dir target \
+            --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --out "${RUNNER_TEMP}/baseline-test-plan.json"
+      - name: Upload frozen complete baseline test mapping
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-baseline-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/baseline-test-plan.json
+          if-no-files-found: error
+          retention-days: 30
+
+  baseline-shards:
+    name: unmutated workspace baseline shard ${{ matrix.shard }}/27
+    needs: [inventory, baseline-plan]
+    if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 9
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Download the frozen same-run baseline mapping
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: mutants-baseline-plan-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/baseline-inputs
+      - name: Select the latest unique baseline mapping attempt
+        run: |
+          set -euo pipefail
+          python3 - "${RUNNER_TEMP}/baseline-inputs" "${RUNNER_TEMP}/baseline-test-plan.json" <<'PY'
+          import json, pathlib, shutil, sys
+          candidates = []
+          for path in pathlib.Path(sys.argv[1]).rglob("baseline-test-plan.json"):
+              plan = json.loads(path.read_text(encoding="utf-8"))
+              candidates.append((plan.get("run_attempt"), path))
+          if not candidates or any(not isinstance(attempt, int) or isinstance(attempt, bool) for attempt, _ in candidates):
+              raise SystemExit("no valid baseline plan artifact")
+          if len({attempt for attempt, _ in candidates}) != len(candidates):
+              raise SystemExit("duplicate baseline plan artifact attempt")
+          shutil.copyfile(max(candidates)[1], sys.argv[2])
+          PY
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        timeout-minutes: 5
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+      - if: runner.environment == 'github-hosted'
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        timeout-minutes: 8
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compile the exact workspace test target set and run this frozen baseline shard
+        timeout-minutes: 35
         run: |
           set +e
-          cargo test --workspace --locked
-          result=$?
-          printf '%s\n' "$result" > "${RUNNER_TEMP}/baseline-exit-code"
+          cargo test --workspace --locked --no-run
+          compile_result=$?
+          if [[ "$compile_result" -eq 0 ]]; then
+            python3 scripts/verify_i2478_mutants_baseline.py run-shard \
+              --plan "${RUNNER_TEMP}/baseline-test-plan.json" --workspace "$GITHUB_WORKSPACE" --target-dir target \
+              --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+              --shard "${{ matrix.shard }}" --out "${RUNNER_TEMP}/baseline-shard-receipt.json"
+            result=$?
+          else
+            result=$compile_result
+          fi
+          printf '%s\n' "$result" > "${RUNNER_TEMP}/baseline-shard-exit-code"
           exit 0
-      - name: Write baseline receipt
+      - name: Upload baseline shard receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-baseline-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/baseline-shard-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Fail closed when the frozen baseline shard failed
         if: always()
         run: |
           set -euo pipefail
-          result=125
-          if [[ -f "${RUNNER_TEMP}/baseline-exit-code" ]]; then result="$(cat "${RUNNER_TEMP}/baseline-exit-code")"; fi
-          python3 scripts/verify_i2457_mutants_shards.py write-baseline \
-            --inventory "${RUNNER_TEMP}/inventory-manifest.json" \
-            --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
-            --exit-code "$result" --out "${RUNNER_TEMP}/baseline-receipt.json"
+          test -f "${RUNNER_TEMP}/baseline-shard-exit-code"
+          test "$(cat "${RUNNER_TEMP}/baseline-shard-exit-code")" = 0
+
+  baseline-aggregate:
+    name: aggregate complete unmutated workspace baseline
+    needs: [inventory, baseline-plan, baseline-shards]
+    if: always() && github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Download only same-run baseline evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: mutants-*-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/baseline-artifacts
+      - name: Aggregate the complete mapping and every successful shard
+        run: |
+          set -euo pipefail
+          inventory="$(find "${RUNNER_TEMP}/baseline-artifacts" -name inventory-manifest.json -type f -print | sort | tail -n1)"
+          test -n "$inventory" && test -f "$inventory"
+          config_digest="$(python3 -c 'from scripts.verify_i2457_mutants_shards import config_digest; print(config_digest())')"
+          inventory_digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["inventory_digest"])' "$inventory")"
+          python3 scripts/verify_i2478_mutants_baseline.py aggregate \
+            --artifacts "${RUNNER_TEMP}/baseline-artifacts" --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --config-digest "$config_digest" --inventory-digest "$inventory_digest" --out "${RUNNER_TEMP}/baseline-receipt.json"
       - name: Upload baseline receipt
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -128,16 +236,9 @@ jobs:
           path: ${{ runner.temp }}/baseline-receipt.json
           if-no-files-found: error
           retention-days: 30
-      - name: Fail closed when the unmutated baseline failed
-        if: always()
-        run: |
-          set -euo pipefail
-          test -f "${RUNNER_TEMP}/baseline-exit-code"
-          test "$(cat "${RUNNER_TEMP}/baseline-exit-code")" = 0
-
   mutants-workspace:
     name: cargo-mutants shard ${{ matrix.shard }}/27 (fail-on-any-survivor)
-    needs: [inventory, baseline]
+    needs: [inventory, baseline-aggregate]
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -239,7 +340,7 @@ jobs:
 
   aggregate:
     name: aggregate exact 27-shard mutation coverage
-    needs: [inventory, baseline, mutants-workspace]
+    needs: [inventory, baseline-aggregate, mutants-workspace]
     if: always() && github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
     timeout-minutes: 10
