@@ -78,14 +78,14 @@ describe("staging ownership envelope", () => {
   it("fails closed for tamper, mismatch, expiry, weak keys, and forged objects", async () => {
     const valid = await envelope();
     const attempts = [
-      verifyStagingOwnershipEnvelope(`${valid.slice(0, -1)}0`, "signup", REQUEST, ISSUED + 1, KEY),
-      verifyStagingOwnershipEnvelope(valid, "webhook", REQUEST, ISSUED + 1, KEY),
-      verifyStagingOwnershipEnvelope(valid, "signup", "c".repeat(32), ISSUED + 1, KEY),
-      verifyStagingOwnershipEnvelope(valid, "signup", REQUEST, EXPIRES, KEY),
-      verifyStagingOwnershipEnvelope(valid, "signup", REQUEST, ISSUED + 1, "short"),
+      () => verifyStagingOwnershipEnvelope(`${valid.slice(0, -1)}0`, "signup", REQUEST, ISSUED + 1, KEY),
+      () => verifyStagingOwnershipEnvelope(valid, "webhook", REQUEST, ISSUED + 1, KEY),
+      () => verifyStagingOwnershipEnvelope(valid, "signup", "c".repeat(32), ISSUED + 1, KEY),
+      () => verifyStagingOwnershipEnvelope(valid, "signup", REQUEST, EXPIRES, KEY),
+      () => verifyStagingOwnershipEnvelope(valid, "signup", REQUEST, ISSUED + 1, "short"),
     ];
     for (const attempt of attempts) {
-      await expect(attempt).rejects.toThrow("staging ownership envelope is invalid");
+      await expect(attempt()).rejects.toThrow("staging ownership envelope is invalid");
     }
     const forged = {
       runId: RUN,
