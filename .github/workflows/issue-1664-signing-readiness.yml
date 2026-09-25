@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "scripts/verify_i1664_signing_readiness.py"
+      - "tests/test_i1664_signing_readiness.py"
       - "docs/handoff/2026-09-22-i1664-signing-readiness.json"
       - ".github/workflows/issue-1664-signing-readiness.yml"
   workflow_dispatch:
@@ -21,3 +22,5 @@ jobs:
           persist-credentials: false
       - name: Validate packet without credentials
         run: python3 scripts/verify_i1664_signing_readiness.py
+      - name: Check preflight and post-run readiness states
+        run: python3 tests/test_i1664_signing_readiness.py
