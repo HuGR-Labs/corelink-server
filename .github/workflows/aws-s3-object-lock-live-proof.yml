@@ -210,11 +210,17 @@ jobs:
           aws s3api list-object-versions --bucket "$bucket" --prefix "$expected_key" > "$RUNNER_TEMP/versions.json"
           jq -e --arg key "$expected_key" '[.Versions[]? | select(.Key == $key)] | length == 1' "$RUNNER_TEMP/versions.json" >/dev/null
           version="$(jq -r --arg key "$expected_key" '.Versions[] | select(.Key == $key) | .VersionId' "$RUNNER_TEMP/versions.json")"
-          aws s3api get-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/legal-hold.json"
-          jq -e '.LegalHold.Status == "OFF"' "$RUNNER_TEMP/legal-hold.json" >/dev/null
           aws s3api get-object-retention --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/retention.json"
           expiry="$(jq -r '.Retention.RetainUntilDate' "$RUNNER_TEMP/retention.json")"
           test "$(date -u -d "$expiry" +%s)" -le "$(date -u +%s)"
+          aws s3api get-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/legal-hold.json"
+          hold_status="$(jq -er '.LegalHold.Status | select(. == "ON" or . == "OFF")' "$RUNNER_TEMP/legal-hold.json")"
+          if [ "$hold_status" = ON ]; then
+            aws s3api put-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version" \
+              --legal-hold '{"Status":"OFF"}'
+          fi
+          aws s3api get-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/legal-hold.json"
+          jq -e '.LegalHold.Status == "OFF"' "$RUNNER_TEMP/legal-hold.json" >/dev/null
           aws s3api delete-object --bucket "$bucket" --key "$expected_key" --version-id "$version" >/dev/null
           remaining="$(aws s3api list-object-versions --bucket "$bucket" --query 'length(Versions[])' --output text)"
           test "$remaining" = 0

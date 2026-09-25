@@ -164,6 +164,27 @@ class B046ObjectLockProbeTests(unittest.TestCase):
         self.assertIn("B046_ACTUAL_REGION=\"$actual_region\"", workflow)
         self.assertIn("B046_CHECKED_OUT_SHA=\"$(git rev-parse HEAD)\"", workflow)
 
+    def test_cleanup_expires_retention_before_releasing_exact_version_legal_hold(self) -> None:
+        workflow = (ROOT / ".github/workflows/aws-s3-object-lock-live-proof.yml").read_text(
+            encoding="utf-8"
+        )
+        cleanup = workflow.split("      - name: Clean up the exact expired synthetic probe", 1)[1]
+        cleanup = cleanup.split("      - name: Publish redacted proof and cleanup obligation", 1)[0]
+
+        retention_read = 'aws s3api get-object-retention --bucket "$bucket" --key "$expected_key" --version-id "$version"'
+        expiry_check = 'test "$(date -u -d "$expiry" +%s)" -le "$(date -u +%s)"'
+        hold_release = 'aws s3api put-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version"'
+        delete_version = 'aws s3api delete-object --bucket "$bucket" --key "$expected_key" --version-id "$version"'
+
+        self.assertIn('[[ "$bucket" =~ ^${AWS_BUCKET_PREFIX}-[0-9]+-[1-9][0-9]*$ ]]', cleanup)
+        self.assertIn('expected_key="audit/probe-${SOURCE_RUN_ID}/synthetic.txt"', cleanup)
+        self.assertIn('length == 1', cleanup)
+        self.assertLess(cleanup.index(retention_read), cleanup.index(expiry_check))
+        self.assertLess(cleanup.index(expiry_check), cleanup.index(hold_release))
+        self.assertLess(cleanup.index(hold_release), cleanup.index(delete_version))
+        self.assertIn("--legal-hold '{\"Status\":\"OFF\"}'", cleanup)
+        self.assertIn("jq -e '.LegalHold.Status == \"OFF\"'", cleanup)
+
     def test_only_explicit_not_implemented_is_provider_block(self) -> None:
         self.assertEqual(verifier.classify_operation(1, "", "NotImplemented"), "NOT_SUPPORTED")
         self.assertEqual(verifier.classify_operation(1, "", "Not Implemented"), "NOT_SUPPORTED")
