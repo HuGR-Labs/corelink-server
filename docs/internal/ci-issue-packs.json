@@ -282,7 +282,8 @@
       "issue": 1677,
       "changed_surfaces": [
         "docs/internal/b087-questionnaire-owner-actions.md",
-        "docs/internal/b170-owner-artifact-templates/legal-contract-disposition.md",
+        "docs/internal/b170-owner-artifact-templates/recipient-notification-decision.md",
+        "docs/internal/ci-issue-packs.json",
         "scripts/verify_b170_owner_actions.py"
       ],
       "workflow_files_to_lint": [],
@@ -300,8 +301,10 @@
       ],
       "negative_controls": [
         "reject a candidate that omits the lighthouse DPA claim from the owner packet",
+        "reject stale questionnaire versions in the owner packet or recipient decision template",
+        "reject recipient decision text that infers circulation or supersession from repository versions",
         "reject a candidate SHA mismatch",
-        "reject changed paths outside this issue's three-file surface",
+        "reject changed paths outside this issue's four-file surface",
         "do not dispatch the global Python suite"
       ],
       "exact_sha": {

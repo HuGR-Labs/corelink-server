@@ -27,8 +27,11 @@ signed_or_approved_record: null
 
 ## Repository facts to reconcile
 
-- The current CAIQ and SIG-LITE files are bounded `1.0.0` draft answer banks with
-  no supersession or recipient ledger in this checkout.
+- The current CAIQ file is a bounded `1.0.0` draft answer bank and SIG-LITE is a
+  bounded `1.1.0` draft answer bank. Their repository versions and null
+  supersession fields do not establish which copies circulated, whether a copy
+  was superseded after delivery, or who received one; the repository has no
+  recipient or supersession ledger.
 - The owner packet says Sales/Legal must identify any recipient population from
   CRM or mail records and decide whether notice is required.
 - No recipient is identified here, and no notification, delivery, or receipt is
