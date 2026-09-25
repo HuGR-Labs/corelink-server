@@ -1,0 +1,185 @@
+{
+  "campaign": "corelink-cross-repo-luna-15-20260925",
+  "generated_at": "2026-09-25T15:55:00-03:00",
+  "merge_owner": "original central orchestrator session",
+  "execution_owner": "parallel orchestrator session",
+  "models": {
+    "implementation": "luna",
+    "cold_review": "luna",
+    "terra": "only after explicit complexity escalation",
+    "sol": "forbidden without fresh user authorization"
+  },
+  "concurrency": {
+    "maximum_active_agents": 12,
+    "policy": "rolling refill, file-disjoint active nodes only"
+  },
+  "repositories": {
+    "HuGR-dev/corelink-server": {
+      "baseline": "3515ba04f68f91be63b58b5346d71200786b0808",
+      "default_branch": "main"
+    },
+    "HuGR-Labs/corelink-runners": {
+      "baseline": "7dc29913fd51047fa15d65f2ded759af9c6da8e6",
+      "default_branch": "main"
+    },
+    "HuGR-Labs/corelink-workspaces": {
+      "baseline": "9907d7d68a3df97dabad0f13e07ff43cb868bfcf",
+      "default_branch": "main"
+    }
+  },
+  "issues": [
+    {
+      "id": "HuGR-dev/corelink-server#2614",
+      "wave": 0,
+      "complexity": "medium",
+      "depends_on": [],
+      "existing_pr": null,
+      "owned_surfaces": ["crates/corelink-audit-chain/src/bin/verifier.rs", ".github/workflows/campaign-ci.yml", "focused verifier CLI tests"],
+      "ci_pack": "i2614 exact-head verifier negative/positive suite, actionlint, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#566",
+      "wave": 0,
+      "complexity": "medium",
+      "depends_on": [],
+      "existing_pr": null,
+      "owned_surfaces": ["deploy/cloudflare/src/lib.ts", "deploy/cloudflare/test/index.test.ts", "focused pagination fixtures"],
+      "ci_pack": "Worker typecheck plus focused orphan pagination tests, actionlint if workflow changes, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#567",
+      "wave": 0,
+      "complexity": "complex",
+      "depends_on": [],
+      "existing_pr": null,
+      "owned_surfaces": ["actions/corelink-memoize/**", "corelink-workspaces clw run protocol files and focused tests"],
+      "ci_pack": "real Action plus real CLI exit-state matrix on both exact repository SHAs, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#568",
+      "wave": 1,
+      "complexity": "complex",
+      "depends_on": ["HuGR-Labs/corelink-runners#567"],
+      "existing_pr": null,
+      "owned_surfaces": ["actions/corelink-memoize/**", "corelink-workspaces clw required-hit protocol, distribution metadata, focused tests"],
+      "ci_pack": "real Action plus exact CLI artifact required-hit no-exec matrix on both exact SHAs, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#570",
+      "wave": 0,
+      "complexity": "medium",
+      "depends_on": [],
+      "existing_pr": null,
+      "owned_surfaces": ["deploy/cloudflare/src/lib/devenv_credentials.ts", "deploy/cloudflare/src/durable_objects/runner_dev_env.ts", "focused credential expiry tests"],
+      "ci_pack": "Worker typecheck plus credential expiry/recovery tests, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#571",
+      "wave": 1,
+      "complexity": "medium",
+      "depends_on": ["HuGR-Labs/corelink-runners#570"],
+      "existing_pr": null,
+      "owned_surfaces": ["deploy/cloudflare/src/lib/clw.ts", "deploy/cloudflare/src/durable_objects/runner_dev_env.ts", "focused snapshot report tests"],
+      "ci_pack": "Worker typecheck plus malformed/empty/invalid snapshot report matrix, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#572",
+      "wave": 2,
+      "complexity": "complex",
+      "depends_on": ["HuGR-Labs/corelink-runners#571"],
+      "existing_pr": null,
+      "owned_surfaces": ["deploy/cloudflare/src/durable_objects/runner_dev_env.ts", "session/generation types", "focused snapshot lifecycle tests"],
+      "ci_pack": "Worker typecheck plus barrier-driven generation replacement matrix, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#575",
+      "wave": 0,
+      "complexity": "medium",
+      "depends_on": [],
+      "existing_pr": null,
+      "owned_surfaces": [".github/workflows/build-cf-container-images.yml", "container build scripts", "image contract tests"],
+      "ci_pack": "hosted build-path contract, actionlint, disk-budget/cleanup assertions, DCO; no production publish"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#574",
+      "wave": 1,
+      "complexity": "medium",
+      "depends_on": ["HuGR-Labs/corelink-runners#575"],
+      "existing_pr": null,
+      "owned_surfaces": [".github/workflows/build-cf-container-images.yml", "deploy/cloudflare/Dockerfile.runner-devenv", "image pin/contract tests"],
+      "ci_pack": "hosted reproducible DevEnv image build contract, actionlint, digest assertions, DCO; no production publish"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#578",
+      "wave": 0,
+      "complexity": "trivial",
+      "depends_on": [],
+      "existing_pr": 579,
+      "owned_surfaces": ["README.md"],
+      "ci_pack": "documentation diff check on exact head, DCO, cold review"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#580",
+      "wave": 0,
+      "complexity": "small",
+      "depends_on": [],
+      "existing_pr": 581,
+      "owned_surfaces": ["Cargo.toml", "Cargo.lock"],
+      "ci_pack": "cargo deny, cargo audit --deny warnings, workspace all-target compile, focused TLS tests, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#586",
+      "wave": 0,
+      "complexity": "medium",
+      "depends_on": [],
+      "existing_pr": null,
+      "owned_surfaces": ["deploy/cloudflare/src/lib/normal_intake_inbox.ts", "normal intake authenticated reconciliation/readback routes", "focused normal-intake tests"],
+      "ci_pack": "Worker typecheck plus 500-row reconciliation, auth, idempotency and malformed-storage tests, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#603",
+      "wave": 2,
+      "complexity": "complex",
+      "depends_on": ["HuGR-Labs/corelink-runners#602"],
+      "existing_pr": null,
+      "owned_surfaces": ["new bounded billing recovery tool/runbook", "historical-marker fixtures"],
+      "ci_pack": "dry-run/restart/rollback/idempotency fixture matrix on exact head, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#604",
+      "wave": 2,
+      "complexity": "complex",
+      "depends_on": ["HuGR-Labs/corelink-runners#602"],
+      "existing_pr": null,
+      "owned_surfaces": ["billing acknowledgement caller census", "sibling runner consumers", "server/native consumers only through separately linked repository PRs"],
+      "ci_pack": "typed acknowledgement negative vectors for every active consumer on each exact repository SHA, DCO"
+    },
+    {
+      "id": "HuGR-Labs/corelink-runners#605",
+      "wave": 3,
+      "complexity": "complex",
+      "depends_on": ["HuGR-Labs/corelink-runners#603", "HuGR-Labs/corelink-runners#604"],
+      "existing_pr": null,
+      "owned_surfaces": ["cross-repository Rust-TypeScript integration harness", "failure injection", "bounded outcome metrics"],
+      "ci_pack": "GitHub-hosted deterministic restart/failure integration on recorded server and runner SHAs, DCO"
+    }
+  ],
+  "central_dependencies": [
+    {
+      "id": "HuGR-Labs/corelink-runners#602",
+      "pr": 601,
+      "owner": "original central session",
+      "rule": "Do not edit, supersede, close, or merge. #603 and #604 wait for central confirmation that its typed acknowledgement contract is integrated or frozen."
+    }
+  ],
+  "excluded": [
+    "all OKF issues and files",
+    "HuGR-dev/corelink-server#2374",
+    "HuGR-dev/corelink-server#2576",
+    "HuGR-dev/corelink-server#2612",
+    "HuGR-Labs/corelink-runners#577",
+    "provider, secrets, staging, production, legal, release publication",
+    "all work not explicitly listed in issues"
+  ]
+}
+
