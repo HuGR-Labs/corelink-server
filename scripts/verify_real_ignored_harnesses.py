@@ -82,7 +82,7 @@ REQUIRED_TARGET_SOURCES = {
 # boundary; this manifest binds the repository-owned selector/source inputs.
 SOURCE_SHA256 = {
     "crates/corelink-container/src/routes/tier_select_store.rs": "f871b8ba90348a4ae8c7f9a8421065efc7759406597976b727ef00014c11e5ea",
-    "crates/corelink-container/src/storage/d1_http.rs": "d8a418960bd9f7f4bb29d4b2be70f094ebc0eca137e60443e2cd7dc6f87be971",
+    "crates/corelink-container/src/storage/d1_http.rs": "cc05e6834cee821c1f7e52041a6d5cbd7570f87618af3d3ab65d6132d3fb5a7a",
     "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs": "474d45a030f333bfb73d7152bc2a802d9d29b8af2d559c5310f9a683bc74e717",
     "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs": "2148abe19ae9b119dc17eca0f242e983b47f8f6100d8d6fbba0536aafcc88af7",
     "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs": "1589c0bf78b5ecee786f39e71e66feb3bcd387ba1465d4ad5f22133cdcf14b4e",
