@@ -8,7 +8,7 @@
 use corelink_reapi::proto::bytestream::byte_stream_server::ByteStreamServer;
 use corelink_reapi::proto::reapi::action_cache_server::ActionCacheServer;
 use corelink_reapi::proto::reapi::capabilities_server::CapabilitiesServer;
-use tonic::transport::{Server, server::Router};
+use tonic::transport::{server::Router, Server};
 
 use crate::reapi_action_cache::{ReapiActionCacheService, ReapiCacheCapabilitiesService};
 use crate::reapi_bytestream::ReapiByteStreamService;
