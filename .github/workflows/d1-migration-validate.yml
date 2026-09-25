@@ -101,6 +101,9 @@ jobs:
       - name: Run adversarial DSR redrive contract mutations
         run: python3 -I tests/test_issue_2366_dsr_redrive_prereq.py
 
+      - name: Run staging load-test attribution ledger adversarial checks
+        run: python3 -I tests/test_issue_2161_staging_teardown_attribution.py
+
       - name: Run focused Terraform drift migration replay contract
         run: |
           python3 scripts/test_terraform_drift_region_contract.py
