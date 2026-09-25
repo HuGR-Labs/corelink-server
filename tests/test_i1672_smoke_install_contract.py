@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from scripts.smoke_install_observe import _runner_provenance
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,7 +50,7 @@ def _contract(workflow: str, helper: str, manifest: dict[str, object]) -> None:
         "shutil.rmtree",
         "helper_sha256",
         '"result": "PASS"',
-        '"corelink-fleet"',
+        '"github-hosted"',
         '"I1672_FLEET_LABEL"',
         '"runner_provenance_invalid"',
     ):
@@ -59,7 +60,8 @@ def _contract(workflow: str, helper: str, manifest: dict[str, object]) -> None:
 
     assert manifest["suite_id"] == "i1672"
     assert manifest["kind"] == "contract-only"
-    assert manifest["runner"] == "corelink"
+    assert manifest["runner"] == "github-hosted"
+    assert "does not establish CoreLink-fleet" in manifest["runtime_boundary"]
     assert manifest["trigger"] == "workflow_dispatch"
     assert manifest["workflow"] == ".github/workflows/smoke-install.yml"
     assert set(manifest["observations"]) == REQUIRED_OBSERVATIONS
@@ -81,11 +83,35 @@ def test_i1672_contract() -> None:
     _contract(*_load())
 
 
+def test_runner_provenance_describes_hosted_job_and_rejects_fleet_claim(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("I1672_FLEET_LABEL", "github-hosted")
+    monkeypatch.setenv("I1672_RUNNER_NAME", "hosted-observer")
+    monkeypatch.setenv("I1672_RUNNER_OS", "Linux")
+    monkeypatch.setenv("I1672_RUNNER_ARCH", "X64")
+
+    hosted = _runner_provenance()
+    assert hosted == {
+        "status": "PASS",
+        "kind": "github-hosted",
+        "label": "github-hosted",
+        "name": "hosted-observer",
+        "os": "Linux",
+        "architecture": "X64",
+    }
+
+    monkeypatch.setenv("I1672_FLEET_LABEL", "corelink")
+    fleet_label = _runner_provenance()
+    assert fleet_label["status"] == "FAIL"
+    assert fleet_label["kind"] == "unverified"
+
+
 @pytest.mark.parametrize(
     ("name", "mutate"),
     [
         ("corelink_runner", lambda w, h, m: (w.replace("runs-on: ubuntu-24.04", "runs-on: corelink"), h, m)),
         ("fleet_provenance", lambda w, h, m: (w.replace("I1672_FLEET_LABEL: github-hosted", "I1672_FLEET_LABEL: corelink"), h, m)),
+        ("manifest_runner", lambda w, h, m: (w, h, {**m, "runner": "corelink"})),
         ("manual_trigger", lambda w, h, m: (w.replace("workflow_dispatch:", "workflow_dispatch_removed:", 1), h, m)),
         ("credential", lambda w, h, m: (w + "\nsecrets.CORELINK_CANARY_PAT\n", h, m)),
         ("backend_seam", lambda w, h, m: (w.replace("if docker info >", "if docker status >", 1), h, m)),

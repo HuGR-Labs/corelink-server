@@ -90,14 +90,14 @@ def _backend_probe(timeout: float) -> dict[str, Any]:
 
 
 def _runner_provenance() -> dict[str, str]:
-    """Bind a receipt to the workflow's required CoreLink fleet route."""
+    """Bind a receipt to the GitHub-hosted boundary that ran this workflow."""
     label = os.environ.get("I1672_FLEET_LABEL", "")
     name = os.environ.get("I1672_RUNNER_NAME", "")
     runner_os = os.environ.get("I1672_RUNNER_OS", "")
     architecture = os.environ.get("I1672_RUNNER_ARCH", "")
     if (
         os.environ.get("GITHUB_ACTIONS") != "true"
-        or label != "corelink"
+        or label != "github-hosted"
         or not name
         or not runner_os
         or not architecture
@@ -106,11 +106,11 @@ def _runner_provenance() -> dict[str, str]:
             "status": "FAIL",
             "kind": "unverified",
             "label": label or "missing",
-            "reason": "corelink_fleet_provenance_missing",
+            "reason": "github_hosted_provenance_missing",
         }
     return {
         "status": "PASS",
-        "kind": "corelink-fleet",
+        "kind": "github-hosted",
         "label": label,
         "name": name,
         "os": runner_os,

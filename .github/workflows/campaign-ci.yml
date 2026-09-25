@@ -351,6 +351,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m pytest -q tests/test_i1672_smoke_install_contract.py 2>&1 | tee artifacts/campaign-ci/i1672.log
+          bash scripts/test_b134_observability.sh 2>&1 | tee artifacts/campaign-ci/i1672-b134.log
 
       - name: i1669 exact residency writer checks
         if: ${{ inputs.suite == 'i1669' }}
