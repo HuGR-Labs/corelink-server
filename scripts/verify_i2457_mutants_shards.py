@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 
-SHARD_COUNT = 27
+SHARD_COUNT = 120
 SHARDING = "round-robin"
 INVENTORY_SHARD = "0/1"
 TOOL_VERSION = "27.0.0"
@@ -311,7 +311,7 @@ def validate_baseline(receipt: Mapping[str, Any], inventory: Mapping[str, Any]) 
     require_digest(receipt.get("baseline_digest"), "baseline.baseline_digest")
     require_digest(receipt.get("plan_digest"), "baseline.plan_digest")
     if receipt.get("shard_count") != SHARD_COUNT:
-        raise VerificationError("baseline does not bind all 27 test shards")
+        raise VerificationError("baseline does not bind all 120 test shards")
     covered_entries = receipt.get("covered_entries")
     if isinstance(covered_entries, bool) or not isinstance(covered_entries, int) or covered_entries <= 0:
         raise VerificationError("baseline does not prove a nonempty complete test mapping")
@@ -396,7 +396,7 @@ def aggregate_receipts(
     current_attempt: int,
     downloaded_shard_digests: Mapping[tuple[int, int], Mapping[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """Select latest same-run terminal evidence and prove a complete 27-way union."""
+    """Select latest same-run terminal evidence and prove a complete 120-way union."""
     expected_sha = require_sha(expected_sha, "expected_sha")
     current_run_id = require_string(current_run_id, "current_run_id")
     current_attempt = require_attempt(current_attempt, "current_attempt")
@@ -420,7 +420,7 @@ def aggregate_receipts(
     if set(by_shard) != set(range(SHARD_COUNT)):
         missing = sorted(set(range(SHARD_COUNT)) - set(by_shard))
         unexpected = sorted(set(by_shard) - set(range(SHARD_COUNT)))
-        raise VerificationError(f"expected all 27 shard receipts; missing={missing}, unexpected={unexpected}")
+        raise VerificationError(f"expected all 120 shard receipts; missing={missing}, unexpected={unexpected}")
 
     selected: list[Mapping[str, Any]] = []
     aggregate_artifacts: list[dict[str, Any]] = []
@@ -769,16 +769,18 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "github.repository == 'HuGR-dev/corelink-server'",
         "github.ref == 'refs/heads/main'",
         "github.ref_protected",
-        "SHARD_COUNT: 27",
-        "TOTAL_RUNNER_MINUTE_CAP: 8200",
-        'test "$TOTAL_RUNNER_MINUTE_CAP" -ge "$((10 + 35 + SHARD_COUNT * 45 + 10 + SHARD_COUNT * 255 + 10))"',
+        "SHARD_COUNT: 120",
+        "MUTATION_JOB_LIMIT_MINUTES: 240",
+        "MUTATION_COMMAND_LIMIT_MINUTES: 210",
+        'test "$MUTATION_JOB_LIMIT_MINUTES" = 240',
+        'test "$MUTATION_COMMAND_LIMIT_MINUTES" = 210',
         "max-parallel: 9",
         "timeout-minutes: 45",
-        "timeout-minutes: 255",
         "timeout-minutes: 240",
+        "timeout-minutes: 210",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
-        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json",
-        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --jobs=8 --build-timeout=60 --timeout=60 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output \"$output\"",
+        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/120 --list --json",
+        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --jobs=8 --build-timeout=60 --timeout=60 --sharding=round-robin --shard ${{ matrix.shard }}/120 --baseline=skip --output \"$output\"",
         "--outcomes \"${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}/mutants.out/outcomes.json\"",
         "--redacted-evidence \"${RUNNER_TEMP}/redacted-evidence\"",
         "${{ runner.temp }}/redacted-evidence/",
@@ -786,7 +788,7 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "cargo test --workspace --locked --no-run --message-format=json",
         "cargo test --workspace --locked --no-run",
         "freeze complete unmutated workspace test mapping",
-        "unmutated workspace baseline shard ${{ matrix.shard }}/27",
+        "unmutated workspace baseline shard ${{ matrix.shard }}/120",
         "aggregate complete unmutated workspace baseline",
         "verify_i2478_mutants_baseline.py build-plan",
         "verify_i2478_mutants_baseline.py run-shard",
@@ -806,10 +808,14 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         raise VerificationError("workflow is missing required #2457 controls: " + ", ".join(missing))
     if text.count("retention-days: 30") != 6 or text.count("retention-days:") != 6:
         raise VerificationError("workflow must retain each of the six bounded evidence artifacts for exactly 30 days")
+    matrices = re.findall(r"(?ms)^      matrix:\n        shard: \[([^]]+)\]", text)
+    expected_matrix = ", ".join(map(str, range(SHARD_COUNT)))
+    if len(matrices) != 2 or any(matrix != expected_matrix for matrix in matrices):
+        raise VerificationError("baseline and mutation matrices must each contain every deterministic shard exactly once")
     if text.count("max-parallel: 9") != 2:
         raise VerificationError("workflow must retain the reviewed nine-runner baseline and mutation concurrency")
-    if text.count("timeout-minutes: 45") != 1 or text.count("timeout-minutes: 255") != 1 or text.count("timeout-minutes: 240") != 1:
-        raise VerificationError("workflow must retain the reviewed baseline and mutation time budgets")
+    if text.count("timeout-minutes: 45") != 1 or text.count("timeout-minutes: 240") != 1 or text.count("timeout-minutes: 210") != 1:
+        raise VerificationError("workflow must retain the 45-minute baseline, 210-minute command, and 240-minute shard caps")
     if text.count("--no-config") != 3:
         raise VerificationError("all three cargo-mutants inventory and shard commands must disable repository config")
     forbidden = (

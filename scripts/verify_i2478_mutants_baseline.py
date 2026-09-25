@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-SHARD_COUNT = 27
+SHARD_COUNT = 120
 SCHEMA = "corelink.hosted-mutants-baseline-test-plan.v1"
 SHARD_SCHEMA = "corelink.hosted-mutants-baseline-test-shard.v1"
 RECEIPT_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v6"
