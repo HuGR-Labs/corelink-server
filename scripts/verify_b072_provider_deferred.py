@@ -16,7 +16,7 @@ REQUIRED = {
     "credentialless deferred validation": 'if (env.SYNTHETIC_DRILL_PROVIDER_MODE === "provider_deferred") return null;',
     "closed provider-mode values": '["pagerduty", "provider_deferred"]',
     "SHA validation": '!/^[0-9a-f]{40}$/i.test(page.serving_sha)',
-    "deferred provenance binding": "worker_revision: env.CF_VERSION_METADATA?.id",
+    "deferred provenance binding": "worker_revision: env.SYNTHETIC_DRILL_WORKER_REVISION ?? \"\"",
     "receiver revision fail-closed": "receiverRevision === undefined || receiverRevision.length < 1 || receiverRevision.length > 200",
     "persist before terminal": "INSERT OR IGNORE INTO synthetic_page_provider_receipts",
     "audit on durable receipt": "INSERT OR IGNORE INTO synthetic_page_provider_audit_events",

@@ -335,6 +335,8 @@ export interface Env {
   SCHEDULED_DRILL_DELIVERY?: { fetch: typeof fetch };
   /** Explicit B-072 mode; absent preserves configured PagerDuty delivery. */
   SYNTHETIC_DRILL_PROVIDER_MODE?: "pagerduty" | "provider_deferred";
+  /** Exact deployed Worker version identifier used in B-072 terminal receipts. */
+  SYNTHETIC_DRILL_WORKER_REVISION?: string;
   // ── Observability (Sentry error tracking) ───────────────────────────────────
   // OPTIONAL. The Sentry hook (see `export default` at the bottom of this file)
   // is a COMPLETE no-op until the operator sets SENTRY_DSN via
@@ -344,6 +346,4 @@ export interface Env {
   SENTRY_DSN?: string;
   // OPTIONAL release tag surfaced on Sentry events (deploy SHA / version).
   SENTRY_RELEASE?: string;
-  /** Cloudflare Worker deployment version metadata for B-072 receipts. */
-  CF_VERSION_METADATA?: { id?: string };
 }

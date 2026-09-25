@@ -32,7 +32,8 @@ function envWithDelivery(fetch: typeof globalThis.fetch): Env {
 function envWithProviderDeferred(fetch: typeof globalThis.fetch): Env {
   return { ENVIRONMENT: "staging", SYNTHETIC_DRILL_PROVIDER_MODE: "provider_deferred",
     SENTRY_RELEASE: "0123456789abcdef0123456789abcdef01234567",
-    CF_VERSION_METADATA: { id: "cf-scheduler-version-7" }, SCHEDULED_DRILL_DELIVERY: { fetch } } as Env;
+    SYNTHETIC_DRILL_WORKER_REVISION: "cf-scheduler-version-7",
+    SCHEDULED_DRILL_DELIVERY: { fetch } } as Env;
 }
 
 function scheduledCtx(): ExecutionContext {

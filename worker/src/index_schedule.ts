@@ -41,7 +41,7 @@ export async function runScheduled(controller: ScheduledController, env: Env): P
         emit_at_ms: syntheticEmitAtMs(controller.scheduledTime, week),
         delivery_mode: ((week % 4) + 4) % 4 === 3 ? "deferred" : "immediate",
         provider_mode: providerMode,
-        worker_revision: env.CF_VERSION_METADATA?.id ?? "",
+        worker_revision: env.SYNTHETIC_DRILL_WORKER_REVISION ?? "",
         serving_sha: env.SENTRY_RELEASE ?? "",
         dedup_key: deliveryId,
         correlation_id: `PAT-CORRELATION-ID-001:${deliveryId}`,
@@ -75,7 +75,7 @@ export async function runScheduled(controller: ScheduledController, env: Env): P
     if (providerMode === "provider_deferred") {
       let receipt: unknown;
       try { receipt = await response.json(); } catch { receipt = null; }
-      const expectedWorkerRevision = env.CF_VERSION_METADATA?.id;
+      const expectedWorkerRevision = env.SYNTHETIC_DRILL_WORKER_REVISION;
       const expectedServingSha = env.SENTRY_RELEASE;
       const terminalReceipt = typeof receipt === "object" && receipt !== null
         ? receipt as Record<string, unknown>
