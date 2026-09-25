@@ -161,6 +161,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
   class MemoryReceipts implements DsrDlqReceiptStore, RedriveStore {
     readonly rows = new Map<string, DsrDlqReceipt>();
     readonly writes: Array<{ eventId: string; status: string }> = [];
+    readonly redriveStates = new Map<string, "ready" | "claimed" | "ambiguous" | "submitted">();
     failWrites = false;
 
     async find(eventId: string): Promise<DsrDlqReceipt | null> {
@@ -192,16 +193,32 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       return true;
     }
 
-    async capture(): Promise<boolean> { return true; }
-    async claim(): Promise<"claimed" | "expired" | "denied"> { return "denied"; }
-    async envelope(): Promise<null> { return null; }
-    async fence(): Promise<boolean> { return false; }
-    async submitted(): Promise<void> {}
-    async ambiguous(): Promise<void> {}
+    async capture(eventId: string): Promise<boolean> {
+      if (!this.redriveStates.has(eventId)) this.redriveStates.set(eventId, "ready");
+      return true;
+    }
+    async claim(eventId: string): Promise<"claimed" | "expired" | "denied"> {
+      if (this.redriveStates.get(eventId) !== "ready") return "denied";
+      this.redriveStates.set(eventId, "claimed");
+      return "claimed";
+    }
+    async envelope() { return null; }
+    async fence(eventId: string): Promise<boolean> {
+      if (this.redriveStates.get(eventId) !== "claimed") return false;
+      this.redriveStates.set(eventId, "ambiguous");
+      return true;
+    }
+    async submitted(eventId: string): Promise<void> {
+      if (this.redriveStates.get(eventId) !== "ambiguous") throw new Error("submit_without_fence");
+      this.redriveStates.set(eventId, "submitted");
+    }
+    async ambiguous(eventId: string): Promise<void> {
+      if (this.redriveStates.get(eventId) === "claimed") this.redriveStates.set(eventId, "ambiguous");
+    }
     async cleanup(): Promise<void> {}
   }
 
-  function pagedEnv(send: (message: unknown) => Promise<void>, receipts = new MemoryReceipts()) {
+  function pagedEnv(send: (message: unknown) => Promise<void>, receipts: DsrDlqReceiptStore = new MemoryReceipts()) {
     return {
       DSR_QUEUE: { send },
       DSR_DLQ_RECEIPTS: receipts,
@@ -649,8 +666,9 @@ describe("handleDsrDlqRedrive (receipt-bound authority)", () => {
     readonly audit: string[] = [];
     cleanupCalls = 0;
     allowFence = true;
-    async capture(): Promise<boolean> { return true; }
-    async claim(): Promise<"claimed" | "expired" | "denied"> {
+    capturedEventId = "";
+    async capture(eventId: string): Promise<boolean> { this.capturedEventId = eventId; return true; }
+    async claim(_eventId: string): Promise<"claimed" | "expired" | "denied"> {
       if (this.state === "expired") return "expired";
       if (this.state !== "ready") return "denied";
       this.state = "claimed";
@@ -713,6 +731,52 @@ describe("handleDsrDlqRedrive (receipt-bound authority)", () => {
     expect(send.mock.calls[0]?.[0]).toMatchObject({ tenant_id: envelope.tenant_id, subject_id: envelope.tenant_id, legal_hold: true, _dlq_requeue: 1 });
     expect(store.audit).toEqual(["claimed", "ambiguous", "submitted"]);
     expect(store.cleanupCalls).toBeGreaterThan(0);
+  });
+
+  it("denies manual release after the automatic bounded requeue was submitted", async () => {
+    const store = new Recovery();
+    const automaticSend = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const manualSend = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const receipts: DsrDlqReceiptStore = {
+      find: async () => null,
+      record: async () => undefined,
+      claimPaging: async () => true,
+      claimRequeue: async () => true,
+    };
+    const dlqMessage: QueueMessage<DsrDlqBody> & {
+      ack: ReturnType<typeof vi.fn<() => void>>;
+      retry: ReturnType<typeof vi.fn<() => void>>;
+    } = {
+      body: msg("automatic-redrive-bound"),
+      attempts: 1,
+      ack: vi.fn<() => void>(),
+      retry: vi.fn<() => void>(),
+    };
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch(
+        { messages: [dlqMessage] },
+        {
+          DSR_QUEUE: { send: automaticSend },
+          DSR_DLQ_RECEIPTS: receipts,
+          DSR_DLQ_REDRIVE: store,
+          PAGERDUTY_ROUTING_KEY: "routing-key",
+          PAGERDUTY_FETCH: vi.fn<typeof fetch>(async () => new Response("accepted", { status: 202 })),
+        },
+      );
+    } finally {
+      error.mockRestore();
+    }
+
+    expect(automaticSend).toHaveBeenCalledOnce();
+    expect(store.state).toBe("submitted");
+    expect(store.audit).toEqual(["claimed", "ambiguous", "submitted"]);
+    const response = await handleDsrDlqRedrive(
+      request({ event_id: store.capturedEventId }),
+      env(store, manualSend),
+    );
+    expect(response.status).toBe(409);
+    expect(manualSend).not.toHaveBeenCalled();
   });
 
   it("keeps missing envelopes and unknown sends ambiguous without another send", async () => {
