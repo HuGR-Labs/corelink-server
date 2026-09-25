@@ -11,7 +11,7 @@ import re
 import stat
 from pathlib import Path
 
-from cli_release_manifest import load
+from cli_release_manifest import FINAL_INVENTORY, load
 
 
 METADATA = {"release-manifest.json", "provenance.intoto.jsonl", "provenance.intoto.jsonl.bundle"}
@@ -97,6 +97,8 @@ def verify(api_path: Path, directory: Path, manifest: Path, provenance: Path, bu
     if sha256(manifest) != manifest_sha256:
         raise ValueError("release manifest digest differs from final-manifest output")
     artifacts = {entry["name"]: entry["sha256"] for entry in entries}
+    if set(artifacts) != FINAL_INVENTORY:
+        raise ValueError("final release inventory is not the complete Linux + Windows set")
     expected = set(artifacts) | METADATA
     if set(api_names) != expected or {path.name for path in directory.iterdir()} != expected:
         raise ValueError("release inventory is not closed-world")
