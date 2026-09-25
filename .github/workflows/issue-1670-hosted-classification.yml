@@ -176,7 +176,6 @@ jobs:
               "issue": 1670,
               "run_id": int(run_id),
               "commit_sha": commit_sha,
-              "runner": "GitHub-hosted ubuntu-24.04",
               "filesystem": "bounded tmpfs",
               "bounded_filesystem_bytes": int(shm_size),
               "filesystem_block_bytes": int(shm_block_size),
@@ -203,7 +202,6 @@ jobs:
             echo "## Issue #1670 hosted evidence"
             echo "- run: ${GITHUB_RUN_ID}"
             echo "- commit: ${GITHUB_SHA}"
-            echo "- runner: GitHub-hosted ubuntu-24.04"
             echo "- bounded filesystem: tmpfs (${shm_size} bytes)"
             echo "- capacity receipt: pre=${shm_free}/${shm_size} bytes free; post=${shm_post_free}/${shm_post_size} bytes free after fixture removal"
             echo "- ENOSPC: exit=$enospc_rc classification=$enospc_class"
@@ -224,11 +222,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$GATE_OUTCOME" = failure
-          python3 - "$GITHUB_WORKSPACE/issue-1670-report.json" <<'PY'
+          python3 - "$GITHUB_WORKSPACE/issue-1670-report.json" "$GITHUB_STEP_SUMMARY" <<'PY'
           import json
           import sys
 
           report = json.load(open(sys.argv[1], encoding="utf-8"))
+          summary = open(sys.argv[2], encoding="utf-8").read()
+          assert "runner" not in report, report
+          assert "runner" not in summary.casefold(), summary
           assert report["run_id"] > 0, report
           assert len(report["commit_sha"]) == 40, report
           assert all(char in "0123456789abcdef" for char in report["commit_sha"]), report
