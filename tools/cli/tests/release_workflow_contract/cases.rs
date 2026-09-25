@@ -30,10 +30,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
             "Windows target removal",
         ),
         (
-            workflow.replace(
-                "run: git config --global core.longpaths true",
-                "run: true",
-            ),
+            workflow.replace("run: git config --global core.longpaths true", "run: true"),
             "Windows long paths setup removal",
         ),
     ] {

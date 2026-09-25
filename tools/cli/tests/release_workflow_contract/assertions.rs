@@ -111,7 +111,9 @@ pub(super) fn assert_release_contract(workflow: &str) {
             "the release workflow must not use an unsupported cargo-zigbuild probe: {unsupported}"
         );
     }
-    let longpaths = workflow.find("- name: Enable Git long paths for Windows checkout").unwrap();
+    let longpaths = workflow
+        .find("- name: Enable Git long paths for Windows checkout")
+        .unwrap();
     let checkout = workflow.find("- name: Checkout").unwrap();
     assert!(
         longpaths < checkout,
