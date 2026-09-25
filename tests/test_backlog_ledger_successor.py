@@ -898,6 +898,33 @@ def test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose(monkeypatch
     assert not policy._v0008_reconciliation_authorized(previous, prior, current, receipt, 8)
 
 
+def test_v0009_b057_verify_means_requires_the_exact_pinned_reconciliation():
+    root = ledger.REPO_ROOT
+    relative = ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0009.json"
+    receipt = json.loads((root / relative).read_text())
+    previous = json.loads(
+        (root / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0008.json").read_text()
+    )
+    policy = ledger._successor_policy()
+    introduced = policy._successor_introduction(root, relative)
+    prior = policy._git_state_bytes(root, receipt["base_commit"])
+    current = policy._git_state_bytes(root, introduced)
+    authorized = policy._v0009_reconciliation_authorized(
+        previous, prior, current, receipt, 9,
+    )
+
+    candidate = ledger.backlog_verify.parse(current["BACKLOG.md"].decode())
+    trusted = ledger.backlog_verify.parse(prior["BACKLOG.md"].decode())
+    rejected = ledger.backlog_verify.validate_candidate_transitions(
+        candidate, trusted, dt.date(2026, 9, 25), successor_mode=True,
+    )
+    assert "B-057: verify-means may change only with a status transition" in rejected
+    assert ledger.backlog_verify.validate_candidate_transitions(
+        candidate, trusted, dt.date(2026, 9, 25),
+        allow_v0009_reconciliation=authorized, successor_mode=True,
+    ) == []
+
+
 def test_b315_style_two_parent_merge_replays_successor(tmp_path, monkeypatch):
     base, candidate = _successor_fixture(tmp_path, monkeypatch)
     assert ledger.validate_candidate_successor(base, candidate)["sequence"] == 3

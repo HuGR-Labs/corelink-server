@@ -1434,6 +1434,7 @@ def install(api):
             allow_b154_reconciliation=v0004_reconciliation,
             allow_v0006_reconciliation=v0006_reconciliation,
             allow_v0007_reconciliation=v0007_reconciliation,
+            allow_v0009_reconciliation=v0009_reconciliation,
             successor_mode=True,
         )
         if transition_errors:

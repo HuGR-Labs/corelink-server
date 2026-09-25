@@ -523,6 +523,7 @@ def validate_candidate_transitions(
     *, allow_sprint3_rewrite: bool = False, allow_b154_reconciliation: bool = False,
     allow_v0006_reconciliation: bool = False,
     allow_v0007_reconciliation: bool = False,
+    allow_v0009_reconciliation: bool = False,
     successor_mode: bool = False,
 ) -> list[str]:
     """Validate the small, auditable set of BACKLOG changes a PR may make."""
@@ -551,6 +552,7 @@ def validate_candidate_transitions(
             "B-229": {"next-action", "acceptance", "verify"},
         }
         v0007_fields = {"B-083": {"verify-means"}}
+        v0009_fields = {"B-057": {"verify-means"}}
         for item_field in IMMUTABLE_ITEM_FIELDS:
             if old_raw.get(item_field) != new_raw.get(item_field):
                 if (
@@ -561,6 +563,10 @@ def validate_candidate_transitions(
                     allow_v0007_reconciliation
                     and item.id in v0007_fields
                     and item_field in v0007_fields[item.id]
+                ) or (
+                    allow_v0009_reconciliation
+                    and item.id in v0009_fields
+                    and item_field in v0009_fields[item.id]
                 ):
                     continue
                 # The B-089 successor may add only this already-BASE-owned
@@ -604,6 +610,10 @@ def validate_candidate_transitions(
                         allow_v0007_reconciliation
                         and item.id in v0007_fields
                         and item_field in v0007_fields[item.id]
+                    ) or (
+                        allow_v0009_reconciliation
+                        and item.id in v0009_fields
+                        and item_field in v0009_fields[item.id]
                     ):
                         continue
                     errors.append(f"{item.id}: unsupported field {item_field!r} changed")
@@ -617,6 +627,8 @@ def validate_candidate_transitions(
                      and "verify-means" in v0006_fields[item.id])
                     or (allow_v0007_reconciliation and item.id in v0007_fields
                         and "verify-means" in v0007_fields[item.id])
+                    or (allow_v0009_reconciliation and item.id in v0009_fields
+                        and "verify-means" in v0009_fields[item.id])
                     or (allow_sprint3_rewrite and item.id in {
                 "B-012", "B-065", "B-087", "B-089", "B-097", "B-154", "B-170",
             }) or (allow_b154_reconciliation and item.id == "B-154")):
