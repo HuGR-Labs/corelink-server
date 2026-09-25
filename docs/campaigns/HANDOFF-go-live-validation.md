@@ -18,7 +18,7 @@ timestamp.
 Validate that CoreLink can go live, across three repos:
 
 - `HuGR-Labs/corelink-server` — the product (Workers + Durable Objects + Containers + R2 + D1)
-- `HuGR-Labs/corelink-runners` — the runner fleet / `fabricd` control plane
+- `HuGR-dev/corelink-runners` — the runner fleet / `fabricd` control plane
 - `HuGR-Labs/corelink-workspaces` — workspace tooling + mutation lane
 
 The standing contract is **`BACKLOG.md` at the repo root of `corelink-server`** —

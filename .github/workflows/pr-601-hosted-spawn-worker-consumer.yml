@@ -1,6 +1,6 @@
 name: "PR #601 hosted spawn-worker consumer validation"
 
-# Bounded operator lane for HuGR-Labs/corelink-runners PR #601.  The source
+# Bounded operator lane for HuGR-dev/corelink-runners PR #601.  The source
 # repository is private, so the read-only canary PAT is used only to resolve
 # and fetch the requested PR head.  The token is never placed in a remote URL,
 # is not persisted in git config, and is unset before any source tests run.
@@ -21,8 +21,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RUNNERS_REPOSITORY: HuGR-Labs/corelink-runners
-  RUNNERS_URL: https://github.com/HuGR-Labs/corelink-runners.git
+  RUNNERS_REPOSITORY: HuGR-dev/corelink-runners
+  RUNNERS_URL: https://github.com/HuGR-dev/corelink-runners.git
   RUNNERS_PR: "601"
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
           payload = {
               "schema_version": 1,
               "lane": "pr-601-hosted-spawn-worker-consumer",
-              "source_repository": "HuGR-Labs/corelink-runners",
+              "source_repository": "HuGR-dev/corelink-runners",
               "source_pr": 601,
               "requested_sha": target_sha,
               "runner": "GitHub-hosted ubuntu-24.04",
