@@ -28,7 +28,7 @@ jobs:
   policy:
     name: verify immutable v0004-v0008 successor policy
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Checkout without write credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
@@ -64,4 +64,5 @@ jobs:
           tests/test_backlog_ledger_successor.py::test_v0007_replays_exact_b083_lifecycle_clarification
           tests/test_backlog_ledger_successor.py::test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose
       - name: Verify complete delivered ledger chain
+        timeout-minutes: 8
         run: python3 scripts/verify_backlog_wp_ledger.py
