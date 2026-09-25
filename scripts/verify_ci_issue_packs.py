@@ -95,7 +95,8 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         '[[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]',
     )
     errors = [f"central workflow is missing required contract: {item}" for item in required if item not in workflow_text]
-    cargo_mutants_lines = [line.strip() for line in workflow_text.splitlines() if "cargo mutants" in line]
+    normalized_workflow = re.sub(r"[ \t]*\\[ \t]*\r?\n[ \t]*", " ", workflow_text)
+    cargo_mutants_lines = [line.strip() for line in normalized_workflow.splitlines() if "cargo mutants" in line]
     expected_cargo_mutants_lines = [
         "cargo mutants --version | grep -Fx 'cargo-mutants 27.0.0'",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > \"${RUNNER_TEMP}/full-inventory.json\"",
@@ -316,6 +317,9 @@ def self_test(catalog: dict) -> list[str]:
     )
     if not validate_workflow_contract(extra_cargo_mutants_workflow):
         failures.append("workflow adding an unrelated cargo-mutants command was accepted")
+    multiline_cargo_mutants_workflow = canonical_workflow + "\n      - run: |\n          cargo \\\n            mutants --package corelink-server\n"
+    if not validate_workflow_contract(multiline_cargo_mutants_workflow):
+        failures.append("workflow adding a multiline cargo-mutants command was accepted")
     token_workflow = canonical_workflow.replace("timeout-minutes: 10", "env: {GITHUB_TOKEN: leaked}\n        timeout-minutes: 10", 1)
     if not validate_workflow_contract(token_workflow):
         failures.append("workflow adding a credential route was accepted")
