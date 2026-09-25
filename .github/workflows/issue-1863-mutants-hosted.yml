@@ -56,7 +56,7 @@ jobs:
           # cargo-mutants 27 requires --shard even for --list.  0/1 is the
           # sole shard of a denominator-one partition, so this enumerates the
           # complete workspace inventory rather than a sample of the 27 lanes.
-          cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > "${RUNNER_TEMP}/full-inventory.json"
+          cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > "${RUNNER_TEMP}/full-inventory.json"
           python3 scripts/verify_i2457_mutants_shards.py build-inventory \
             --raw "${RUNNER_TEMP}/full-inventory.json" \
             --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
@@ -188,10 +188,10 @@ jobs:
           set +e
           output="${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}"
           mkdir -p "$output"
-          cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json > "${RUNNER_TEMP}/expected-shard.json"
+          cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json > "${RUNNER_TEMP}/expected-shard.json"
           list_result=$?
           if [[ "$list_result" -eq 0 ]]; then
-            cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output "$output"
+            cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output "$output"
             mutant_result=$?
           else
             mutant_result=125
