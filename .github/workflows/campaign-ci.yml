@@ -56,6 +56,7 @@ on:
           - i2194
           - i2417
           - i2421
+          - i2614
 
 permissions:
   contents: read
@@ -893,7 +894,7 @@ jobs:
           .venv-i2194/bin/python -m pip install --disable-pip-version-check --quiet -r requirements-ci.txt
 
       - name: Install checksum-pinned actionlint for i2194
-        if: ${{ inputs.suite == 'i2194' }}
+        if: ${{ inputs.suite == 'i2194' || inputs.suite == 'i2614' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -920,6 +921,23 @@ jobs:
             .github/workflows/b249-dt-webhook-sunset.yml \
             .github/workflows/canonical-consistency.yml \
             .github/workflows/campaign-ci.yml
+
+      - name: Lint the campaign workflow for i2614
+        if: ${{ inputs.suite == 'i2614' }}
+        shell: bash
+        run: >-
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml
+          .github/workflows/campaign-ci.yml
+
+      - name: Verify and exercise i2614 exact dispatched revision
+        if: ${{ inputs.suite == 'i2614' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git log -1 --format=%B | grep -Eq '^Signed-off-by: .+ <[^<>[:space:]]+@[^<>[:space:]]+>$'
+          cargo test --locked -p corelink-audit-chain --test i2614_cli -- --nocapture \
+            2>&1 | tee artifacts/campaign-ci/i2614.log
 
       - name: Install checksum-pinned promtool for i2194
         if: ${{ inputs.suite == 'i2194' }}
