@@ -13,6 +13,8 @@ readonly SCRIPT_NAME="${0##*/}"
 readonly PROFILE="${1:-}"
 readonly RECEIPT_DIR="${REAL_HARNESS_RECEIPT_DIR:-artifacts/real-ignored-harnesses}"
 readonly RECEIPT_FILE="${RECEIPT_DIR}/receipt.jsonl"
+readonly RECEIPT_SHA="${GITHUB_SHA:-}"
+RAW_LOGS=()
 
 usage() {
   printf 'usage: %s {d1|r2|stripe|neon|all}\n' "$SCRIPT_NAME" >&2
@@ -37,14 +39,19 @@ require_https() {
 }
 
 record_receipt() {
-  # Values are closed selectors or statuses; credentials never enter receipts.
+  # Values are closed selectors/statuses plus GitHub's immutable run SHA;
+  # credentials never enter receipts.
   local profile="$1" test_name="$2" status="$3"
-  printf '{"profile":"%s","test":"%s","status":"%s"}\n' \
-    "$profile" "$test_name" "$status" >> "$RECEIPT_FILE"
+  printf '{"sha":"%s","profile":"%s","test":"%s","status":"%s"}\n' \
+    "$RECEIPT_SHA" "$profile" "$test_name" "$status" >> "$RECEIPT_FILE"
 }
 
 finish_receipt() {
   local rc=$?
+  local raw_log
+  for raw_log in "${RAW_LOGS[@]}"; do
+    rm -f -- "$raw_log" || true
+  done
   if [[ "$rc" -eq 0 ]]; then
     record_receipt "$PROFILE" "__profile__" "passed"
   else
@@ -57,33 +64,49 @@ finish_receipt() {
 run_cargo() {
   # --locked makes the live lane execute the repository's resolved dependency
   # graph. --ignored is deliberately present only in this allow-listed runner.
+  # Keep Cargo/test output in a private ephemeral temp file so provider errors
+  # and tenant details never reach Actions logs or uploaded artifacts.
   # Cargo and its toolchain are supplied by the GitHub-hosted runner
   # image. A compromised host/toolchain or same-user TOCTOU is infrastructure
   # outside this repository verifier's trust boundary.
   local profile="$1" expected="$2"
   shift 2
   local log_file="${RECEIPT_DIR}/${profile}-${expected}.log"
+  local raw_log
+  raw_log="$(mktemp)"
+  RAW_LOGS+=("$raw_log")
   record_receipt "$profile" "$expected" "started"
-  set +e
-  cargo test --locked "$@" "$expected" -- --ignored --nocapture 2>&1 | tee "$log_file"
-  local cargo_rc="${PIPESTATUS[0]}"
-  set -e
+  local cargo_rc=0
+  if cargo test --locked "$@" "$expected" -- --ignored --nocapture >"$raw_log" 2>&1; then
+    :
+  else
+    cargo_rc=$?
+  fi
   if [[ "$cargo_rc" -ne 0 ]]; then
     record_receipt "$profile" "$expected" "failed"
+    printf 'sha=%s profile=%s test=%s status=failed\n' \
+      "$RECEIPT_SHA" "$profile" "$expected" > "$log_file"
+    rm -f -- "$raw_log"
     return "$cargo_rc"
   fi
 
   # Cargo exits zero for an empty filter. Require exactly one matching `ok`
   # line so a stale selector can never produce a false green receipt.
   local passed
-  passed="$(awk -v target="$expected" '$1 == "test" && $NF == "ok" && ($2 == target || $2 ~ ("::" target "$")) { count++ } END { print count + 0 }' "$log_file")"
+  passed="$(awk -v target="$expected" '$1 == "test" && $NF == "ok" && ($2 == target || $2 ~ ("::" target "$")) { count++ } END { print count + 0 }' "$raw_log")"
   if [[ "$passed" != "1" ]]; then
     record_receipt "$profile" "$expected" "not-discovered"
+    printf 'sha=%s profile=%s test=%s status=not-discovered\n' \
+      "$RECEIPT_SHA" "$profile" "$expected" > "$log_file"
     printf 'error: expected exactly one passing ignored test named %s; observed %s\n' \
       "$expected" "$passed" >&2
+    rm -f -- "$raw_log"
     return 3
   fi
   record_receipt "$profile" "$expected" "passed"
+  printf 'sha=%s profile=%s test=%s status=passed\n' \
+    "$RECEIPT_SHA" "$profile" "$expected" > "$log_file"
+  rm -f -- "$raw_log"
 }
 
 preflight_d1() {
@@ -173,6 +196,9 @@ case "$PROFILE" in
     die "unknown harness profile: ${PROFILE:-<empty>}"
     ;;
 esac
+
+[[ "$RECEIPT_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+  die "GITHUB_SHA must be the exact 40-character Git commit SHA"
 
 mkdir -p "$RECEIPT_DIR"
 : > "$RECEIPT_FILE"

@@ -431,6 +431,21 @@ def assert_contract(workflow: str, runner: str) -> None:
         fail("semantic executor guard is missing or only comment bait")
     if runs.count('bash scripts/run-real-ignored-harnesses.sh "$REAL_HARNESS_PROFILE"') != 1:
         fail("real executor wiring is missing or only comment bait")
+    if 'readonly RECEIPT_SHA="${GITHUB_SHA:-}"' not in sh:
+        fail("receipt does not bind results to the GitHub run SHA")
+    if '[[ "$RECEIPT_SHA" =~ ^[0-9a-f]{40}$ ]]' not in sh:
+        fail("receipt does not reject a missing or malformed exact Git SHA")
+    if '{"sha":"%s","profile":"%s"' not in sh or '"$RECEIPT_SHA" "$profile"' not in sh:
+        fail("test receipt entries do not carry the exact Git SHA")
+    if '2>&1 | tee "$log_file"' in sh:
+        fail("raw Cargo output is copied into an uploadable artifact")
+    if ' >"$raw_log" 2>&1' not in sh or 'tee "$log_file"' in sh:
+        fail("raw Cargo output is not isolated from Actions logs and artifacts")
+    for status in ("failed", "not-discovered", "passed"):
+        if f"sha=%s profile=%s test=%s status={status}" not in sh:
+            fail(f"redacted test log summary is missing status: {status}")
+    if 'rm -f -- "$raw_log"' not in sh or 'for raw_log in "${RAW_LOGS[@]}"' not in sh:
+        fail("private raw output temp files are not deterministically cleaned up")
 
     # No path in this executor may receive the PAT signing key or invoke the
     # side-effecting seed.  Check executable content, not explanatory comments.
