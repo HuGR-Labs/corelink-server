@@ -392,6 +392,29 @@ V0008_RECONCILIATION = {
     },
 }
 
+# v0009 authorizes the exact B-057 evidence refresh against the protected-main
+# state at bad8506. Its BACKLOG.md also includes the later B-316 observation;
+# the transition itself changes only B-057. The policy is installed out-of-band
+# before a separate data receipt can use it.
+V0009_RECONCILIATION = {
+    "sequence": 9,
+    "previous_sequence": 8,
+    "anchor_base_commit": "bad85063bb78bd8e5b4e19b3ce4e235dc05746e0",
+    "previous_source_sha256": "323b589d9e6a955409c9b701778736b1bf57e72998b030164c0a460cc498152b",
+    "changed_ids": ("B-057",),
+    "prior_source_sha256": "78bce40c2ad03a259185bd884e024000ace29157f708dafbe002aea998044694",
+    "source_sha256": "079ed101ef92fc703ec1fa5f72a9233394f73fc23c87ccc2e57a0b50e4f09ca6",
+    "prior_ledger_sha256": "fcc3a03cf4a2f82996212a24d7ae1947c874441635a6a680bb4caeb6c64e58fa",
+    "prior_section_sha256": "4bd0d060401f0be30814308399bf1b6d02b7012d993ec20c10f0d4027a2f195d",
+    "current_section_sha256": "907e5ad69e6e949b96d99d5e9977f5597bda45d3498610f6ba517f5f387ffbda",
+    "prior_catalog_sha256": {
+        "docs/campaigns/remediation/work-packages/B001-B045.md": "081c9885db8d79c18f2f31edb7864bb1ca1a18d53f408720f3f9e4f00524f9c6",
+        "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+        "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+        "docs/campaigns/remediation/work-packages/B131-B167.md": "13805dab851c5023d7d49bc707ce0c30713a11aeca8b1e179c8710ad8d91671f",
+    },
+}
+
 
 def install(api):
     REPO_ROOT = api.REPO_ROOT
@@ -580,6 +603,18 @@ def install(api):
             ("base-sha: aad9435a7f4092d1d1bae5de4f32aa38f4379a49", f"base-sha: {base_sha}"),
         ):
             text = _replace_once(text, old, new)
+        return text.encode("utf-8")
+
+    def _v0009_ledger(prior_raw: bytes, base_sha: str) -> bytes:
+        """Derive only the ledger-base advance for the pinned B-057 receipt."""
+        text = prior_raw.decode("utf-8")
+        for old, new in (
+            ("base-ref: f56637f84f2366a8041d07d01e8657153a841030", f"base-ref: {base_sha}"),
+            ("base-sha: f56637f84f2366a8041d07d01e8657153a841030", f"base-sha: {base_sha}"),
+        ):
+            if text.count(old) != 1:
+                raise LedgerError("v0009 derivation source drifted")
+            text = text.replace(old, new, 1)
         return text.encode("utf-8")
 
     def _sprint3_rewrite_authorized(
@@ -880,6 +915,55 @@ def install(api):
         if old_order != new_order or old_sections != new_sections:
             return False
         return True
+
+    def _v0009_reconciliation_authorized(
+        previous: dict[str, object], prior: dict[str, bytes], current: dict[str, bytes],
+        receipt: dict[str, object], sequence: int, *, trusted_root: Path, trusted_base: str,
+    ) -> bool:
+        """Authorize only the exact B-057 transition from the pinned trusted-main state."""
+        pinned = V0009_RECONCILIATION
+        anchor_is_ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", pinned["anchor_base_commit"], trusted_base],
+            cwd=trusted_root, check=False,
+        ).returncode == 0
+        if (
+            not anchor_is_ancestor
+            or receipt.get("base_commit") != trusted_base
+            or sequence != pinned["sequence"]
+            or previous.get("sequence") != pinned["previous_sequence"]
+            or previous.get("source_sha256") != pinned["previous_source_sha256"]
+            or _git_state_bytes(trusted_root, pinned["anchor_base_commit"]) != prior
+            or _sha256(prior["BACKLOG.md"]) != pinned["prior_source_sha256"]
+            or _sha256(current["BACKLOG.md"]) != pinned["source_sha256"]
+            or receipt.get("changed_ids") != list(pinned["changed_ids"])
+            or receipt.get("prior_source_sha256") != pinned["prior_source_sha256"]
+            or receipt.get("source_sha256") != pinned["source_sha256"]
+            or _sha256(prior[LEDGER_RELATIVE.as_posix()]) != pinned["prior_ledger_sha256"]
+            or receipt.get("prior_ledger_sha256") != pinned["prior_ledger_sha256"]
+            or current[LEDGER_RELATIVE.as_posix()] != _v0009_ledger(
+                prior[LEDGER_RELATIVE.as_posix()], trusted_base,
+            )
+        ):
+            return False
+        _, old_order, old_sections = _backlog_sections(prior["BACKLOG.md"])
+        _, new_order, new_sections = _backlog_sections(current["BACKLOG.md"])
+        catalogs = {
+            path.as_posix(): _sha256(prior[path.as_posix()])
+            for path in _catalog_relatives()
+        }
+        return (
+            old_order == new_order
+            and sorted(
+                item_id for item_id in new_order
+                if old_sections.get(item_id) != new_sections[item_id]
+            ) == list(pinned["changed_ids"])
+            and _sha256(old_sections.get("B-057", b"")) == pinned["prior_section_sha256"]
+            and _sha256(new_sections.get("B-057", b"")) == pinned["current_section_sha256"]
+            and catalogs == pinned["prior_catalog_sha256"]
+            and all(current[path.as_posix()] == prior[path.as_posix()] for path in _catalog_relatives())
+            and receipt.get("prior_catalog_sha256") == catalogs
+            and receipt.get("catalog_sha256") == catalogs
+        )
 
     def _v0008_reconciliation_authorized(
         previous: dict[str, object], prior: dict[str, bytes], current: dict[str, bytes],
@@ -1286,6 +1370,10 @@ def install(api):
         v0008_reconciliation = previous is not None and _v0008_reconciliation_authorized(
             previous, prior, current, receipt, sequence,
         )
+        v0009_reconciliation = previous is not None and _v0009_reconciliation_authorized(
+            previous, prior, current, receipt, sequence,
+            trusted_root=workflow_root, trusted_base=base_sha,
+        )
         for item_id in changed:
             if item_id not in old_sections:
                 continue
@@ -1298,6 +1386,7 @@ def install(api):
                 or (v0006_reconciliation and item_id in V0006_RECONCILIATION["changed_ids"])
                 or (v0007_reconciliation and item_id in V0007_RECONCILIATION["changed_ids"])
                 or (v0008_reconciliation and item_id in V0008_RECONCILIATION["changed_ids"])
+                or (v0009_reconciliation and item_id in V0009_RECONCILIATION["changed_ids"])
             ) and (
                 _normative_section(old_sections[item_id], item_id)
                 != _normative_section(new_sections[item_id], item_id)
@@ -1335,6 +1424,7 @@ def install(api):
             allow_b154_reconciliation=v0004_reconciliation,
             allow_v0006_reconciliation=v0006_reconciliation,
             allow_v0007_reconciliation=v0007_reconciliation,
+            allow_v0009_reconciliation=v0009_reconciliation,
             successor_mode=True,
         )
         if transition_errors:
@@ -1416,6 +1506,10 @@ def install(api):
             v0008_reconciliation = _v0008_reconciliation_authorized(
                 previous, prior, current, receipt, index + 3,
             )
+            v0009_reconciliation = _v0009_reconciliation_authorized(
+                previous, prior, current, receipt, index + 3,
+                trusted_root=root, trusted_base=base_sha,
+            )
             if (
                 _sha256(prior["BACKLOG.md"]) != previous["source_sha256"]
                 and not v0004_reconciliation
@@ -1423,6 +1517,7 @@ def install(api):
                 and not v0006_reconciliation
                 and not v0007_reconciliation
                 and not v0008_reconciliation
+                and not v0009_reconciliation
             ):
                 raise LedgerError(f"{path}: prior BACKLOG differs from prior snapshot")
             if index + 1 < len(paths):
@@ -1450,6 +1545,10 @@ def install(api):
                 )
                 bridge = bridge or _v0008_reconciliation_authorized(
                     receipt, next_prior, next_current, next_receipt, index + 4,
+                )
+                bridge = bridge or _v0009_reconciliation_authorized(
+                    receipt, next_prior, next_current, next_receipt, index + 4,
+                    trusted_root=root, trusted_base=next_receipt["base_commit"],
                 )
                 if current != next_prior and not bridge:
                     raise LedgerError(
@@ -1486,6 +1585,13 @@ def install(api):
                     and _v0008_reconciliation_authorized(
                         receipt, _state_bytes(root), pending_current,
                         pending_receipt, index + 4,
+                    )
+                    or pending_receipt is not None
+                    and pending_current is not None
+                    and _v0009_reconciliation_authorized(
+                        receipt, _state_bytes(root), pending_current,
+                        pending_receipt, index + 4,
+                        trusted_root=root, trusted_base=pending_receipt["base_commit"],
                     )
                 )
                 if not bridge:
@@ -1580,6 +1686,10 @@ def install(api):
             and not _v0008_reconciliation_authorized(
                 previous, prior, current, receipt, len(base_paths) + 3,
             )
+            and not _v0009_reconciliation_authorized(
+                previous, prior, current, receipt, len(base_paths) + 3,
+                trusted_root=base_root, trusted_base=base_sha,
+            )
         ):
             raise LedgerError("candidate predecessor is not the trusted BASE snapshot")
         trusted_items = backlog_verify.parse(prior["BACKLOG.md"].decode("utf-8"))
@@ -1624,4 +1734,6 @@ def install(api):
         _v0006_reconciliation_authorized=_v0006_reconciliation_authorized,
         _v0007_reconciliation_authorized=_v0007_reconciliation_authorized,
         _v0008_reconciliation_authorized=_v0008_reconciliation_authorized,
+        _v0009_reconciliation_authorized=_v0009_reconciliation_authorized,
+        _v0009_ledger=_v0009_ledger,
     )

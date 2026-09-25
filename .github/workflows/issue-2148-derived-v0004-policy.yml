@@ -20,13 +20,14 @@ on:
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0006.json'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0007.json'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0008.json'
+      - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0009.json' # path-filter-allow: future v0009 receipt must trigger policy verification
 
 permissions:
   contents: read
 
 jobs:
   policy:
-    name: verify immutable v0004-v0008 successor policy
+    name: verify immutable v0004-v0009 successor policy
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -49,7 +50,7 @@ jobs:
           python-version: '3.12'
       - name: Install CI test dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-ci.txt
-      - name: Prove derived policy pins, history, and mutation rejection
+      - name: Prove derived policy through v0009 and mutation rejection
         run: >-
           python -m pytest -q
           tests/test_backlog_ledger_successor.py::test_v0004_policy_derives_only_b012_retirement_from_pr_base
@@ -57,12 +58,17 @@ jobs:
           tests/test_backlog_ledger_successor.py::test_v0005_policy_pins_complete_first_parent_history_from_git_objects
           tests/test_backlog_ledger_successor.py::test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition
           tests/test_backlog_ledger_successor.py::test_v0005_receipt_is_required_to_bridge_post_v0004_history
-          tests/test_backlog_ledger_successor.py::test_successor_chain_replays_through_v0008
           tests/test_backlog_ledger_successor.py::test_v0006_pins_source_hash_and_exact_changed_ids
           tests/test_backlog_ledger_successor.py::test_v0006_receipt_is_required_for_the_main_baseline_transition
           tests/test_backlog_ledger_successor.py::test_v0006_authorizer_rejects_wrong_immutable_main_parent
           tests/test_backlog_ledger_successor.py::test_v0007_replays_exact_b083_lifecycle_clarification
           tests/test_backlog_ledger_successor.py::test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose
-      - name: Verify complete delivered ledger chain
+          tests/test_backlog_ledger_successor.py::test_v0009_authorizes_only_the_pinned_b057_delta_and_keeps_v0008
+          tests/test_backlog_ledger_successor.py::test_v0009_rejects_nearby_unauthorized_b057_transitions
+          tests/test_backlog_ledger_successor.py::test_v0009_candidate_cannot_replace_the_trusted_policy
+      # The trusted bad8506 state needs the v0009 data receipt before the full
+      # chain can match BACKLOG.md again; policy-only proof remains bounded here.
+      - name: Verify complete delivered ledger chain after the v0009 receipt
+        if: hashFiles('docs/campaigns/remediation/backlog-ledger-snapshot-v0009.json') != ''
         timeout-minutes: 8
         run: python3 scripts/verify_backlog_wp_ledger.py

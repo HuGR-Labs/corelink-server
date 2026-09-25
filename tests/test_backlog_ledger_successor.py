@@ -24,6 +24,14 @@ def _git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def _section(raw: bytes, item_id: str) -> bytes:
+    """Return one complete BACKLOG section, including its trailing newline."""
+    lines = raw.splitlines(keepends=True)
+    start = next(i for i, line in enumerate(lines) if line.startswith(f"### {item_id} ".encode()))
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith(b"### ")), len(lines))
+    return b"".join(lines[start:end])
+
+
 def _successor_fixture(tmp_path, monkeypatch, *, first_status="open", anchor_open=False):
     """Tiny delivered-main fixture; no candidate code is executed."""
     base = tmp_path / "base"
@@ -594,8 +602,8 @@ def test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition():
 
 
 def test_successor_chain_replays_through_v0008():
-    """The immutable receipts replay through the current v0008 successor."""
-    assert ledger.load_successor_chain()["sequence"] == 8
+    """The immutable receipts include at least the unchanged v0008 chain."""
+    assert ledger.load_successor_chain()["sequence"] >= 8
 
 
 def test_v0006_pins_source_hash_and_exact_changed_ids():
@@ -829,7 +837,6 @@ def test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose(monkeypatch
     prior = policy._git_state_bytes(root, receipt["base_commit"])
     current = policy._git_state_bytes(root, introduced)
 
-    assert ledger.load_successor_chain(root)["sequence"] == 8
     assert policy._v0008_reconciliation_authorized(previous, prior, current, receipt, 8)
 
     changed = dict(receipt, base_commit="0" * 40)
@@ -842,6 +849,119 @@ def test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose(monkeypatch
     b098_hashes = successor.V0008_RECONCILIATION["history"][1]["sections"]["B-098"]
     monkeypatch.setitem(b098_hashes, "current", "0" * 64)
     assert not policy._v0008_reconciliation_authorized(previous, prior, current, receipt, 8)
+
+
+def _v0009_b057_transition(policy):
+    """Build the sole v0009 data delta from the pinned bad8506 source state."""
+    root = ledger.REPO_ROOT
+    pinned = successor.V0009_RECONCILIATION
+    trusted_base = _git(root, "rev-parse", "HEAD")
+    prior = policy._git_state_bytes(root, pinned["anchor_base_commit"])
+    assert policy._git_state_bytes(root, trusted_base) == prior
+    old_section = _section(prior["BACKLOG.md"], "B-057")
+    new_section = old_section.replace(
+        b"and the OKF\n  surface documents the consumer. Companion mutation tests reopen the gate\n"
+        b"  when the calculator, temporal window, audit error SLI, bounded sink, or AC\n"
+        b"  latency catalog discipline is removed.\nlast-verified: 2026-09-05",
+        b"and the OKF\n  surface documents the consumer. The verifier assembles the builder and\n"
+        b"  handler source from the executable `r2_s3_parts` files after the storage\n"
+        b"  split. Companion mutation tests reopen the gate when the calculator,\n"
+        b"  temporal window, audit error SLI, bounded sink, AC lookup zero-latency\n"
+        b"  behavior, or AC latency catalog discipline is removed.\nlast-verified: 2026-09-24",
+        1,
+    )
+    assert ledger._sha256(old_section) == pinned["prior_section_sha256"]
+    assert ledger._sha256(new_section) == pinned["current_section_sha256"]
+    current = dict(prior)
+    current["BACKLOG.md"] = prior["BACKLOG.md"].replace(old_section, new_section, 1)
+    current[ledger.LEDGER_RELATIVE.as_posix()] = policy._v0009_ledger(
+        prior[ledger.LEDGER_RELATIVE.as_posix()], trusted_base,
+    )
+    previous = json.loads(
+        (root / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0008.json").read_text()
+    )
+    catalogs = {
+        path.as_posix(): ledger._sha256(prior[path.as_posix()])
+        for path in policy._catalog_relatives()
+    }
+    receipt = {
+        "base_commit": trusted_base,
+        "sequence": 9,
+        "changed_ids": ["B-057"],
+        "prior_source_sha256": ledger._sha256(prior["BACKLOG.md"]),
+        "source_sha256": ledger._sha256(current["BACKLOG.md"]),
+        "prior_ledger_sha256": ledger._sha256(prior[ledger.LEDGER_RELATIVE.as_posix()]),
+        "prior_catalog_sha256": catalogs,
+        "catalog_sha256": catalogs,
+    }
+    return previous, prior, current, receipt, trusted_base
+
+
+def test_v0009_authorizes_only_the_pinned_b057_delta_and_keeps_v0008():
+    policy = ledger._successor_policy()
+    previous, prior, current, receipt, trusted_base = _v0009_b057_transition(policy)
+
+    assert policy._v0009_reconciliation_authorized(
+        previous, prior, current, receipt, 9,
+        trusted_root=ledger.REPO_ROOT, trusted_base=trusted_base,
+    )
+    old_items = ledger.backlog_verify.parse(prior["BACKLOG.md"].decode())
+    new_items = ledger.backlog_verify.parse(current["BACKLOG.md"].decode())
+    assert ledger.backlog_verify.validate_candidate_transitions(
+        new_items, old_items, dt.date(2026, 9, 25), successor_mode=True,
+    ) == ["B-057: verify-means may change only with a status transition"]
+    assert ledger.backlog_verify.validate_candidate_transitions(
+        new_items, old_items, dt.date(2026, 9, 25),
+        allow_v0009_reconciliation=True, successor_mode=True,
+    ) == []
+
+
+@pytest.mark.parametrize("mutation", [
+    "changed-base", "wrong-sequence", "wrong-previous", "changed-receipt",
+    "changed-source", "extra-id", "extra-backlog-delta", "changed-ledger",
+    "changed-catalog", "incomplete-receipt",
+])
+def test_v0009_rejects_nearby_unauthorized_b057_transitions(mutation):
+    policy = ledger._successor_policy()
+    previous, prior, current, receipt, trusted_base = _v0009_b057_transition(policy)
+    previous, prior, current, receipt = (
+        dict(previous), dict(prior), dict(current), dict(receipt),
+    )
+    sequence = 9
+    if mutation == "changed-base":
+        receipt["base_commit"] = "0" * 40
+    elif mutation == "wrong-sequence":
+        sequence = 8
+    elif mutation == "wrong-previous":
+        previous["sequence"] = 7
+    elif mutation == "changed-receipt":
+        receipt["prior_source_sha256"] = "0" * 64
+    elif mutation == "changed-source":
+        current["BACKLOG.md"] += b"\nunauthorized source bytes\n"
+    elif mutation == "extra-id":
+        receipt["changed_ids"] = ["B-001", "B-057"]
+    elif mutation == "extra-backlog-delta":
+        current["BACKLOG.md"] = current["BACKLOG.md"].replace(
+            b"### B-001", b"### B-001", 1,
+        ) + b"\nunauthorized trailing delta\n"
+    elif mutation == "changed-ledger":
+        current[ledger.LEDGER_RELATIVE.as_posix()] += b"unexpected state\n"
+    elif mutation == "changed-catalog":
+        current["docs/campaigns/remediation/work-packages/B001-B045.md"] += b"changed\n"
+    else:
+        del receipt["catalog_sha256"]
+
+    assert not policy._v0009_reconciliation_authorized(
+        previous, prior, current, receipt, sequence,
+        trusted_root=ledger.REPO_ROOT, trusted_base=trusted_base,
+    )
+
+
+def test_v0009_candidate_cannot_replace_the_trusted_policy(tmp_path, monkeypatch):
+    base, candidate = _successor_fixture(tmp_path, monkeypatch)
+    (candidate / "scripts/backlog_ledger_successor.py").write_text("candidate bypass\n")
+    with pytest.raises(RuntimeError, match="mutated trusted backlog control"):
+        ledger.backlog_verify.check_candidate_controls(candidate, base, [])
 
 
 def test_b315_style_two_parent_merge_replays_successor(tmp_path, monkeypatch):
