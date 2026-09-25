@@ -22,18 +22,22 @@ SHARD_COUNT = 27
 SHARDING = "round-robin"
 INVENTORY_SHARD = "0/1"
 TOOL_VERSION = "27.0.0"
-IDENTITY_SCHEMA = "cargo-mutants-v27.package-file-span-replacement-genre-name.sha256"
-INVENTORY_SCHEMA = "corelink.hosted-mutants-inventory.v3"
-BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v3"
-SHARD_SCHEMA = "corelink.hosted-mutants-shard-receipt.v3"
-AGGREGATE_SCHEMA = "corelink.hosted-mutants-aggregate-receipt.v3"
+IDENTITY_SCHEMA = "cargo-mutants-v27.full-list-record.sha256"
+INVENTORY_SCHEMA = "corelink.hosted-mutants-inventory.v4"
+BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v4"
+SHARD_SCHEMA = "corelink.hosted-mutants-shard-receipt.v4"
+AGGREGATE_SCHEMA = "corelink.hosted-mutants-aggregate-receipt.v4"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 CANONICAL_ARGUMENTS = (
     "--workspace",
+    "--no-config",
     "--no-shuffle",
     "--minimum-test-timeout=600",
     "--sharding=round-robin",
+)
+CARGO_MUTANTS_LIST_FIELDS = frozenset(
+    {"name", "package", "file", "function", "span", "replacement", "genre", "diff"}
 )
 
 
@@ -109,8 +113,28 @@ def _span(value: Any, field: str) -> dict[str, dict[str, int]]:
     return {"start": start, "end": end}
 
 
+def _function(value: Any, field: str) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise VerificationError(f"{field} must be an object or null")
+    if set(value) != {"function_name", "return_type", "span"}:
+        raise VerificationError(f"{field} fields are not the pinned cargo-mutants v27 shape")
+    function_name = require_string(value.get("function_name"), f"{field}.function_name")
+    return_type = value.get("return_type")
+    if not isinstance(return_type, str):
+        raise VerificationError(f"{field}.return_type must be a string")
+    return {
+        "function_name": function_name,
+        "return_type": return_type,
+        "span": _span(value.get("span"), f"{field}.span"),
+    }
+
+
 def mutant_identity(item: Mapping[str, Any], index: int) -> str:
-    """Return the redacted, stable cargo-mutants v27 identity for one mutant."""
+    """Return the redacted identity of the complete pinned cargo-mutants v27 record."""
+    if set(item) != CARGO_MUTANTS_LIST_FIELDS:
+        raise VerificationError(f"mutant[{index}] fields are not the pinned cargo-mutants v27 list shape")
     name = require_string(item.get("name"), f"mutant[{index}].name")
     package = require_string(item.get("package"), f"mutant[{index}].package")
     source_file = require_string(item.get("file"), f"mutant[{index}].file")
@@ -118,14 +142,17 @@ def mutant_identity(item: Mapping[str, Any], index: int) -> str:
     if not isinstance(replacement, str):
         raise VerificationError(f"mutant[{index}].replacement must be a string")
     genre = require_string(item.get("genre"), f"mutant[{index}].genre")
+    diff = require_string(item.get("diff"), f"mutant[{index}].diff")
     identity = {
-        'identity_schema': IDENTITY_SCHEMA,
-        'name': name,
-        'package': package,
-        'file': source_file,
-        'span': _span(item.get('span'), f'mutant[{index}].span'),
-        'replacement': replacement,
-        'genre': genre,
+        "identity_schema": IDENTITY_SCHEMA,
+        "name": name,
+        "package": package,
+        "file": source_file,
+        "function": _function(item.get("function"), f"mutant[{index}].function"),
+        "span": _span(item.get("span"), f"mutant[{index}].span"),
+        "replacement": replacement,
+        "genre": genre,
+        "diff": diff,
     }
     return "sha256:" + digest(identity)
 
@@ -506,9 +533,9 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "SHARD_COUNT: 27",
         "max-parallel: 9",
         "timeout-minutes: 45",
-        "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
-        "--shard ${{ matrix.shard }}/27",
-        "--baseline=skip",
+        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
+        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json",
+        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output \"$output\"",
         "cargo test --workspace --locked",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
@@ -521,6 +548,8 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         raise VerificationError("workflow is missing required #2457 controls: " + ", ".join(missing))
     if text.count("retention-days: 30") != 4 or text.count("retention-days:") != 4:
         raise VerificationError("workflow must retain each of the four bounded evidence artifacts for exactly 30 days")
+    if text.count("--no-config") != 3:
+        raise VerificationError("all three cargo-mutants inventory and shard commands must disable repository config")
     forbidden = (
         "self-hosted",
         "runs-on: corelink",
