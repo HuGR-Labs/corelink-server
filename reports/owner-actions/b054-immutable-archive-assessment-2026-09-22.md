@@ -1,8 +1,56 @@
 # B-054 immutable archive assessment
 
 **Issue:** [#1795](https://github.com/HuGR-dev/corelink-server/issues/1795)
-**Assessment date:** 2026-09-22
-**Assessed tree:** `origin/main` at `f9f6eccace9765b9061e71d8d975eee08bffe8fa`
+**Original assessment date:** 2026-09-22
+**Original assessed tree:** `origin/main` at `f9f6eccace9765b9061e71d8d975eee08bffe8fa`
+
+## Reconciliation update — 2026-09-25
+
+This update supersedes the original assessment below wherever it says that no
+current provider receipt exists. The latest redacted [B-046 provider receipt](https://github.com/HuGR-dev/corelink-server/issues/1646#issuecomment-5827683238)
+records a bounded AWS S3 observation on 2026-09-25 at 06:02:53Z: account suffix
+`8582`, region `us-east-1`, and a dedicated non-production synthetic-only
+Terraform-managed bucket (bucket SHA-256
+`13778af13b943e855dc62c5f36b904cbd9fcf08a02361038810cb0f08284ca73`). Readbacks
+reported versioning and Object Lock enabled, default one-day Compliance
+retention, AES256 encryption, and public-access blocks enabled. The receipt says
+the bucket has no lifecycle deletion policy or bucket policy. It records one
+synthetic no-customer-data object under `audit/`, with object-key SHA-256
+`45c606b96cfffd5c4b8d0b8833c58e2c352444eaffee4d559b173c721e6bb5d3`, version
+SHA-256 `9dcc19961c719f04d81118e9262d038c6fc3db5f87b86fadef781a06fc1abab5`,
+Compliance retention read back through `2026-09-26T06:02:42Z`, and legal hold
+`ON`. IAM simulation for the exact CLI principal/resource/action returned
+`allowed`; the same-version pre-expiry delete request was denied by S3 Object
+Lock. The linked trail digest validation exited successfully and reported
+provider/digest delivery times.
+
+This is observed provider behavior for one synthetic object, not an approved
+CoreLink archive deployment or an accepted protected workflow receipt. The
+receipt does not establish the approved residency/jurisdiction mapping, the
+complete data and manifest writer/reader inventory, content-addressed
+conditional-create behavior, byte-for-byte fetch/readback, list/fetch and
+overwrite denial, loss/recovery behavior, signed-manifest retention/legal-hold
+behavior, or exact CloudTrail data-event identifiers. The receipt itself says
+the fresh S3 data-event records were absent after one bounded delivery check;
+therefore it claims no event identifier. No provider object was deleted and no
+retention was shortened.
+
+The #2237 [protected OIDC action packet](https://github.com/HuGR-dev/corelink-server/issues/2237#issuecomment-5828074197)
+records that the `s3-object-lock-live-proof` environment is absent and the
+canonical workflow has zero runs. Security/Compliance must approve and configure
+the fixed account, region/jurisdiction, OIDC role, bucket prefix, active trail
+and CloudTrail Lake Event Data Store, approval reference, cost ceiling, and
+named cost/cleanup owners. Only then can one protected `main` probe bind the
+provider observations and both data-event IDs/digest validation to the exact
+workflow run and object versions. Keep the protected version intact; cleanup
+is expiry-safe and owner-operated. Reconcile any accepted receipts with
+[B-046/#1646](https://github.com/HuGR-dev/corelink-server/issues/1646),
+[#1877](https://github.com/HuGR-dev/corelink-server/issues/1877), and parent
+[#1647](https://github.com/HuGR-dev/corelink-server/issues/1647).
+
+Disposition remains **OPEN / INDETERMINATE** for #1795. The existing receipt
+improves the provider-behavior record, but it does not establish completeness
+or immutability for CoreLink's archive objects and signed manifests.
 
 ## Decision
 
@@ -40,14 +88,17 @@ are not substitutes for the object and manifest evidence.
 
 ## Exact blocker
 
-**B-046/provider assessment evidence is the sole remainder for #1795:** no
-current authenticated, redacted live readback binds an approved provider,
-account, and archive target to the data and manifest configuration and proves
-conditional create, exact byte readback, ordinary overwrite/delete denial,
-retention, and listing/fetch/loss behavior. R2's official capability page
-marks S3 Object Locking unsupported, and the AWS path is an inactive template
-with no approved target. Until that evidence exists, #1795 must remain open;
-the repository must not claim an immutable or WORM archive.
+**The remaining #1795 gate is the approved protected archive proof:** the
+2026-09-25 synthetic AWS receipt proves only the bounded behavior listed in the
+reconciliation update. It is not bound to a configured protected OIDC run and
+does not cover CoreLink's data and signed-manifest operations. The configured
+R2 probe remains `INDETERMINATE` and Cloudflare's authority page still marks
+the required R2 Object Lock APIs unsupported. Keep the AWS adapter inactive,
+production routing unwired, and #1795 **OPEN / INDETERMINATE** until the named
+approvers configure the protected target, the canonical run supplies the full
+target-bound receipt, and the same accepted evidence is reconciled across
+B-046/#1646, #1877, and #1647. Do not claim CoreLink's archive is immutable or
+WORM on the basis of the one-object AWS receipt.
 
 ## Source pointers
 
