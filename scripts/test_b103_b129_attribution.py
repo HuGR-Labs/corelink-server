@@ -15,8 +15,8 @@ verify = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(verify)
 PROBE_SPEC = importlib.util.spec_from_file_location("probe_i1671_b129", ROOT / "scripts/probe_i1671_b129.py")
 assert PROBE_SPEC and PROBE_SPEC.loader
-probe = importlib.util.module_from_spec(PROBE_SPEC)
-PROBE_SPEC.loader.exec_module(probe)
+b129_probe = importlib.util.module_from_spec(PROBE_SPEC)
+PROBE_SPEC.loader.exec_module(b129_probe)
 
 
 def expect_reject(path: str, marker: str) -> None:
@@ -108,7 +108,7 @@ def main() -> int:
             label,
         )
 
-    assert probe.resolve_target_origin(
+    assert b129_probe.resolve_target_origin(
         "https://CORELINK-API.HUMANGR.COM/", "https://corelink-api.humangr.com"
     ) == "https://corelink-api.humangr.com"
     for requested, configured in (
@@ -119,7 +119,7 @@ def main() -> int:
         ("https://corelink-api.humangr.com", ""),
     ):
         try:
-            probe.resolve_target_origin(requested, configured)
+            b129_probe.resolve_target_origin(requested, configured)
         except RuntimeError:
             pass
         else:
