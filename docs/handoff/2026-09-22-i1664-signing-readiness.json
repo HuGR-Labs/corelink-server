@@ -1,7 +1,7 @@
 {
   "schema_version": "i1664.signing-readiness.v1",
   "status": "blocked",
-  "captured_at": "2026-09-25T10:08:07Z",
+  "captured_at": "2026-09-25T10:28:29Z",
   "owner": "release-engineering",
   "credentialless": true,
   "redaction": {
@@ -10,23 +10,23 @@
   },
   "lanes": {
     "gpg": {
-      "status": "preflight_ready",
+      "status": "blocked",
       "identity": {
         "fingerprint": "795253CEBD6D54C862CFC4A3EC0AD89A75EC6756",
         "issuer": "self-generated release key",
         "subject_or_team": "CoreLink Release Signing (corelink-cli release signing key) <releases@humangr.com>",
-        "chain_or_profile": "4096-bit RSA release key"
+        "chain_or_profile": "self-generated release key; algorithm and size are not recorded by the identity audit"
       },
       "access": {
         "secret_names": ["GPG_PRIVATE_KEY", "GPG_PRIVATE_KEY_PASS", "GPG_KEY_ID", "GPG_KEY_FINGERPRINT"],
-        "scope": "release-cli/sign-linux signing path; public fingerprint also used by the credentialless dry-run; private key and key ID were read by the disabled one-shot identity audit",
+        "scope": "release-cli/sign-linux signing path; issue-2050 dry-run references the public fingerprint; workflow_dispatch identity audit uses the private key and key ID",
         "rotation_owner": "Release Engineering",
         "last_rotated_at": null,
-        "access_status": "verified"
+        "access_status": "missing"
       },
       "expiry": {"expires_at": "2028-08-29T16:05:40Z", "status": "valid"},
       "verification": {"status": "missing", "receipt_reference": null, "verified_at": null, "method": "gpg --status-fd verification receipt"},
-      "blockers": ["A hosted release run must produce and verify the fingerprint-bound Linux detached-signature receipt against the exact release assets."]
+      "blockers": ["The identity audit did not verify the configured passphrase or fingerprint secret against the key, so GPG access is not cleared for preflight.", "A hosted release run must produce and verify the fingerprint-bound Linux detached-signature receipt against the exact release assets."]
     },
     "windows": {
       "status": "blocked",
