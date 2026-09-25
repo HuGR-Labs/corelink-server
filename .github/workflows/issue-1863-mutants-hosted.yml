@@ -17,16 +17,18 @@ concurrency:
 env:
   SHARD_COUNT: 27
   SHARDING: round-robin
-  SHARD_TIMEOUT_MINUTES: 255
+  BASELINE_SHARD_TIMEOUT_MINUTES: 45
+  MUTATION_SHARD_TIMEOUT_MINUTES: 255
+  MUTATION_STEP_TIMEOUT_MINUTES: 240
   # Cargo-mutants v27 runs one worker unless --jobs is explicit.  The complete
   # 24,463-member inventory needs eight bounded workers per shard: each cargo
   # build and test is capped at 60 seconds, while the 240-minute step still
   # leaves setup/receipt time inside the 255-minute job envelope.
   #
   # Inventory + plan + 27x45-minute baseline + aggregate consume 1,280
-  # minutes.  The 27 mutation jobs cap at 27x255 = 6,885; 8,165 total leaves
-  # 35 minutes under this reviewed external-capacity budget.
-  TOTAL_RUNNER_MINUTE_CAP: 8200
+  # minutes.  The 27 mutation jobs cap at 27x255 = 6,885; 8,155 total leaves
+  # 45 minutes under this reviewed external-capacity budget.
+  TOTAL_RUNNER_MINUTE_CAP: 8155
 
 jobs:
   inventory:
@@ -35,6 +37,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - name: Assert the reviewed campaign runner-minute budget
+        run: |
+          set -euo pipefail
+          test "$SHARD_COUNT" = 27
+          test "$TOTAL_RUNNER_MINUTE_CAP" = "$((10 + 35 + SHARD_COUNT * BASELINE_SHARD_TIMEOUT_MINUTES + 10 + SHARD_COUNT * MUTATION_SHARD_TIMEOUT_MINUTES + 10))"
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
@@ -134,7 +141,7 @@ jobs:
     needs: [inventory, baseline-plan]
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: ${{ fromJSON(env.BASELINE_SHARD_TIMEOUT_MINUTES) }}
     strategy:
       fail-fast: false
       max-parallel: 9
@@ -247,7 +254,7 @@ jobs:
     needs: [inventory, baseline-aggregate]
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
-    timeout-minutes: 255
+    timeout-minutes: ${{ fromJSON(env.MUTATION_SHARD_TIMEOUT_MINUTES) }}
     strategy:
       fail-fast: false
       max-parallel: 9
@@ -290,7 +297,7 @@ jobs:
           tool: cargo-mutants@27.0.0
           fallback: cargo-binstall
       - name: Enumerate and run this deterministic shard after the green baseline
-        timeout-minutes: 240
+        timeout-minutes: ${{ fromJSON(env.MUTATION_STEP_TIMEOUT_MINUTES) }}
         run: |
           set +e
           output="${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 from argparse import Namespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -261,10 +262,13 @@ class MutantsShardAggregateTests(unittest.TestCase):
             write(expected_raw)
             redacted_text = (redacted / "shard-evidence-manifest.json").read_text(encoding="utf-8")
             self.assertNotIn(expected_raw[0]["file"], redacted_text)
-            with self.assertRaisesRegex(VerificationError, "list/output disagrees"):
-                write(expected_raw[1:])
-            with self.assertRaisesRegex(VerificationError, "list/output disagrees"):
-                write(expected_raw + [copy.deepcopy(expected_raw[0])])
+            write(expected_raw[1:])
+            incomplete = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(incomplete["status"], "incomplete")
+            self.assertFalse(incomplete["outcomes_complete"])
+            write(expected_raw + [copy.deepcopy(expected_raw[0])])
+            incomplete = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(incomplete["status"], "incomplete")
 
             observed.write_text(json.dumps(expected_raw), encoding="utf-8")
             outcomes.write_text(json.dumps(terminal_outcomes("MissedMutant")), encoding="utf-8")
@@ -402,11 +406,14 @@ class MutantsShardAggregateTests(unittest.TestCase):
             aggregate = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(len(aggregate["shard_artifact_digests"]), SHARD_COUNT)
 
-            (evidence_paths[8] / "shard-evidence-manifest.json").unlink()
-            with self.assertRaisesRegex(VerificationError, "downloaded evidence bytes"):
-                command_aggregate(
-                    Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output)
-                )
+            shutil.rmtree(evidence_paths[8].parent)
+            command_aggregate(
+                Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output)
+            )
+            incomplete = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(incomplete["status"], "failure")
+            self.assertFalse(incomplete["outcomes_complete"])
+            self.assertEqual(incomplete["missing_shards"], [8])
 
 
 if __name__ == "__main__":
