@@ -387,7 +387,11 @@ def check_b216(root: Path) -> None:
     _require(paging, "response.status !== 202", lane)
     _require(body, 'paging.status !== "delivered"', lane)
     _require(body, 'paging.status === "failed" ? paging.error : "route_not_configured"', lane)
-    _require(body, 'action: "retry_paging"', lane)
+    _require_active(
+        body,
+        'action: exhausted ? "delivery_exhausted" : "retry_paging"',
+        lane,
+    )
     _require(body, 'requeue_error: "transport_error"', lane)
     index = _code(_read(root, "apps/signup-worker/src/index.ts"))
     _require(index, 'batch.queue === "corelink-dsr-erasure-dlq"', lane)
@@ -648,6 +652,38 @@ def self_test(root: Path = ROOT) -> None:
                 "ON CONFLICT_REMOVED",
                 "apps/signup-worker/src/webhooks/clerk_erasure.ts",
                 '\nconst B222_STRING_BAIT = "ON CONFLICT(clerk_user_id) DO UPDATE SET";\n',
+            ),
+        )
+    )
+    cases.extend(
+        (
+            label,
+            "B-216",
+            'action: exhausted ? "delivery_exhausted" : "retry_paging"',
+            replacement,
+            "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            suffix,
+        )
+        for label, replacement, suffix in (
+            (
+                "B-216-missing-delivery-exhausted-outcome",
+                'action: exhausted ? "unhandled" : "retry_paging"',
+                "",
+            ),
+            (
+                "B-216-missing-retry-paging-outcome",
+                'action: exhausted ? "delivery_exhausted" : "unhandled"',
+                "",
+            ),
+            (
+                "B-216-inverted-paging-outcome-condition",
+                'action: !exhausted ? "delivery_exhausted" : "retry_paging"',
+                "",
+            ),
+            (
+                "B-216-string-bait-for-paging-outcomes",
+                'action: "unhandled"',
+                '\n      const B216_STRING_BAIT = \'action: exhausted ? "delivery_exhausted" : "retry_paging"\';\n',
             ),
         )
     )

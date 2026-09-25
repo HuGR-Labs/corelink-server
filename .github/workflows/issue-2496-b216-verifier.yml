@@ -1,0 +1,37 @@
+name: issue-2496 B-216 verifier contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/verify_b215_b223_contracts.py"
+      - ".github/workflows/issue-2496-b216-verifier.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2496-b216-verifier-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifier-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert exact requested head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+
+      - name: Verify B-216 valid outcome and reject focused mutations
+        run: python3 -S scripts/verify_b215_b223_contracts.py --id B-216 --self-test
+
+      - name: Preserve the parked B-101 proposal state
+        run: python3 -S scripts/verify_b101_proposals.py --id B-216
