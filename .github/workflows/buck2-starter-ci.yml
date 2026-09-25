@@ -375,12 +375,14 @@ jobs:
           unset CORELINK_PAT
           set +e
           OUTPUT="$(
-            if [[ -z "${CORELINK_PAT:-}" ]]; then
-              echo "CORELINK_PAT is missing; refusing unauthenticated remote-cache build." >&2
-              exit 78
-            fi
-            buck2 build :hello 2>&1
-          ) 2>&1"
+            {
+              if [[ -z "${CORELINK_PAT:-}" ]]; then
+                echo "CORELINK_PAT is missing; refusing unauthenticated remote-cache build." >&2
+                exit 78
+              fi
+              buck2 build :hello
+            } 2>&1
+          )"
           RESULT=$?
           set -e
           printf '%s\n' "${OUTPUT}"
