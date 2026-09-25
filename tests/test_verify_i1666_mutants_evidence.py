@@ -27,6 +27,7 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
             ("actions: read", "actions: write"),
             ("runs-on: ubuntu-24.04", "runs-on: self-hosted"),
             ("retention-days: 30", "retention-days: 0"),
+            ("${{ runner.temp }}/redacted-evidence/", "${{ runner.temp }}/expected-shard.json"),
         )
         text = WORKFLOW.read_text(encoding="utf-8")
         for before, after in mutations:
@@ -47,6 +48,12 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
                 self.assertEqual(text.count(command), 1)
                 with self.assertRaises(ValueError):
                     verify(text.replace(command, command.replace(" --no-config", "", 1), 1))
+
+    def test_evidence_contract_rejects_raw_mutant_payload_upload(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual(text.count("${{ runner.temp }}/redacted-evidence/"), 1)
+        with self.assertRaises(ValueError):
+            verify(text.replace("${{ runner.temp }}/redacted-evidence/", "${{ runner.temp }}/mutants-shard-", 1))
 
 
 if __name__ == "__main__":

@@ -210,6 +210,7 @@ jobs:
             --expected "${RUNNER_TEMP}/expected-shard.json" \
             --observed "${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}/mutants.out/mutants.json" \
             --evidence "${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}/mutants.out" \
+            --redacted-evidence "${RUNNER_TEMP}/redacted-evidence" \
             --sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --shard "${{ matrix.shard }}" --exit-code "$result" \
             --out "${RUNNER_TEMP}/shard-receipt.json"
@@ -220,8 +221,7 @@ jobs:
           name: mutants-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/shard-receipt.json
-            ${{ runner.temp }}/expected-shard.json
-            ${{ runner.temp }}/mutants-shard-${{ matrix.shard }}/mutants.out/
+            ${{ runner.temp }}/redacted-evidence/
           if-no-files-found: error
           retention-days: 30
       - name: Fail closed on a missed, timed-out, cancelled, or incomplete shard
