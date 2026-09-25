@@ -26,7 +26,7 @@ on:
   # ⛔ CRON REMOVED 2026-08-02 — redundant: this workflow already has a
   # `pull_request` trigger, so the code IS verified when it changes. The
   # nightly re-verified BYTE-IDENTICAL code: 10 of the last 14 days had
-  # ZERO commits to main, and the self-hosted Mac (the founder's own
+  # ZERO commits to main, and the former self-hosted Mac (the founder's own
   # machine) was spending ~8.8 h/day on scheduled jobs, 75% of which
   # failed. A clock only earns its keep when something can change
   # WITHOUT a commit — CVE feeds, prod state, backups, certs. This
@@ -61,10 +61,12 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   migration-check:
     name: migration additivity check (0028_tenant_primary_region)
-    runs-on: corelink  # zero-hosted: pure python3 (baked into the corelink image)
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: check_migrations_additive.py
         run: python3 scripts/check_migrations_additive.py
@@ -74,33 +76,35 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   clippy-and-existing-tests:
     name: clippy -D warnings + corelink-privacy all tests
-    # zero-hosted (WP-CI): python3 + cargo por crate; 4 jobs irmãos deste arquivo já rodam aqui
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     # Timeout raised 20 → 35 (2026-08-01). The original 20 was never calibrated
     # against a real run — the authoring commit (cc65c4ee) sealed on a fabricated
     # verification block, so NO number in this workflow was ever observed green.
     # 20 min is a hard cold-compile + full-test-surface miss on the shared
-    # self-hosted Mac (observed: cancelled at 20m51s, run 30715557213).
+    # previous self-hosted Mac (observed: cancelled at 20m51s, run 30715557213).
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Self-hosted Macs already ship rustup+cargo; re-provisioning via
-      # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
-      # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
-      # instead — see CLAUDE.md "the rustup proxy is broken" note.
-      - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
+      - name: Install workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        with:
+          toolchain: 1.91.1
+          components: clippy
+
+      - name: Use the workspace-pinned toolchain (channel read from rust-toolchain.toml)
         run: bash scripts/ci-use-host-toolchain.sh
 
-      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # save-if: false — retain the existing cache behavior; this was introduced
+      # after the shared self-hosted runner SAVE post-step consumed the timeout.
       # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
       # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
       # SAVE ran 3m36s and was still going when it consumed the job's entire
       # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
-      # These runners are persistent Macs with a fixed `_work/.../target` on local
-      # disk, so the real cache is that directory, not a GitHub-hosted archive
-      # uploaded off the founder's machine on every job. Restore is kept (5s, free
-      # upside if a cache ever exists); only the save cost is dropped.
+      # The prior runners were persistent Macs with a fixed `_work/.../target`
+      # directory. Restore is kept; only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
@@ -133,33 +137,34 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   proptest-30k:
     name: 30k property test — INV-REGION-NO-CROSS-LEAK (PR gate)
-    # zero-hosted (WP-CI): python3 + cargo por crate; 4 jobs irmãos deste arquivo já rodam aqui
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     # Timeout raised 30 → 50 (2026-08-01). Never calibrated against a real run
     # (see the clippy job's note); observed cancelled at 30m22s on the shared
-    # self-hosted Mac (run 30715557213) — a cold `--release` build of the
+    # previous self-hosted Mac (run 30715557213) — a cold `--release` build of the
     # corelink-privacy dep graph plus 4 × 30k proptest blocks does not fit 30 min
     # under fleet contention.
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Self-hosted Macs already ship rustup+cargo; re-provisioning via
-      # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
-      # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
-      # instead — see CLAUDE.md "the rustup proxy is broken" note.
-      - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
+      - name: Install workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        with:
+          toolchain: 1.91.1
+
+      - name: Use the workspace-pinned toolchain (channel read from rust-toolchain.toml)
         run: bash scripts/ci-use-host-toolchain.sh
 
-      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # save-if: false — retain the existing cache behavior; this was introduced
+      # after the shared self-hosted runner SAVE post-step consumed the timeout.
       # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
       # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
       # SAVE ran 3m36s and was still going when it consumed the job's entire
       # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
-      # These runners are persistent Macs with a fixed `_work/.../target` on local
-      # disk, so the real cache is that directory, not a GitHub-hosted archive
-      # uploaded off the founder's machine on every job. Restore is kept (5s, free
-      # upside if a cache ever exists); only the save cost is dropped.
+      # The prior runners were persistent Macs with a fixed `_work/.../target`
+      # directory. Restore is kept; only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
@@ -181,8 +186,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   adversarial-tests:
     name: adversarial regression tests (10 scenarios)
-    # zero-hosted (WP-CI): python3 + cargo por crate; 4 jobs irmãos deste arquivo já rodam aqui
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     # Timeout raised 10 → 30 (2026-08-01). Never calibrated against a real run
     # (see the clippy job's note). Measured twice: cancelled at 10m31s under the
     # original 10 (run 30715557213), then under a first-pass 25 the TEST STEP
@@ -193,23 +197,25 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Self-hosted Macs already ship rustup+cargo; re-provisioning via
-      # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
-      # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
-      # instead — see CLAUDE.md "the rustup proxy is broken" note.
-      - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
+      - name: Install workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        with:
+          toolchain: 1.91.1
+
+      - name: Use the workspace-pinned toolchain (channel read from rust-toolchain.toml)
         run: bash scripts/ci-use-host-toolchain.sh
 
-      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # save-if: false — retain the existing cache behavior; this was introduced
+      # after the shared self-hosted runner SAVE post-step consumed the timeout.
       # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
       # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
       # SAVE ran 3m36s and was still going when it consumed the job's entire
       # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
-      # These runners are persistent Macs with a fixed `_work/.../target` on local
-      # disk, so the real cache is that directory, not a GitHub-hosted archive
-      # uploaded off the founder's machine on every job. Restore is kept (5s, free
-      # upside if a cache ever exists); only the save cost is dropped.
+      # The prior runners were persistent Macs with a fixed `_work/.../target`
+      # directory. Restore is kept; only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
@@ -227,10 +233,12 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   rb-region-leak-dry-run:
     name: RB-region-leak dry-run (INV-REGION-NO-CROSS-LEAK forensic)
-    runs-on: corelink  # zero-hosted: pure bash/python3 forensic script (baked into the corelink image)
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: RB-region-leak dry-run
         run: bash scripts/rb_region_leak_dry_run.sh
@@ -240,15 +248,15 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   workflow-yaml-smoke:
     name: region_pinning.yml YAML parse smoke
-    runs-on: corelink  # zero-hosted: pure python3 + PyYAML (baked into the corelink image)
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # PyYAML is NOT part of the corelink box image's global site-packages
-      # (the image bakes python3 + venv, not every wheel). We do NOT assume a
-      # global `import yaml`; instead we self-provision PyYAML in a repo-local
-      # venv — the exact pattern proven green on corelink by openapi-validate.yml.
+      # PyYAML is not assumed to be globally installed; provision it in a
+      # repo-local venv with the system Python.
       # (Do not "simplify" back to a bare `python3 -c "import yaml"`: that silently
       # depends on an unversioned image detail and reds the gate if the wheel is
       # ever absent.)
@@ -265,7 +273,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   region-pinning-gate:
     name: region pinning gate (aggregate — INV-REGION-NO-CROSS-LEAK)
-    runs-on: corelink  # zero-hosted: fan-in echo only; nothing off the box image
+    runs-on: ubuntu-24.04
     timeout-minutes: 1
     needs:
       - migration-check
@@ -283,30 +291,31 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   proptest-100k-nightly:
     name: 100k property test NIGHTLY — sustained INV-REGION-NO-CROSS-LEAK
-    # zero-hosted (WP-CI): python3 + cargo por crate; 4 jobs irmãos deste arquivo já rodam aqui
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     # Only runs on schedule or manual dispatch with explicit override
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Self-hosted Macs already ship rustup+cargo; re-provisioning via
-      # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
-      # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
-      # instead — see CLAUDE.md "the rustup proxy is broken" note.
-      - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
+      - name: Install workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        with:
+          toolchain: 1.91.1
+
+      - name: Use the workspace-pinned toolchain (channel read from rust-toolchain.toml)
         run: bash scripts/ci-use-host-toolchain.sh
 
-      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # save-if: false — retain the existing cache behavior; this was introduced
+      # after the shared self-hosted runner SAVE post-step consumed the timeout.
       # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
       # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
       # SAVE ran 3m36s and was still going when it consumed the job's entire
       # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
-      # These runners are persistent Macs with a fixed `_work/.../target` on local
-      # disk, so the real cache is that directory, not a GitHub-hosted archive
-      # uploaded off the founder's machine on every job. Restore is kept (5s, free
-      # upside if a cache ever exists); only the save cost is dropped.
+      # The prior runners were persistent Macs with a fixed `_work/.../target`
+      # directory. Restore is kept; only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:

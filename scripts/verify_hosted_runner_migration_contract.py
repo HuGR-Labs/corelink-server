@@ -122,6 +122,9 @@ INVENTORIES = {
 SHA = re.compile(r"[0-9a-f]{40}")
 JOB = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 RUNNER = re.compile(r"^    runs-on:\s*(.*?)\s*(?:#.*)?$")
+BASE_IDENTICAL_JOBS = {
+    "bundle-2368": (".github/workflows/nightly.yml", "mutants-workspace"),
+}
 
 
 def fail(message: str) -> None:
@@ -150,6 +153,44 @@ def job_blocks(text: str, path: str) -> dict[str, list[str]]:
     return jobs
 
 
+def exact_job_block(root: Path, relative: str, job_name: str) -> bytes:
+    """Return the complete job block, retaining every original byte and newline."""
+    content = (root / relative).read_bytes()
+    lines = content.splitlines(keepends=True)
+    try:
+        jobs_index = next(i for i, line in enumerate(lines) if line.rstrip(b"\r\n") == b"jobs:") + 1
+    except StopIteration:
+        fail(f"{relative}: missing jobs mapping")
+    start = None
+    end = len(lines)
+    for index in range(jobs_index, len(lines)):
+        match = JOB.match(lines[index].decode("utf-8").rstrip("\r\n"))
+        if match:
+            if start is not None:
+                end = index
+                break
+            if match.group(1) == job_name:
+                start = index
+    if start is None:
+        fail(f"{relative}: missing job {job_name}")
+    return b"".join(lines[start:end])
+
+
+def expected_exempt_block(base_block: bytes, relative: str, job_name: str) -> bytes:
+    """Allow only the credentialless-checkout hardening on the exempt job."""
+    checkout_lines = [
+        line for line in base_block.splitlines(keepends=True)
+        if line.startswith(b"      - uses: actions/checkout@")
+    ]
+    if len(checkout_lines) != 1:
+        fail(f"{relative}:{job_name}: target-base job must have exactly one checkout step")
+    if b"persist-credentials:" in base_block:
+        fail(f"{relative}:{job_name}: target-base checkout already has credential persistence policy")
+    checkout_line = checkout_lines[0]
+    hardening = b"        with:\n          persist-credentials: false\n"
+    return base_block.replace(checkout_line, checkout_line + hardening, 1)
+
+
 def require_credentialless_checkout(lines: list[str], path: str, job: str) -> None:
     for index, line in enumerate(lines):
         if "uses: actions/checkout@" not in line:
@@ -167,12 +208,21 @@ def require_credentialless_checkout(lines: list[str], path: str, job: str) -> No
             fail(f"{path}:{job}: checkout must set persist-credentials: false")
 
 
-def validate(root: Path, inventory: str) -> None:
+def validate(root: Path, inventory: str, base_root: Path | None = None) -> None:
     try:
         files = INVENTORIES[inventory]
     except KeyError as error:
         fail(f"unknown inventory {inventory!r}")
         raise AssertionError from error
+    identical_job = BASE_IDENTICAL_JOBS.get(inventory)
+    if identical_job:
+        if base_root is None:
+            fail(f"{inventory}: exact target-base checkout is required")
+        relative, exempt_job = identical_job
+        candidate_block = exact_job_block(root, relative, exempt_job)
+        base_block = exact_job_block(base_root, relative, exempt_job)
+        if candidate_block != expected_exempt_block(base_block, relative, exempt_job):
+            fail(f"{relative}:{exempt_job}: job differs from target base beyond credentialless checkout hardening")
     for relative, expected_jobs in files.items():
         path = root / relative
         try:
@@ -185,6 +235,8 @@ def validate(root: Path, inventory: str) -> None:
                 f"expected {sorted(expected_jobs)}, got {sorted(jobs)}"
             )
         for job, lines in jobs.items():
+            if identical_job == (relative, job):
+                continue
             runner_lines = [match.group(1).strip() for line in lines if (match := RUNNER.match(line))]
             if len(runner_lines) != 1:
                 fail(f"{relative}:{job}: expected exactly one runs-on selector")
@@ -208,7 +260,8 @@ def fixture(root: Path, inventory: str) -> None:
     for relative, jobs in INVENTORIES[inventory].items():
         body = ["name: fixture", "on: pull_request", "permissions:", "  contents: read", "jobs:"]
         for job in sorted(jobs):
-            body.extend((f"  {job}:", "    runs-on: ubuntu-24.04", "    steps:",
+            body.extend((f"  {job}:", "    name: fixture job", "    if: always()",
+                         "    runs-on: ubuntu-24.04", "    steps:",
                          "      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
                          "        with:", "          persist-credentials: false"))
         target = root / relative
@@ -216,14 +269,14 @@ def fixture(root: Path, inventory: str) -> None:
         target.write_text("\n".join(body) + "\n", encoding="utf-8")
 
 
-def expect_rejected(root: Path, inventory: str, old: str, new: str) -> None:
+def expect_rejected(root: Path, inventory: str, old: str, new: str, base_root: Path | None = None) -> None:
     target = root / next(iter(INVENTORIES[inventory]))
     original = target.read_text(encoding="utf-8")
     if old not in original:
         fail(f"fixture lost mutation anchor {old!r}")
     target.write_text(original.replace(old, new, 1), encoding="utf-8")
     try:
-        validate(root, inventory)
+        validate(root, inventory, base_root)
     except ContractError:
         pass
     else:
@@ -236,10 +289,47 @@ def self_test() -> None:
         root = Path(directory)
         for inventory in INVENTORIES:
             fixture(root, inventory)
-            validate(root, inventory)
-            expect_rejected(root, inventory, "runs-on: ubuntu-24.04", "runs-on: corelink")
-            expect_rejected(root, inventory, "runs-on: ubuntu-24.04", "runs-on: self-hosted")
-            expect_rejected(root, inventory, "persist-credentials: false", "persist-credentials: true")
+            base_root = root / "base"
+            if inventory in BASE_IDENTICAL_JOBS:
+                import shutil
+                shutil.copytree(root / ".github", base_root / ".github")
+                relative, job = BASE_IDENTICAL_JOBS[inventory]
+                base_path = base_root / relative
+                base_block = exact_job_block(base_root, relative, job)
+                hardening = b"        with:\n          persist-credentials: false\n"
+                if base_block.count(hardening) != 1:
+                    fail("fixture lost target-base exempt-job credentialless checkout")
+                base_path.write_bytes(
+                    base_path.read_bytes().replace(base_block, base_block.replace(hardening, b"", 1), 1)
+                )
+            validate(root, inventory, base_root if inventory in BASE_IDENTICAL_JOBS else None)
+            expect_rejected(root, inventory, "runs-on: ubuntu-24.04", "runs-on: corelink", base_root if inventory in BASE_IDENTICAL_JOBS else None)
+            expect_rejected(root, inventory, "runs-on: ubuntu-24.04", "runs-on: self-hosted", base_root if inventory in BASE_IDENTICAL_JOBS else None)
+            expect_rejected(root, inventory, "persist-credentials: false", "persist-credentials: true", base_root if inventory in BASE_IDENTICAL_JOBS else None)
+            if inventory in BASE_IDENTICAL_JOBS:
+                relative, job = BASE_IDENTICAL_JOBS[inventory]
+                target = root / relative
+                original = target.read_bytes()
+                block = exact_job_block(root, relative, job)
+                for old, new, label in (
+                    (b"    name: fixture job\n", b"    name: changed fixture job\n", "name"),
+                    (b"    if: always()\n", b"    if: never()\n", "condition"),
+                    (b"    runs-on: ubuntu-24.04\n", b"    runs-on: self-hosted\n", "runner"),
+                    (b"    steps:\n", b"    steps: [] # changed\n", "step structure"),
+                    (b"          persist-credentials: false\n", b"          persist-credentials: true\n", "credential policy"),
+                    (b"          persist-credentials: false\n", b"", "missing credential policy"),
+                ):
+                    if old not in block:
+                        fail(f"fixture lost exempt-job {label} mutation anchor")
+                    changed_block = block.replace(old, new, 1)
+                    target.write_bytes(original.replace(block, changed_block, 1))
+                    try:
+                        validate(root, inventory, base_root)
+                    except ContractError:
+                        pass
+                    else:
+                        fail(f"exempt-job {label} mutation escaped the contract")
+                    target.write_bytes(original)
             target = root / next(iter(INVENTORIES[inventory]))
             original = target.read_text(encoding="utf-8")
             target.write_text(
@@ -247,7 +337,7 @@ def self_test() -> None:
                 encoding="utf-8",
             )
             try:
-                validate(root, inventory)
+                validate(root, inventory, base_root if inventory in BASE_IDENTICAL_JOBS else None)
             except ContractError:
                 pass
             else:
@@ -260,16 +350,24 @@ def main() -> int:
     parser.add_argument("--root", type=Path)
     parser.add_argument("--inventory", choices=tuple(INVENTORIES))
     parser.add_argument("--expected-head")
+    parser.add_argument("--base-root", type=Path)
+    parser.add_argument("--expected-base")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     try:
         if args.self_test:
-            if args.root or args.inventory or args.expected_head:
+            if args.root or args.inventory or args.expected_head or args.base_root or args.expected_base:
                 fail("--self-test cannot be combined with candidate arguments")
             self_test()
         elif args.root and args.inventory and args.expected_head:
+            if (args.base_root is None) != (args.expected_base is None):
+                fail("--base-root and --expected-base must be passed together")
+            if args.inventory in BASE_IDENTICAL_JOBS and args.base_root is None:
+                fail(f"{args.inventory} requires --base-root and --expected-base")
+            if args.expected_base:
+                assert_exact_head(args.base_root, args.expected_base)
             assert_exact_head(args.root, args.expected_head)
-            validate(args.root, args.inventory)
+            validate(args.root, args.inventory, args.base_root)
         else:
             fail("pass --self-test or --root, --inventory, and --expected-head")
     except (ContractError, subprocess.CalledProcessError) as error:

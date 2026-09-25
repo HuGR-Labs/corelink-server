@@ -17,7 +17,7 @@ on:
       - 'scripts/proptest-density-allowlist.txt'
       - '.github/workflows/proptest-density-gate.yml'
   # NOTE: no `push: branches:[main]`. The density audit compiles the workspace on
-  # the self-hosted macOS fleet (5 runners = one Mac) and was a recurring near-OOM
+  # the former self-hosted macOS fleet (5 runners = one Mac) and was a recurring near-OOM
   # driver — EVEN path-filtered, a crate-touching merge re-ran the full proptest
   # build on top of the rest of the heavy-gate fleet on every main merge (load
   # 398/665, 2026-06-04). Moved to nightly + on-demand, matching the 977225d3
@@ -35,20 +35,14 @@ concurrency:
 jobs:
   density-gate:
     name: proptest density gate
-    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
-    # Two portable bash scripts (audit + gate); both verified to run
-    # clean on the fleet host.
-    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
-    # check costs a full paid minute every run; on the fleet it costs $0.
-    # Verified running natively on the fleet host (macOS/BSD userland).
-    # zero-hosted (WP-CI): bash puro
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Run density audit
         id: audit

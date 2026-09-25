@@ -13,6 +13,10 @@ on:
         description: Full SHA of the candidate checkout to inspect as inert YAML
         required: true
         type: string
+      base_sha:
+        description: Full SHA of the target base checkout for the single declared checkout-hardening delta
+        required: true
+        type: string
       inventory:
         description: Closed workflow/job inventory to inspect
         required: true
@@ -24,6 +28,10 @@ on:
         type: string
       candidate_ref:
         description: Candidate branch or full ref; its resolved SHA must equal candidate_sha
+        required: true
+        type: string
+      base_ref:
+        description: Target branch or full ref; its resolved SHA must equal base_sha
         required: true
         type: string
 
@@ -66,10 +74,19 @@ jobs:
           ref: ${{ inputs.candidate_ref }}
           path: candidate
           persist-credentials: false
+      - name: Checkout target base YAML as inert data
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ inputs.candidate_repository }}
+          ref: ${{ inputs.base_ref }}
+          path: target-base
+          persist-credentials: false
       - name: Validate the closed candidate inventory
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          BASE_SHA: ${{ inputs.base_sha }}
           INVENTORY: ${{ inputs.inventory }}
         run: >-
           python3 -S trusted-contract/scripts/verify_hosted_runner_migration_contract.py
           --root candidate --inventory "$INVENTORY" --expected-head "$CANDIDATE_SHA"
+          --base-root target-base --expected-base "$BASE_SHA"
