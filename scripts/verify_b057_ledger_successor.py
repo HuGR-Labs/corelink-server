@@ -11,7 +11,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import backlog_ledger_successor  # noqa: E402
+import verify_backlog_wp_ledger  # noqa: E402
 
 
 def main() -> int:
@@ -29,14 +29,14 @@ def main() -> int:
         parser.error(f"checked-out HEAD {head} differs from expected {args.expected_head}")
 
     if args.trusted_root is not None:
-        policy = backlog_ledger_successor._successor_policy()
+        policy = verify_backlog_wp_ledger._successor_policy()
         receipt = policy.validate_candidate_successor(
             args.trusted_root,
             REPO_ROOT,
             base_sha=args.expected_base,
         )
     else:
-        receipt = backlog_ledger_successor.load_successor_chain(REPO_ROOT)
+        receipt = verify_backlog_wp_ledger.load_successor_chain(REPO_ROOT)
 
     if (
         receipt.get("sequence") != 9
