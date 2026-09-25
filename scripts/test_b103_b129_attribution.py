@@ -13,6 +13,10 @@ SPEC = importlib.util.spec_from_file_location("verify", ROOT / "scripts/verify_b
 assert SPEC and SPEC.loader
 verify = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(verify)
+PROBE_SPEC = importlib.util.spec_from_file_location("probe_i1671_b129", ROOT / "scripts/probe_i1671_b129.py")
+assert PROBE_SPEC and PROBE_SPEC.loader
+probe = importlib.util.module_from_spec(PROBE_SPEC)
+PROBE_SPEC.loader.exec_module(probe)
 
 
 def expect_reject(path: str, marker: str) -> None:
@@ -103,6 +107,23 @@ def main() -> int:
             diagnostic.replace(marker, "MUTATED", 1),
             label,
         )
+
+    assert probe.resolve_target_origin(
+        "https://CORELINK-API.HUMANGR.COM/", "https://corelink-api.humangr.com"
+    ) == "https://corelink-api.humangr.com"
+    for requested, configured in (
+        ("https://attacker.example", "https://corelink-api.humangr.com"),
+        ("http://corelink-api.humangr.com", "https://corelink-api.humangr.com"),
+        ("https://user@corelink-api.humangr.com", "https://corelink-api.humangr.com"),
+        ("https://corelink-api.humangr.com/path", "https://corelink-api.humangr.com"),
+        ("https://corelink-api.humangr.com", ""),
+    ):
+        try:
+            probe.resolve_target_origin(requested, configured)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError(f"unsafe B-129 target accepted: {requested}")
 
     probe = subprocess.run(
         ["bash", str(ROOT / "scripts/probe-cargo-cache-latency.sh"), "--self-test"],
