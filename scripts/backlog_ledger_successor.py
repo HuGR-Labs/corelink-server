@@ -1465,10 +1465,30 @@ def install(api):
                 capture_output=True,
                 text=True,
             ).stdout.strip()
-            if first_parent != base_sha or _git_bytes(root, commits[0], path) != raw:
+            if _git_bytes(root, commits[0], path) != raw:
                 raise LedgerError(
-                    f"{path}: successor was rewritten or names the wrong main parent"
+                    f"{path}: successor was rewritten"
                 )
+            if first_parent != base_sha:
+                # A successor can be committed after unrelated main work. Its
+                # receipt still names the state it observed, so accept the
+                # lag only when that state and the immediately preceding
+                # receipt are byte-for-byte unchanged at the introducing
+                # commit's first parent. This cannot admit a state change
+                # hidden between the receipt base and its introduction.
+                base_is_ancestor = subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", base_sha, first_parent],
+                    cwd=root,
+                    check=False,
+                ).returncode == 0
+                if (
+                    not base_is_ancestor
+                    or _git_state_bytes(root, base_sha) != _git_state_bytes(root, first_parent)
+                    or _git_bytes(root, first_parent, previous_path) != previous_raw
+                ):
+                    raise LedgerError(
+                        f"{path}: successor base is not the unchanged ancestor of its main parent"
+                    )
             if (
                 subprocess.run(
                     ["git", "merge-base", "--is-ancestor", base_sha, "HEAD"],

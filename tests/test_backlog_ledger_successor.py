@@ -815,6 +815,53 @@ def test_delivered_successor_rejects_rewritten_receipt(tmp_path, monkeypatch):
         ledger.load_successor_chain(base)
 
 
+def test_delivered_successor_allows_an_unchanged_ancestor_base_before_introduction(
+    tmp_path, monkeypatch,
+):
+    """Unrelated commits may precede an immutable receipt's introduction."""
+    base, candidate = _successor_fixture(tmp_path, monkeypatch)
+    (base / "unrelated.txt").write_text("unrelated main change\n")
+    _git(base, "add", "unrelated.txt")
+    _git(base, "commit", "--quiet", "-m", "unrelated main change")
+    for relative in (
+        Path("BACKLOG.md"), ledger.LEDGER_RELATIVE,
+        ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json",
+    ):
+        (base / relative).write_bytes((candidate / relative).read_bytes())
+    _git(base, "add", "BACKLOG.md", ledger.LEDGER_RELATIVE.as_posix(),
+         "docs/campaigns/remediation/backlog-ledger-snapshot-v0003.json")
+    _git(base, "commit", "--quiet", "-m", "append v3 after unrelated main change")
+
+    assert ledger.load_successor_chain(base)["sequence"] == 3
+
+
+@pytest.mark.parametrize("relative", [
+    Path("BACKLOG.md"),
+    ledger.LEDGER_RELATIVE,
+    Path("docs/campaigns/remediation/work-packages/B001-B045.md"),
+])
+def test_delivered_successor_rejects_a_changed_ancestor_base_before_introduction(
+    tmp_path, monkeypatch, relative,
+):
+    """A delayed receipt cannot bridge an unreceipted ledger state mutation."""
+    base, candidate = _successor_fixture(tmp_path, monkeypatch)
+    target = base / relative
+    target.write_text(target.read_text() + "\nintervening mutation\n")
+    _git(base, "add", relative.as_posix())
+    _git(base, "commit", "--quiet", "-m", "mutate ledger state before v3")
+    for copied in (
+        Path("BACKLOG.md"), ledger.LEDGER_RELATIVE,
+        ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json",
+    ):
+        (base / copied).write_bytes((candidate / copied).read_bytes())
+    _git(base, "add", "BACKLOG.md", ledger.LEDGER_RELATIVE.as_posix(),
+         "docs/campaigns/remediation/backlog-ledger-snapshot-v0003.json")
+    _git(base, "commit", "--quiet", "-m", "append stale v3")
+
+    with pytest.raises(LedgerError, match="unchanged ancestor"):
+        ledger.load_successor_chain(base)
+
+
 def test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose(monkeypatch):
     root = ledger.REPO_ROOT
     relative = ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0008.json"
@@ -825,6 +872,12 @@ def test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose(monkeypatch
     policy = ledger._successor_policy()
     introduced = _git(
         root, "log", "--first-parent", "--full-history", "--format=%H", "--", relative.as_posix(),
+    )
+    first_parent = _git(root, "rev-parse", f"{introduced}^1")
+    assert first_parent == "44a0dbb6d885dfe136b2d5aeee7e0f41a8251378"
+    assert _git(root, "merge-base", "--is-ancestor", receipt["base_commit"], first_parent) == ""
+    assert policy._git_state_bytes(root, receipt["base_commit"]) == policy._git_state_bytes(
+        root, first_parent,
     )
     prior = policy._git_state_bytes(root, receipt["base_commit"])
     current = policy._git_state_bytes(root, introduced)
