@@ -62,6 +62,27 @@ class CodeQLSeverityGateTests(unittest.TestCase):
         fixture = _sarif(_rule("custom/high", "8.1"), component_index=None, component="driver")
         self.assertEqual([item["rule"] for item in high_findings(fixture)], ["custom/high"])
 
+    def test_component_name_only_reference_does_not_resolve_another_extension(self) -> None:
+        fixture = _sarif(_rule("shared/rule", "1.0"), component_index=None)
+        run = fixture["runs"][0]
+        run["tool"]["extensions"][0]["name"] = "ext-low"
+        run["results"][0]["rule"]["toolComponent"] = {"name": "ext-high"}
+        with self.assertRaisesRegex(SarifSeverityError, "unknown toolComponent"):
+            high_findings(fixture)
+
+    def test_component_name_only_reference_resolves_the_named_extension(self) -> None:
+        fixture = _sarif(_rule("shared/rule", "8.0"), component_index=None)
+        fixture["runs"][0]["results"][0]["rule"]["toolComponent"] = {
+            "name": "codeql/language-queries"
+        }
+        self.assertEqual([item["rule"] for item in high_findings(fixture)], ["shared/rule"])
+
+    def test_component_name_must_match_its_index(self) -> None:
+        fixture = _sarif(_rule("shared/rule", "8.0"), component_index=0)
+        fixture["runs"][0]["results"][0]["rule"]["toolComponent"]["name"] = "ext-other"
+        with self.assertRaisesRegex(SarifSeverityError, "does not match"):
+            high_findings(fixture)
+
     def test_non_security_rules_without_security_score_are_below_threshold(self) -> None:
         fixture = _sarif(_rule("py/unused-import", None, security=False), component_index=0)
         self.assertEqual(high_findings(fixture), [])

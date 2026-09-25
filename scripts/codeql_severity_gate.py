@@ -36,7 +36,10 @@ def _as_rule_list(component: dict[str, Any], label: str) -> list[dict[str, Any]]
 
 
 def _rule_for_result(
-    result: dict[str, Any], driver_rules: list[dict[str, Any]], extensions: list[list[dict[str, Any]]]
+    result: dict[str, Any],
+    driver_name: str | None,
+    driver_rules: list[dict[str, Any]],
+    extensions: list[tuple[str | None, list[dict[str, Any]]]],
 ) -> dict[str, Any]:
     rule_id = result.get("ruleId")
     if not isinstance(rule_id, str) or not rule_id:
@@ -53,6 +56,9 @@ def _rule_for_result(
     if not isinstance(component_ref, dict):
         raise SarifSeverityError(f"result {rule_id!r} has a malformed toolComponent reference")
     component_index = component_ref.get("index")
+    component_name = component_ref.get("name")
+    if component_name is not None and (not isinstance(component_name, str) or not component_name):
+        raise SarifSeverityError(f"result {rule_id!r} has an invalid toolComponent name")
     raw_rule_index = result.get("ruleIndex", rule_ref.get("index"))
     rule_index: int | None = None
     if raw_rule_index is not None:
@@ -60,20 +66,37 @@ def _rule_for_result(
             raise SarifSeverityError(f"result {rule_id!r} has an invalid rule index")
         rule_index = raw_rule_index
 
-    components: list[tuple[str, list[dict[str, Any]]]] = [("driver", driver_rules)]
-    components.extend((f"extension[{index}]", rules) for index, rules in enumerate(extensions))
+    components: list[tuple[str, str | None, list[dict[str, Any]]]] = [
+        ("driver", driver_name, driver_rules)
+    ]
+    components.extend(
+        (f"extension[{index}]", name, rules)
+        for index, (name, rules) in enumerate(extensions)
+    )
 
     if component_index is not None:
         if isinstance(component_index, bool) or not isinstance(component_index, int) or component_index < 0:
             raise SarifSeverityError(f"result {rule_id!r} has an invalid toolComponent index")
         if component_index >= len(extensions):
             raise SarifSeverityError(f"result {rule_id!r} references missing extension[{component_index}]")
-        candidates = [(f"extension[{component_index}]", extensions[component_index])]
+        extension_name, extension_rules = extensions[component_index]
+        if component_name is not None and component_name != extension_name:
+            raise SarifSeverityError(
+                f"result {rule_id!r} toolComponent name {component_name!r} "
+                f"does not match extension[{component_index}] name {extension_name!r}"
+            )
+        candidates = [(f"extension[{component_index}]", extension_name, extension_rules)]
+    elif component_name is not None:
+        candidates = [component for component in components if component[1] == component_name]
+        if not candidates:
+            raise SarifSeverityError(
+                f"result {rule_id!r} references unknown toolComponent {component_name!r}"
+            )
     else:
         candidates = components
 
     matches: list[dict[str, Any]] = []
-    for _label, rules in candidates:
+    for _label, _name, rules in candidates:
         if rule_index is not None:
             if rule_index < len(rules) and rules[rule_index].get("id") == rule_id:
                 matches.append(rules[rule_index])
@@ -125,13 +148,23 @@ def high_findings(sarif: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(tool, dict) or not isinstance(tool.get("driver"), dict):
             raise SarifSeverityError(f"run {run_number} has no tool driver")
         driver_rules = _as_rule_list(tool["driver"], f"run {run_number} driver")
+        driver_name = tool["driver"].get("name")
+        if driver_name is not None and (not isinstance(driver_name, str) or not driver_name):
+            raise SarifSeverityError(f"run {run_number} driver has an invalid name")
         raw_extensions = tool.get("extensions", [])
         if not isinstance(raw_extensions, list) or any(not isinstance(ext, dict) for ext in raw_extensions):
             raise SarifSeverityError(f"run {run_number} tool.extensions must be an array of objects")
-        extensions = [
-            _as_rule_list(extension, f"run {run_number} extension[{index}]")
-            for index, extension in enumerate(raw_extensions)
-        ]
+        extensions: list[tuple[str | None, list[dict[str, Any]]]] = []
+        for index, extension in enumerate(raw_extensions):
+            extension_name = extension.get("name")
+            if extension_name is not None and (
+                not isinstance(extension_name, str) or not extension_name
+            ):
+                raise SarifSeverityError(
+                    f"run {run_number} extension[{index}] has an invalid name"
+                )
+            rules = _as_rule_list(extension, f"run {run_number} extension[{index}]")
+            extensions.append((extension_name, rules))
         results = run.get("results", [])
         if not isinstance(results, list) or any(not isinstance(result, dict) for result in results):
             raise SarifSeverityError(f"run {run_number} results must be an array of objects")
@@ -140,7 +173,7 @@ def high_findings(sarif: dict[str, Any]) -> list[dict[str, Any]]:
         for result_number, result in enumerate(results):
             rule_id = result.get("ruleId")
             try:
-                rule = _rule_for_result(result, driver_rules, extensions)
+                rule = _rule_for_result(result, driver_name, driver_rules, extensions)
                 score = _security_score(rule, rule_id if isinstance(rule_id, str) else "unknown")
             except SarifSeverityError as exc:
                 raise SarifSeverityError(f"run {run_number}, result {result_number}: {exc}") from exc
