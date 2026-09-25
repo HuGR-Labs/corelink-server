@@ -271,7 +271,7 @@ def validate_texts(probe: str, ci: str, signer: str, script: str) -> list[str]:
     if "EphemeralKeySet" not in script or "HasPrivateKey" not in script or "GetRSAPrivateKey" not in script:
         errors.append("PowerShell implementation must import ephemerally and verify private-key association")
     schema = re.search(r"(?is)\$script:ReceiptFields\s*=\s*@\((.*?)\)", script)
-    actual_fields = re.findall(r"'([a-z_]+)'", schema.group(1)) if schema else []
+    actual_fields = re.findall(r"'([a-z0-9_]+)'", schema.group(1)) if schema else []
     if actual_fields != RECEIPT_FIELDS:
         errors.append("PowerShell receipt fields do not exactly match the approved readiness schema")
     for array_name, expected_fields in (
@@ -280,7 +280,7 @@ def validate_texts(probe: str, ci: str, signer: str, script: str) -> list[str]:
         ("RenewalReceiptFields", RENEWAL_RECEIPT_FIELDS),
     ):
         nested = re.search(r"(?is)\$script:" + array_name + r"\s*=\s*@\((.*?)\)", script)
-        found = re.findall(r"'([a-z_]+)'", nested.group(1)) if nested else []
+        found = re.findall(r"'([a-z0-9_]+)'", nested.group(1)) if nested else []
         if found != expected_fields:
             errors.append(f"PowerShell {array_name} do not match the frozen redacted receipt schema")
     return errors
