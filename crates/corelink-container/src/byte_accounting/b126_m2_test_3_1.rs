@@ -9,6 +9,31 @@ use corelink_handler_cas::{
 
 const REGION: &str = "iad";
 
+#[test]
+fn cas_lock_shards_avoid_false_serialization_for_220_distinct_keys() {
+    use std::collections::HashSet;
+
+    assert!(CAS_LOCK_SHARDS >= 32_768);
+    let tenant = "b103-tenant";
+    let keys = (1..=220).map(|n| format!("{n:064x}")).collect::<Vec<_>>();
+    let first_key = keys.first().expect("the test population is non-empty");
+    let shards = keys
+        .iter()
+        .map(|key| cas_lock_shard_index(tenant, key))
+        .collect::<HashSet<_>>();
+
+    assert_eq!(
+        cas_lock_shard_index(tenant, first_key),
+        cas_lock_shard_index(tenant, first_key),
+        "the same tenant/key pair must always serialize on one lock"
+    );
+    assert!(
+        shards.len() >= 210,
+        "220 independent content hashes should not collapse onto a small number of locks; got {} unique shards",
+        shards.len()
+    );
+}
+
 /// AC-plane fixtures (rt-nuclear C2 sibling): the AC `update`-vs-`delete`
 /// write-vs-delete byte-accounting race, mirroring the CAS suite below.
 mod ac {

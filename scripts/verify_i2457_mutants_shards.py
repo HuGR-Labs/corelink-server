@@ -20,11 +20,13 @@ from typing import Any, Iterable, Mapping
 
 SHARD_COUNT = 27
 SHARDING = "round-robin"
+INVENTORY_SHARD = "0/1"
 TOOL_VERSION = "27.0.0"
-INVENTORY_SCHEMA = "corelink.hosted-mutants-inventory.v2"
-BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v2"
-SHARD_SCHEMA = "corelink.hosted-mutants-shard-receipt.v2"
-AGGREGATE_SCHEMA = "corelink.hosted-mutants-aggregate-receipt.v2"
+IDENTITY_SCHEMA = "cargo-mutants-v27.package-file-span-replacement-genre-name.sha256"
+INVENTORY_SCHEMA = "corelink.hosted-mutants-inventory.v3"
+BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v3"
+SHARD_SCHEMA = "corelink.hosted-mutants-shard-receipt.v3"
+AGGREGATE_SCHEMA = "corelink.hosted-mutants-aggregate-receipt.v3"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 CANONICAL_ARGUMENTS = (
@@ -52,6 +54,7 @@ def config_digest() -> str:
         {
             "cargo_mutants_version": TOOL_VERSION,
             "arguments": CANONICAL_ARGUMENTS,
+            "identity_schema": IDENTITY_SCHEMA,
             "shard_count": SHARD_COUNT,
             "sharding": SHARDING,
         }
@@ -84,6 +87,49 @@ def require_attempt(value: Any, field: str) -> int:
     return value
 
 
+def _position(value: Any, field: str) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        raise VerificationError(f"{field} must be an object")
+    line = value.get("line")
+    column = value.get("column")
+    if isinstance(line, bool) or not isinstance(line, int) or line < 1:
+        raise VerificationError(f"{field}.line must be a positive integer")
+    if isinstance(column, bool) or not isinstance(column, int) or column < 1:
+        raise VerificationError(f"{field}.column must be a positive integer")
+    return {"line": line, "column": column}
+
+
+def _span(value: Any, field: str) -> dict[str, dict[str, int]]:
+    if not isinstance(value, Mapping):
+        raise VerificationError(f"{field} must be an object")
+    start = _position(value.get("start"), f"{field}.start")
+    end = _position(value.get("end"), f"{field}.end")
+    if (end["line"], end["column"]) <= (start["line"], start["column"]):
+        raise VerificationError(f"{field} must have an end after its start")
+    return {"start": start, "end": end}
+
+
+def mutant_identity(item: Mapping[str, Any], index: int) -> str:
+    """Return the redacted, stable cargo-mutants v27 identity for one mutant."""
+    name = require_string(item.get("name"), f"mutant[{index}].name")
+    package = require_string(item.get("package"), f"mutant[{index}].package")
+    source_file = require_string(item.get("file"), f"mutant[{index}].file")
+    replacement = item.get("replacement")
+    if not isinstance(replacement, str):
+        raise VerificationError(f"mutant[{index}].replacement must be a string")
+    genre = require_string(item.get("genre"), f"mutant[{index}].genre")
+    identity = {
+        'identity_schema': IDENTITY_SCHEMA,
+        'name': name,
+        'package': package,
+        'file': source_file,
+        'span': _span(item.get('span'), f'mutant[{index}].span'),
+        'replacement': replacement,
+        'genre': genre,
+    }
+    return "sha256:" + digest(identity)
+
+
 def mutant_ids(raw: Any) -> list[str]:
     if not isinstance(raw, list):
         raise VerificationError("cargo-mutants list must be a JSON array")
@@ -91,10 +137,7 @@ def mutant_ids(raw: Any) -> list[str]:
     for index, item in enumerate(raw):
         if not isinstance(item, dict):
             raise VerificationError(f"mutant[{index}] must be an object")
-        name = item.get("name")
-        if not isinstance(name, str) or not name:
-            raise VerificationError(f"mutant[{index}].name must be a non-empty string")
-        ids.append(name)
+        ids.append(mutant_identity(item, index))
     if not ids:
         raise VerificationError("full workspace mutant inventory must not be empty")
     if len(ids) != len(set(ids)):
@@ -130,6 +173,7 @@ def make_inventory(raw: Any, sha: str, run_id: str, attempt: int) -> dict[str, A
         "config_digest": config_digest(),
         "shard_count": SHARD_COUNT,
         "sharding": SHARDING,
+        "inventory_shard": INVENTORY_SHARD,
         "mutant_ids": ids,
         "inventory_digest": digest(ids),
     }
@@ -147,6 +191,8 @@ def validate_inventory(document: Mapping[str, Any]) -> list[str]:
         raise VerificationError("inventory configuration digest is not canonical")
     if document.get("shard_count") != SHARD_COUNT or document.get("sharding") != SHARDING:
         raise VerificationError("inventory shard definition drifted")
+    if document.get("inventory_shard") != INVENTORY_SHARD:
+        raise VerificationError("inventory must use the complete denominator-one shard 0/1")
     ids = inventory_mutant_ids(document.get("mutant_ids"))
     if document.get("inventory_digest") != digest(ids):
         raise VerificationError("inventory digest does not bind its identities")
@@ -460,7 +506,7 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "SHARD_COUNT: 27",
         "max-parallel: 9",
         "timeout-minutes: 45",
-        "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --list --json",
+        "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
         "--shard ${{ matrix.shard }}/27",
         "--baseline=skip",
         "cargo test --workspace --locked",

@@ -170,9 +170,25 @@ fn classify_mutation_failure(
 /// `r2_s3` delete map): every `(tenant, hash)` deterministically maps to one of
 /// these shards. Distinct keys that collide on a shard serialize (a rare,
 /// correctness-preserving false-share); the same key ALWAYS maps to the same
-/// shard, which is the property the race requires. 256 shards keep cross-key
-/// contention negligible for any realistic per-container concurrency.
-const CAS_LOCK_SHARDS: usize = 256;
+/// shard, which is the property the race requires. 256 shards caused frequent
+/// false sharing for the 220-key B-103 population (about 94 colliding key
+/// pairs by the uniform occupancy estimate). 32,768 shards reduce the expected
+/// collisions below one pair while keeping the table fixed and bounded to a
+/// small number of MiB per handler. The table is allocated once, not per request.
+const CAS_LOCK_SHARDS: usize = 32_768;
+
+/// AC has its own mutable-entry write/delete race and retains a separate fixed
+/// memory bound. The B-103 CAS correction must not multiply its lock table.
+const AC_LOCK_SHARDS: usize = 256;
+
+fn cas_lock_shard_index(tenant: &str, hash: &str) -> usize {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    tenant.hash(&mut hasher);
+    // A separator so `(a, bc)` and `(ab, c)` cannot collapse to one key.
+    0u8.hash(&mut hasher);
+    hash.hash(&mut hasher);
+    (hasher.finish() as usize) % CAS_LOCK_SHARDS
+}
 
 impl AccountingCasHandler {
     /// Acquire the per-`(tenant, hash)` serialization guard (the shard the key
@@ -189,15 +205,7 @@ impl AccountingCasHandler {
     /// the guard owns its reference and need not borrow the array) — held by the
     /// caller across the entire reserve/commit/release sequence.
     fn lock_for(&self, tenant: &str, hash: &str) -> tokio::sync::OwnedMutexGuard<()> {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        tenant.hash(&mut hasher);
-        // A separator so `(a, bc)` and `(ab, c)` cannot collapse to one key.
-        0u8.hash(&mut hasher);
-        hash.hash(&mut hasher);
-        // Map the key hash onto a shard. The modulo is correct for any shard
-        // count; `CAS_LOCK_SHARDS` (256) is a power of two so the distribution is
-        // uniform and the op is a single cheap division off a 64-bit hash.
-        let idx = (hasher.finish() as usize) % self.key_locks.len();
+        let idx = cas_lock_shard_index(tenant, hash);
         // `idx < len` by construction (modulo), so `get` is always `Some`; the
         // `unwrap_or_else` is unreachable totality that keeps clippy's
         // `indexing_slicing` happy without a panic path.
