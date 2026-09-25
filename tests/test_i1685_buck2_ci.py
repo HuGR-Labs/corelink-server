@@ -123,6 +123,15 @@ def test_buck2_contract_is_complete() -> None:
     assert_contract(WORKFLOW_PATH.read_text(encoding="utf-8"))
 
 
+def test_missing_pat_probe_captures_fail_closed_stderr() -> None:
+    parsed = _workflow(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    step = _step(parsed["jobs"]["negative-scenarios"], "Scenario 1 — PAT missing results in auth error")
+    script = _run(step)
+
+    assert 'echo "CORELINK_PAT is missing; refusing unauthenticated remote-cache build." >&2' in script
+    assert re.search(r'OUTPUT="\$\(\s*\{.*?\}\s*2>&1\s*\)"', script, re.DOTALL)
+
+
 def test_starter_declares_root_cell_and_bundled_execution_platform() -> None:
     config = BUCKCONFIG_PATH.read_text(encoding="utf-8")
     toolchains = TOOLCHAINS_PATH.read_text(encoding="utf-8")
