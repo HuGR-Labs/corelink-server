@@ -696,7 +696,27 @@ export async function handleErasureDlqBatch(
         m.ack();
         continue;
       }
+      // Fence the operator recovery envelope before the automatic send too.
+      // Otherwise a later operator redrive could send the same request again
+      // after this bounded automatic requeue had already succeeded.
+      const autoClaim = await redrive.claim(
+        eventId, CAPTURE_ACTOR_REF, CAPTURE_APPROVAL_REF, Date.now(),
+      );
+      if (autoClaim !== "claimed" || !await redrive.fence(eventId, Date.now())) {
+        await store.record(eventId, "requeue_ambiguous", Date.now());
+        logDlqEvent({
+          level: "alert", severity: "critical", event: DLQ_EVENT_NAME,
+          component: "dsr-erasure-dlq", event_id: eventId, exhausted: true,
+          requeue_count: priorRequeues, action: "requeue_ambiguous",
+          recovered,
+          paging_status: paging.status, paging_configured: true,
+          note: "The durable redrive envelope could not be fenced for the bounded re-enqueue; manual reconciliation required",
+        });
+        m.ack();
+        continue;
+      }
       await env.DSR_QUEUE!.send({ ...body, _dlq_requeue: priorRequeues + 1 });
+      await redrive.submitted(eventId, Date.now());
       await store.record(eventId, "requeued", Date.now());
       logDlqEvent({
         level: "alert",
@@ -714,6 +734,9 @@ export async function handleErasureDlqBatch(
       });
       m.ack(); // handed back to the main queue; consume the DLQ copy
     } catch {
+      // Keep the redrive envelope fenced if enqueue or a later receipt write
+      // has an unknown outcome. Manual release must not duplicate that send.
+      await redrive.ambiguous(eventId, Date.now()).catch(() => undefined);
       try {
         await store.record(eventId, "requeue_ambiguous", Date.now());
       } catch {
