@@ -68,7 +68,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Use pre-installed workspace Rust toolchain
+      - name: Install workspace Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: "1.91.1"
+          components: rust-src, rustfmt, clippy
+          targets: wasm32-unknown-unknown, x86_64-unknown-linux-musl
+
+      - name: Verify workspace Rust toolchain
         run: bash scripts/ci-use-host-toolchain.sh wasm32-unknown-unknown
 
       - name: Cache cargo registry
@@ -124,7 +131,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Use pre-installed workspace Rust toolchain
+      - name: Install workspace Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: "1.91.1"
+          components: rust-src, rustfmt, clippy
+          targets: wasm32-unknown-unknown, x86_64-unknown-linux-musl
+
+      - name: Verify workspace Rust toolchain
         run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Cache cargo
@@ -209,7 +223,14 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - name: Use pre-installed workspace Rust toolchain
+      - name: Install workspace Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: "1.91.1"
+          components: rust-src, rustfmt, clippy
+          targets: wasm32-unknown-unknown, x86_64-unknown-linux-musl
+
+      - name: Verify workspace Rust toolchain
         run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Cache cargo
@@ -264,7 +285,14 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Use pre-installed workspace Rust toolchain
+      - name: Install workspace Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: "1.91.1"
+          components: rust-src, rustfmt, clippy
+          targets: wasm32-unknown-unknown, x86_64-unknown-linux-musl
+
+      - name: Verify workspace Rust toolchain
         run: bash scripts/ci-use-host-toolchain.sh wasm32-unknown-unknown
 
       - name: Cache cargo
@@ -365,7 +393,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Use pre-installed workspace Rust toolchain
+      - name: Install workspace Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: "1.91.1"
+          components: rust-src, rustfmt, clippy
+          targets: wasm32-unknown-unknown, x86_64-unknown-linux-musl
+
+      - name: Verify workspace Rust toolchain
         run: bash scripts/ci-use-host-toolchain.sh wasm32-unknown-unknown
 
       - name: Set up Python 3.12
