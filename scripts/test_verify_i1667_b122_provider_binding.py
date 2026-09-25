@@ -1,0 +1,82 @@
+"""Mutation checks for the fail-closed B-122 provider binding verifier."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+
+import pytest
+
+from scripts.verify_i1667_b122_provider_binding import BindingError, verify_binding
+
+
+SHA = "af79ca2f296f39b8149931de16441f8e4582b53c"
+VERSION_ID = "2d36f49d-06aa-4f4c-b4e2-25a6da2b9b10"
+DEPLOYMENT_ID = "1d36f49d-06aa-4f4c-b4e2-25a6da2b9b10"
+
+
+def _evidence():
+    deployments = {"success": True, "result": {"deployments": [{
+        "id": DEPLOYMENT_ID, "created_on": "2026-09-25T08:00:00Z",
+        "versions": [{"version_id": VERSION_ID, "percentage": 100}],
+    }]}}
+    version = {"success": True, "result": {
+        "id": VERSION_ID, "created_on": "2026-09-25T08:00:00Z",
+        "annotations": {"workers/message": f"corelink-source-sha={SHA}"},
+    }}
+    return deployments, version, [
+        {"id": 42, "environment": "production", "sha": SHA, "created_at": "2026-09-25T08:00:00Z"}
+    ], [{"state": "success"}]
+
+
+def test_provider_version_and_successful_github_deployment_bind_source_sha() -> None:
+    deployments, version, github_deployments, statuses = _evidence()
+    receipt = verify_binding(
+        deployments=deployments,
+        version=version,
+        github_deployments=github_deployments,
+        github_statuses=statuses,
+        worker_name="corelink-prod",
+        source_sha=SHA,
+    )
+    assert receipt["worker_version_id"] == VERSION_ID
+    assert receipt["provider_deployment_id"] == DEPLOYMENT_ID
+    assert receipt["source_sha"] == SHA == receipt["github_deployment_sha"]
+    assert receipt["github_deployment_status"] == "success"
+
+
+@pytest.mark.parametrize("mutation", ["partial", "annotation", "sha", "failure"])
+def test_provider_or_github_mismatch_is_rejected(mutation: str) -> None:
+    deployments, version, github_deployments, statuses = deepcopy(_evidence())
+    if mutation == "partial":
+        deployments["result"]["deployments"][0]["versions"][0]["percentage"] = 99
+    elif mutation == "annotation":
+        version["result"]["annotations"]["workers/message"] = "corelink-source-sha=" + "0" * 40
+    elif mutation == "sha":
+        github_deployments[0]["sha"] = "0" * 40
+    else:
+        statuses[0]["state"] = "failure"
+    with pytest.raises(BindingError):
+        verify_binding(
+            deployments=deployments,
+            version=version,
+            github_deployments=github_deployments,
+            github_statuses=statuses,
+            worker_name="corelink-prod",
+            source_sha=SHA,
+        )
+
+
+def test_active_deployment_with_multiple_versions_is_rejected() -> None:
+    deployments, version, github_deployments, statuses = _evidence()
+    deployments["result"]["deployments"][0]["versions"].append(
+        {"version_id": "3d36f49d-06aa-4f4c-b4e2-25a6da2b9b10", "percentage": 0}
+    )
+    with pytest.raises(BindingError):
+        verify_binding(
+            deployments=deployments,
+            version=version,
+            github_deployments=github_deployments,
+            github_statuses=statuses,
+            worker_name="corelink-prod",
+            source_sha=SHA,
+        )

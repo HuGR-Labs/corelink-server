@@ -362,6 +362,15 @@ fi
 command -v jq   >/dev/null 2>&1 || die "jq not found (required to parse the CF API response)."
 command -v curl >/dev/null 2>&1 || die "curl not found."
 
+# Publish the source revision in Cloudflare's version/deployment annotations.
+# B-122's read-only evidence lane reads those annotations back from the active
+# deployment and compares them with the GitHub deployment SHA before sampling.
+DEPLOY_SOURCE_SHA="${DEPLOY_SOURCE_SHA:-${GITHUB_SHA:-}}"
+if ! [[ "$DEPLOY_SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    die "DEPLOY_SOURCE_SHA (40 hexadecimal characters) is required for a deploy."
+fi
+DEPLOY_MESSAGE="corelink-source-sha=${DEPLOY_SOURCE_SHA,,}"
+
 # ── Deploy + verify-and-retry loop ─────────────────────────────────────────
 START_TS="$(date +%s)"
 deploys=0
@@ -371,7 +380,7 @@ deploy_once() {
     deploys=$(( deploys + 1 ))
     log ""
     log "── Deploy attempt $deploys/$MAX_REDEPLOYS — $WRANGLER deploy --env $ENV_NAME ──"
-    if ! $WRANGLER deploy --env "$ENV_NAME"; then
+    if ! $WRANGLER deploy --env "$ENV_NAME" --message "$DEPLOY_MESSAGE"; then
         die "wrangler deploy failed (env $ENV_NAME, attempt $deploys)."
     fi
 }
