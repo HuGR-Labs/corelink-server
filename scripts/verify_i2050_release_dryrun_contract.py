@@ -28,8 +28,11 @@ TARGETS = {
     "corelink-windows-x86_64.zip",
 }
 PINNED_ACTION = re.compile(r"^\s*uses:\s+[^\s@]+@[0-9a-f]{40}(?:\s+#.*)?$", re.MULTILINE)
-ZIGBUILD_VERSION_PROBE = '''test "$(cargo-zigbuild --version | awk '{print $2}')" = "0.19.8"'''
+ZIGBUILD_EXECUTABLE_PROBE = "cargo-zigbuild --help >/dev/null"
+ZIGBUILD_PATH_PROBE = "command -v cargo-zigbuild"
 UNSUPPORTED_ZIGBUILD_VERSION_PROBES = (
+    "cargo-zigbuild --version",
+    "cargo-zigbuild -V",
     "cargo zigbuild --version",
     "cargo zigbuild -V",
 )
@@ -56,23 +59,27 @@ def fail(message: str) -> None:
     raise SystemExit(f"contract failure: {message}")
 
 
-def _verify_zigbuild_version_probe(text: str) -> None:
-    if ZIGBUILD_VERSION_PROBE not in text:
-        fail("cargo-zigbuild must be pinned by its direct --version probe")
+def _verify_zigbuild_executable_probe(text: str) -> None:
+    if ZIGBUILD_PATH_PROBE not in text:
+        fail("cargo-zigbuild must be present on PATH after the pinned installation")
+    if ZIGBUILD_EXECUTABLE_PROBE not in text:
+        fail("cargo-zigbuild must be called with its supported --help option")
+    if "tool: cargo-zigbuild@0.19.8" not in text:
+        fail("cargo-zigbuild installer must retain the 0.19.8 version pin")
     for unsupported in UNSUPPORTED_ZIGBUILD_VERSION_PROBES:
         if unsupported in text:
-            fail(f"unsupported version probe must not return: {unsupported}")
+            fail(f"unsupported cargo-zigbuild version probe must not return: {unsupported}")
 
 
-def _zigbuild_version_probe_mutation_self_test(text: str) -> None:
+def _zigbuild_probe_mutation_self_test(text: str) -> None:
     for unsupported in UNSUPPORTED_ZIGBUILD_VERSION_PROBES:
         mutated = text.replace(
-            ZIGBUILD_VERSION_PROBE,
-            f"{ZIGBUILD_VERSION_PROBE}\n          {unsupported}",
+            ZIGBUILD_EXECUTABLE_PROBE,
+            f"{ZIGBUILD_EXECUTABLE_PROBE}\n          {unsupported}",
             1,
         )
         try:
-            _verify_zigbuild_version_probe(mutated)
+            _verify_zigbuild_executable_probe(mutated)
         except SystemExit as error:
             if unsupported not in str(error):
                 raise
@@ -286,15 +293,99 @@ def _attest_verifier_checkout_mutation_self_test(text: str) -> None:
         fail("persisted-credential checkout mutation survived")
 
 
-def contract() -> None:
-    text = WORKFLOW.read_text(encoding="utf-8")
-    changed = subprocess.run(
-        ["git", "diff", "--name-only", "origin/main...HEAD"],
+def _changed_files(event_name: str, base_sha: str | None) -> list[str]:
+    if event_name == "pull_request":
+        diff_range = "origin/main...HEAD"
+    elif event_name == "workflow_dispatch":
+        if base_sha is None or not re.fullmatch(r"[0-9a-f]{40}", base_sha):
+            fail("manual contract validation requires an explicit lowercase 40-character base SHA")
+        base_exists = subprocess.run(
+            ["git", "cat-file", "-e", f"{base_sha}^{{commit}}"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if base_exists.returncode != 0:
+            fail("the explicit base SHA is not present in the checked-out Git history")
+        base_is_ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base_sha, "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if base_is_ancestor.returncode != 0:
+            fail("the explicit base SHA must be an ancestor of the candidate HEAD")
+        diff_range = f"{base_sha}...HEAD"
+    else:
+        fail(f"unsupported event for contract validation: {event_name}")
+    return subprocess.run(
+        ["git", "diff", "--name-only", diff_range],
         check=True,
         capture_output=True,
         text=True,
     ).stdout.splitlines()
+
+
+def _manual_base_mutation_self_test(base_sha: str) -> None:
+    try:
+        _changed_files("workflow_dispatch", None)
+    except SystemExit as error:
+        if "requires an explicit lowercase 40-character base SHA" not in str(error):
+            raise
+    else:
+        fail("missing manual base SHA mutation survived")
+
+    unrelated_commit = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=CoreLink contract test",
+            "-c",
+            "user.email=corelink-contract@example.invalid",
+            "commit-tree",
+            "HEAD^{tree}",
+            "-m",
+            "issue-2050 unrelated-base negative control",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", unrelated_commit):
+        fail("the unrelated-base negative control did not create a full commit SHA")
+    unrelated_exists = subprocess.run(
+        ["git", "cat-file", "-e", f"{unrelated_commit}^{{commit}}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if unrelated_exists.returncode != 0:
+        fail("the unrelated-base negative control commit must exist before ancestry validation")
+    unrelated_is_ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", unrelated_commit, "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if unrelated_is_ancestor.returncode != 1:
+        fail("the present unrelated-base negative control must fail the ancestry check")
+    try:
+        _changed_files("workflow_dispatch", unrelated_commit)
+    except SystemExit as error:
+        if "explicit base SHA must be an ancestor of the candidate HEAD" not in str(error):
+            raise
+    else:
+        fail("present unrelated manual base SHA mutation survived")
+
+    if not re.fullmatch(r"[0-9a-f]{40}", base_sha):
+        fail("the pack base SHA must be lowercase and exactly 40 characters")
+    print("PASS: missing and present unrelated manual base SHA mutations are rejected")
+
+
+def contract(base_sha: str | None = None) -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
     event_name = os.environ.get("GITHUB_EVENT_NAME", "pull_request")
+    changed = _changed_files(event_name, base_sha)
     if event_name == "pull_request":
         _slice_routing_mutation_self_test()
         if _verify_i2050_pr_slice(set(changed)):
@@ -302,31 +393,37 @@ def contract() -> None:
         else:
             print("SKIP: CLI dry-run slice isolation (neither slice file changed)")
     elif event_name == "workflow_dispatch":
+        assert base_sha is not None
+        _manual_base_mutation_self_test(base_sha)
         print("PASS: manual dispatch validates contracts without PR slice routing")
-    else:
-        fail(f"unsupported event for contract validation: {event_name}")
     hosted_contract = Path(".github/workflows/issue-1724-cli-provenance.yml").read_text(
         encoding="utf-8"
     )
     for token in (
-        '".github/workflows/issue-2050-cli-release-dry-run.yml"',
-        '"scripts/verify_i2050_release_dryrun_contract.py"',
-        '"Cargo.lock"',
-        '"rust-toolchain.toml"',
-        "fetch-depth: 0",
+        'ref: ${{ inputs.candidate_sha }}',
+        'base_sha:',
+        'BASE_SHA: ${{ inputs.base_sha }}',
         "persist-credentials: false",
         "workflow_dispatch:",
-        "python3 -S scripts/verify_i2050_release_dryrun_contract.py contract",
+        "python3 -m pip install --requirement requirements-ci.txt",
+        "python3 scripts/verify_b112_release_root_cause.py --root .",
+        'python3 scripts/verify_i2050_release_dryrun_contract.py contract --base-sha "${CORELINK_BASE_SHA}"',
+        "fetch-depth: 4",
+        'git merge-base --is-ancestor "${BASE_SHA}" HEAD',
+        "Validate the CLI release workflow schemas",
+        ".github/workflows/issue-2050-cli-release-dry-run.yml",
+        ".github/workflows/release-cli.yml",
+        ".github/workflows/issue-1724-cli-provenance.yml",
     ):
         if token not in hosted_contract:
-            fail(f"the existing read-only hosted PR lane does not run the contract: {token}")
+            fail(f"the exact-head credentialless CLI pack is missing: {token}")
     contract_job = re.search(
         r"(?ms)^  contract:\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)", hosted_contract
     )
-    if contract_job is None or re.search(r"^\s+if:", contract_job.group(1), re.MULTILINE):
-        fail("the CLI provenance contract job must remain enabled for PR and manual dispatch")
+    if contract_job is None or "github.event_name == 'workflow_dispatch'" not in contract_job.group(1):
+        fail("the exact-head CLI contract job must remain manual-only")
     if "id-token: write" in hosted_contract or "contents: write" in hosted_contract:
-        fail("the PR contract lane has signing or write permission")
+        fail("the exact-head contract lane has signing or write permission")
     if not re.search(r'^"on":\s*$', text, re.MULTILINE):
         fail('event map must use the quoted "on" key')
     for token in ("pull_request:", "workflow_dispatch:", "refs/heads/main", "github.ref_protected"):
@@ -365,8 +462,9 @@ def contract() -> None:
     for token in (
         "actionlint_1.7.12_linux_amd64.tar.gz",
         "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
-        "Validate the dry-run trigger and workflow schema",
-        "-color .github/workflows/issue-2050-cli-release-dry-run.yml",
+        "Validate the CLI release workflow schemas",
+        ".github/workflows/issue-2050-cli-release-dry-run.yml",
+        ".github/workflows/release-cli.yml",
     ):
         if token not in hosted_workflow:
             fail(f"hosted actionlint protection is missing or unpinned: {token}")
@@ -397,8 +495,8 @@ def contract() -> None:
     ):
         if token.lower() not in text.lower():
             fail(f"required release proof is missing: {token}")
-    _verify_zigbuild_version_probe(text)
-    _zigbuild_version_probe_mutation_self_test(text)
+    _verify_zigbuild_executable_probe(text)
+    _zigbuild_probe_mutation_self_test(text)
     print("PASS: workflow-only, verifier-only, both, mixed, and unrelated-only routing cases")
     _verify_dlltool_contract(text)
     _dlltool_contract_mutation_self_test(text)
@@ -494,7 +592,8 @@ def summary(directory: Path, run_url: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("contract")
+    contract_cmd = sub.add_parser("contract")
+    contract_cmd.add_argument("--base-sha")
     manifest_cmd = sub.add_parser("manifest")
     manifest_cmd.add_argument("--directory", type=Path, required=True)
     manifest_cmd.add_argument("--source-sha", required=True)
@@ -506,7 +605,7 @@ def main() -> None:
     summary_cmd.add_argument("--run-url", required=True)
     args = parser.parse_args()
     if args.command == "contract":
-        contract()
+        contract(args.base_sha)
     elif args.command == "manifest":
         _manifest(args.directory, args.source_sha)
     elif args.command == "provenance":
