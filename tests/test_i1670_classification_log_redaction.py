@@ -65,6 +65,33 @@ collect2: error: ld returned 1 exit status
         self.assertIn('assert "runner" not in report', workflow)
         self.assertIn('assert "runner" not in summary.casefold()', workflow)
 
+    def test_campaign_fixture_publishes_redacted_run_bound_capacity_receipt(self) -> None:
+        workflow = (ROOT / ".github/workflows/campaign-ci.yml").read_text(encoding="utf-8")
+        gate = (ROOT / ".github/workflows/issue-1670-receipt-redaction.yml").read_text(
+            encoding="utf-8"
+        )
+        start = workflow.index("      - name: i1670 bounded ENOSPC and linker classification")
+        end = workflow.index("      - name: i1680 credentialless schema", start)
+        lane = workflow[start:end]
+
+        self.assertIn(".github/workflows/campaign-ci.yml", gate)
+        self.assertIn("python3 scripts/redact_i1670_classification_log.py", lane)
+        self.assertIn('--input "$root/enospc.raw.log"', lane)
+        self.assertIn('--input "$root/linker.raw.log"', lane)
+        self.assertIn('--output artifacts/campaign-ci/i1670/enospc.log', lane)
+        self.assertIn('--output artifacts/campaign-ci/i1670/linker.log', lane)
+        self.assertNotIn('>artifacts/campaign-ci/i1670/enospc.log', lane)
+        self.assertNotIn('>artifacts/campaign-ci/i1670/linker.log', lane)
+        self.assertIn("GITHUB_STEP_SUMMARY=/dev/null CORELINK_CLASSIFICATION_ARTIFACT=", lane)
+        self.assertNotIn('"runner":', lane)
+        self.assertNotIn('"filesystem":', lane)
+        self.assertIn('run_id = int(os.environ["I1670_RUN_ID"])', lane)
+        self.assertIn('"run_id": run_id', lane)
+        self.assertIn('"commit_sha": commit_sha', lane)
+        self.assertIn('"fixture_removed_before_post_measurement": True', lane)
+        self.assertIn('"cleanup": {"fixture_empty": True}', lane)
+        self.assertLess(lane.index('rm -rf "$fs_root"\n          test ! -e "$fs_root"'), lane.index('shm_post_free='))
+
 
 if __name__ == "__main__":
     unittest.main()

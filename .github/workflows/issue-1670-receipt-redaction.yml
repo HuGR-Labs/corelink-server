@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/issue-1670-hosted-classification.yml
       - .github/workflows/issue-1670-receipt-redaction.yml
+      - .github/workflows/campaign-ci.yml
       - scripts/redact_i1670_classification_log.py
       - tests/test_i1670_classification_log_redaction.py
 
