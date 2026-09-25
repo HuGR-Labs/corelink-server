@@ -263,6 +263,8 @@ export interface Env {
   AUDIT_WITNESS_PUBLIC_KEYS_JSON?: string;
   /** OOB-pinned root ids -> Ed25519 public keys for audit signing registries. */
   AUDIT_CHAIN_TRUST_ROOT_PUBLIC_KEYS_JSON?: string;
+  /** OOB-pinned root ids -> Ed25519 public keys for admin approval proofs. */
+  CORELINK_ADMIN_APPROVAL_TRUST_ROOTS_JSON?: string;
   AUDIT_CHAIN_TRUST_UNSIGNED_RESUME?: string;
   AUDIT_DRAIN_BATCH_LIMIT?: string;
   AUDIT_DRAIN_LEASE_ENABLED?: string;

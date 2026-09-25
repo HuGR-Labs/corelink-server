@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MIGRATION = REPO_ROOT / "migrations/d1/0109_audit_chain_epoch_contract.sql"
 ROW_MIGRATION = REPO_ROOT / "migrations/d1/0110_audit_chain_epoch_row_metadata.sql"
 WITNESS_MIGRATION = REPO_ROOT / "migrations/d1/0124_audit_chain_witness_receipts.sql"
+ADMIN_APPROVAL_MIGRATION = REPO_ROOT / "migrations/d1/0146_b054_admin_approval_ledger.sql"
 ZERO_HASH = "0" * 64
 SIGNING_PUBLIC_KEY = "A" * 44
 SIGNATURE = "A" * 88
@@ -176,6 +177,7 @@ def main() -> int:
     conn.executescript(MIGRATION.read_text(encoding="utf-8"))
     conn.executescript(ROW_MIGRATION.read_text(encoding="utf-8"))
     conn.executescript(WITNESS_MIGRATION.read_text(encoding="utf-8"))
+    conn.executescript(ADMIN_APPROVAL_MIGRATION.read_text(encoding="utf-8"))
     assert conn.execute("PRAGMA recursive_triggers").fetchone() == (0,)
 
     required_head_columns = {
@@ -589,6 +591,21 @@ def main() -> int:
     assert conn.execute("SELECT COUNT(*) FROM audit_chain_epoch").fetchone() == (3,)
     assert conn.execute("SELECT COUNT(*) FROM audit_chain_archive_manifest").fetchone() == (1,)
     assert conn.execute("SELECT COUNT(*) FROM audit_chain_witness_receipt").fetchone() == (1,)
+    approval = (
+        "approval-1", "a" * 64, "opaque-sre-1", "opaque-security-2", "b" * 64,
+        "e30=", SIGNATURE, 1_000, 2_000, 1_500,
+    )
+    conn.execute(
+        "INSERT INTO audit_chain_admin_approval (approval_id,nonce_hash,executor_subject_id,approver_subject_id,operation_digest_hex,approval_jcs_b64,approval_signature_b64,issued_at_ms,expires_at_ms,consumed_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        approval,
+    )
+    expect_integrity_error(
+        conn, "approval replay",
+        "INSERT INTO audit_chain_admin_approval (approval_id,nonce_hash,executor_subject_id,approver_subject_id,operation_digest_hex,approval_jcs_b64,approval_signature_b64,issued_at_ms,expires_at_ms,consumed_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        ("approval-2", "a" * 64, *approval[2:]),
+    )
+    expect_integrity_error(conn, "approval update", "UPDATE audit_chain_admin_approval SET consumed_at_ms=1600 WHERE approval_id='approval-1'", ())
+    expect_integrity_error(conn, "approval delete", "DELETE FROM audit_chain_admin_approval WHERE approval_id='approval-1'", ())
     print("OK: B-054 epoch schema constraints and no-replace guards hold with recursive_triggers=OFF")
     return 0
 
