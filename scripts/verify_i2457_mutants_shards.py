@@ -557,6 +557,8 @@ def command_aggregate(args: argparse.Namespace) -> None:
         # Each artifact contains a direct receipt plus only its redacted list
         # evidence, never the raw cargo-mutants source payload.
         evidence = artifact_root / "redacted-evidence"
+        if not (evidence / "shard-evidence-manifest.json").is_file():
+            raise VerificationError(f"downloaded evidence bytes are missing for shard {index} attempt {attempt}")
         validate_redacted_evidence(evidence, shard)
         downloaded[key] = {
             "evidence_digest": directory_digest(evidence) if evidence.is_dir() else digest([]),
