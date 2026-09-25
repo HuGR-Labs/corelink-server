@@ -5,6 +5,14 @@ name: issue-2386 hosted runner contract
 on:
   pull_request:
     paths:
+      - ".github/workflows/mutation-nightly.yml"
+      - ".github/workflows/mutation-pr.yml"
+      - ".github/workflows/nightly.yml"
+      - ".github/workflows/proptest-density-gate.yml"
+      - ".github/workflows/region_pinning.yml"
+      - ".github/workflows/tenant-path.yml"
+      - ".github/workflows/workspace-lint.yml"
+      - "scripts/verify_i2368_hosted_bundle.py"
       - "scripts/verify_hosted_runner_migration_contract.py"
       - ".github/workflows/issue-2386-hosted-runner-contract.yml"
   workflow_dispatch:
@@ -32,16 +40,62 @@ permissions:
 
 jobs:
   self-test:
-    name: static negative controls
+    name: "#2368 exact-head hosted workflow pack"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Checkout protected PR base for immutable semantic comparison
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+          persist-credentials: false
+      - name: Checkout exact candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
           persist-credentials: false
-      - run: python3 -S scripts/verify_hosted_runner_migration_contract.py --self-test
+
+      - name: Install checksum-pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
+
+      - name: Lint the exact bundle workflows and pack
+        working-directory: candidate
+        run: >-
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml
+          .github/workflows/mutation-nightly.yml
+          .github/workflows/mutation-pr.yml
+          .github/workflows/nightly.yml
+          .github/workflows/proptest-density-gate.yml
+          .github/workflows/region_pinning.yml
+          .github/workflows/tenant-path.yml
+          .github/workflows/workspace-lint.yml
+          .github/workflows/issue-2386-hosted-runner-contract.yml
+
+      - name: Run negative controls, exact 20-job census, and immutable-semantics proof
+        working-directory: candidate
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 -S scripts/verify_i2368_hosted_bundle.py --self-test
+          python3 -S scripts/verify_i2368_hosted_bundle.py \
+            --base-root ../baseline \
+            --candidate-root . \
+            --expected-head "$EXPECTED_HEAD"
 
   inspect-candidate:
     name: exact-SHA static inventory

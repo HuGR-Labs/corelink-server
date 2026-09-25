@@ -1,8 +1,8 @@
 name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate lane)
 
-# B-110: the heavy matrix runs on CoreLink's ephemeral 4-vCPU Linux runner.
-# This preserves the 6-hour execution bound while removing the former hosted
-# larger-runner billing dependency.
+# B-110: the heavy matrix uses GitHub-hosted Linux. This migration changes only
+# runner placement and checkout credential persistence; mutation execution is
+# not part of the static #2368 proof pack.
 
 concurrency:
   # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
@@ -90,7 +90,7 @@ env:
 jobs:
   mutants:
     name: cargo-mutants kill-rate gate
-    runs-on: corelink  # 4-vCPU/12.5-GB ephemeral Linux box; 2-core runs OOM
+    runs-on: ubuntu-24.04
     timeout-minutes: 330  # under the 6h runner cap; over-budget crates fail loudly
     strategy:
       fail-fast: false
@@ -110,6 +110,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
@@ -290,9 +292,9 @@ jobs:
     needs: mutants
     # This job owns contents/issues write. It may only run from the protected
     # canonical main ref in the canonical repository; a fork or unprotected
-    # dispatch must never place write-capable credentials on corelink.
+    # dispatch must never receive write-capable credentials.
     if: always() && github.repository_id == '1232040291' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     permissions:
       contents: write       # least-privilege: write only on the aggregator
       issues: write         # open a regression issue if any crate < 75 %
@@ -300,6 +302,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
