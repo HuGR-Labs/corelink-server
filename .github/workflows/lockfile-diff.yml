@@ -36,11 +36,9 @@ concurrency:
 jobs:
   lockfile-diff:
     name: Cargo.lock diff comment
-    # Runner: `corelink` (zero-hosted). Needs a working `cargo` (Cargo.lock diff +
-    # `cargo deny`), python3 (the diff script), and `gh` for the PR comment — the
-    # last is baked at increment 3 (corelink-runners #453, gh 2.97.0). cargo-deny
-    # still arrives via the SHA-pinned taiki-e prebuilt (kept — see cargo-deny.yml).
-    runs-on: corelink
+    # The GitHub-hosted Ubuntu runner provides Cargo, Python, and GitHub CLI.
+    # cargo-deny still arrives via its SHA-pinned taiki-e prebuilt.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
@@ -49,17 +47,21 @@ jobs:
         with:
           ref: ${{ github.base_ref }}
           path: base
+          persist-credentials: false
 
       - name: Checkout head ref
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           path: head
+          persist-credentials: false
 
-      # `dtolnay/rust-toolchain` removed — it re-provisions cargo and collides
-      # with the box image's pinned toolchain (validate_no_shared_rustup_mutation
-      # forbids it on self-hosted). The workspace pins the channel via
-      # rust-toolchain.toml; this asserts the pinned cargo is on PATH instead
-      # (mirrors cargo-deny.yml / dependabot-policy.yml on `corelink`).
+      - name: Install the workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: 1.91.1
+
+      # Select the toolchain pinned by rust-toolchain.toml and assert the
+      # expected cargo is available on this fresh hosted runner.
       # Run from `head/` — this workflow checks the repo out into base/ + head/
       # subdirs, so rust-toolchain.toml + scripts/ live under head/, not the root.
       - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
@@ -67,11 +69,9 @@ jobs:
         run: bash scripts/ci-assert-pinned-toolchain.sh
 
       # cargo-deny 0.19.8 — pinned per §14.s12.004.1 (ADR-S12-045 v1.2.0).
-      # Installed via the SAME SHA-pinned taiki-e/install-action prebuilt
-      # binary as cargo-deny.yml / dependabot-policy.yml (the EmbarkStudios
-      # container action is Linux-only and hard-fails on the macOS fleet;
-      # the prebuilt binary also avoids the from-source compile race that
-      # bites `cargo install` on the contended self-hosted Mac).
+      # Installed via the same SHA-pinned taiki-e/install-action prebuilt
+      # binary as cargo-deny.yml / dependabot-policy.yml. This avoids a
+      # from-source compile for cargo-deny.
       - name: Install cargo-deny (SHA-pinned) for license check
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
