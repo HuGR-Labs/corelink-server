@@ -1,6 +1,7 @@
 """Credentialless adversarial checks for the B-129 receipt contract."""
 
 import importlib.util
+import json
 import pathlib
 import unittest
 
@@ -44,6 +45,36 @@ class ProbeContractTests(unittest.TestCase):
     def test_empty_receipt_fails_closed(self):
         with self.assertRaises(RuntimeError):
             PROBE.residual_median([])
+
+    def test_receipt_keeps_evidence_and_redacts_sensitive_inputs(self):
+        tenant_id = "123e4567-e89b-42d3-a456-426614174000"
+        cargo_key = "read-only-cargo-key"
+        body = "private response body"
+        rows = [{"request_id": "req-1", "cf_ray": "ray-1", "phases_ms": {"wdb": 5.0}}]
+        receipt = PROBE.build_receipt(
+            target_origin="https://api.example.test",
+            tenant_id=tenant_id,
+            cargo_key=cargo_key,
+            deployed_sha="0123456789abcdef0123456789abcdef01234567",
+            deployed_region="Sam",
+            captured_at="2026-09-25T12:00:00+00:00",
+            sample_count=1,
+            residual_median_pct=3.0,
+            residual_max_pct=3.0,
+            rows=rows,
+        )
+        serialized = json.dumps(receipt, sort_keys=True)
+
+        self.assertEqual(receipt["deployed_sha"], "0123456789abcdef0123456789abcdef01234567")
+        self.assertEqual(receipt["deployed_region"], "Sam")
+        self.assertEqual(receipt["captured_at"], "2026-09-25T12:00:00+00:00")
+        self.assertEqual(receipt["rows"], rows)
+        for sensitive in (tenant_id, cargo_key, body):
+            with self.subTest(sensitive=sensitive):
+                self.assertNotIn(sensitive, serialized)
+        self.assertNotIn('"tenant"', serialized)
+        self.assertNotIn("cargo_key", receipt)
+        self.assertNotIn("cargo_key_sha256", receipt)
 
     def test_conflicting_legacy_alias_fails_closed(self):
         with self.assertRaises(RuntimeError):
