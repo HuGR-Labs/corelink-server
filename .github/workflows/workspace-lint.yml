@@ -74,5 +74,11 @@ jobs:
       - name: Use the workspace-pinned toolchain
         run: bash scripts/ci-use-host-toolchain.sh
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        timeout-minutes: 8
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: clippy, whole workspace, every target
         run: cargo clippy --workspace --all-targets --message-format=short -- -D warnings
