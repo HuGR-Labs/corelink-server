@@ -209,6 +209,9 @@ ALLOWLIST_REGEX = re.compile(
     r"|SLA_OBSERVATIONS_ENABLED$"
     # Synthetic drill activation is a fail-closed boolean deployment control.
     r"|SYNTHETIC_DRILL_ENABLED$"
+    # B-054 receipt paths are runner-temporary output locations, not values or
+    # credentials. The protected synthetic key names remain matrix entries.
+    r"|B054_(APPROVAL_RECEIPT_PATH|RECEIPT_PATH)$"
     # BYOK revocation scheduling is an explicit fail-closed boolean deployment
     # control; KMS credentials remain separate matrix entries.
     r"|CORELINK_BYOK_REVOCATION_SCHEDULER_ENABLED$"
