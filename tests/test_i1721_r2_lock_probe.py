@@ -76,6 +76,9 @@ class I1721R2LockProbeTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         probe = PROBE.read_text(encoding="utf-8")
         preflight = workflow.split("  preflight:", 1)[1].split("  proof:", 1)[0]
+        preflight_steps = preflight.split("    steps:\n", 1)[1]
+        checkout = "Checkout exact dispatched main commit without write credentials"
+        validator = "Fail closed before staging environment access"
         self.assertIn("pull_request:", workflow)
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("environment: staging", workflow)
@@ -84,8 +87,11 @@ class I1721R2LockProbeTests(unittest.TestCase):
         self.assertIn("if-no-files-found: error", workflow)
         self.assertIn("actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", preflight)
         self.assertIn("ref: ${{ github.sha }}", preflight)
+        self.assertIn("token: ''", preflight)
         self.assertIn("persist-credentials: false", preflight)
         self.assertIn("bash scripts/validate_i1721_r2_dispatch.sh", preflight)
+        self.assertLess(preflight_steps.index(checkout), preflight_steps.index(validator))
+        self.assertIn("'scripts/validate_i1721_r2_dispatch.sh'", workflow)
         self.assertIn("corelink-terraform-staging-state", probe)
         self.assertIn("corelink/issue-1721/$run/terraform.tfstate", probe)
         self.assertIn("use_lockfile=true", probe)
