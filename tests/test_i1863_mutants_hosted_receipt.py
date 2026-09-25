@@ -18,7 +18,16 @@ class HostedReceiptValidationTests(unittest.TestCase):
             "baseline_digest": digest(["baseline"]),
             "shard_count": SHARD_COUNT,
             "covered_mutants": 27,
-            "coverage_digest": digest(["coverage"]),
+            "inventory_mutant_counts": [{"identity": "sha256:" + "1" * 64, "count": 27}],
+            "covered_mutant_counts": [{"identity": "sha256:" + "1" * 64, "count": 27}],
+            "per_shard_occurrence_counts": [
+                {
+                    "index": index,
+                    "occurrences": 1,
+                    "multiset_digest": digest(["shard-count", index]),
+                }
+                for index in range(SHARD_COUNT)
+            ],
             "shard_artifact_digests": [
                 {
                     "index": index,
@@ -31,6 +40,12 @@ class HostedReceiptValidationTests(unittest.TestCase):
             "attempt_lineage": [1, 2],
             "status": "success",
         }
+        self.receipt["coverage_digest"] = digest(
+            {
+                "mutant_counts": self.receipt["covered_mutant_counts"],
+                "per_shard_occurrence_counts": self.receipt["per_shard_occurrence_counts"],
+            }
+        )
         self.run = {
             "databaseId": 1234,
             "attempt": 2,
@@ -66,6 +81,15 @@ class HostedReceiptValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "protected main"):
             validate_successful_receipt(self.receipt, self.run, self.sha)
 
+    def test_rejects_unpinned_tool_or_configuration(self) -> None:
+        self.receipt["tool_version"] = "27.0.1"
+        with self.assertRaisesRegex(ValueError, "tool version"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+        self.receipt["tool_version"] = "27.0.0"
+        self.receipt["config_digest"] = digest(["drift"])
+        with self.assertRaisesRegex(ValueError, "configuration digest"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+
     def test_rejects_incomplete_or_bad_lineage(self) -> None:
         self.receipt["covered_mutants"] = 0
         with self.assertRaisesRegex(ValueError, "nonempty"):
@@ -81,6 +105,26 @@ class HostedReceiptValidationTests(unittest.TestCase):
             validate_successful_receipt(self.receipt, self.run, self.sha)
         self.receipt["shard_artifact_digests"].append(self.receipt["shard_artifact_digests"][0])
         with self.assertRaisesRegex(ValueError, "per-shard artifact"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+
+    def test_rejects_missing_or_mismatched_occurrence_coverage(self) -> None:
+        self.receipt["covered_mutant_counts"] = [{"identity": "sha256:" + "1" * 64, "count": 26}]
+        with self.assertRaisesRegex(ValueError, "multiplicity"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+        self.receipt["covered_mutant_counts"] = [{"identity": "sha256:" + "1" * 64, "count": 27}]
+        self.receipt["per_shard_occurrence_counts"] = self.receipt["per_shard_occurrence_counts"][:-1]
+        with self.assertRaisesRegex(ValueError, "per-shard occurrence"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+
+    def test_rejects_boolean_per_shard_occurrence_index(self) -> None:
+        self.receipt["per_shard_occurrence_counts"][0]["index"] = False
+        self.receipt["coverage_digest"] = digest(
+            {
+                "mutant_counts": self.receipt["covered_mutant_counts"],
+                "per_shard_occurrence_counts": self.receipt["per_shard_occurrence_counts"],
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "per-shard occurrence identity"):
             validate_successful_receipt(self.receipt, self.run, self.sha)
 
 

@@ -139,7 +139,9 @@ jobs:
 """
 
 
-def _run_against(tmp_path: pathlib.Path, content: str) -> tuple[int, str]:
+def _run_against(
+    tmp_path: pathlib.Path, content: str, *, baseline: str | None = None
+) -> tuple[int, str]:
     """Point the module's WORKFLOWS at a throwaway dir and run main().
 
     Returns (rc, stderr). stderr matters: `main()` returns non-zero for TWO very
@@ -153,12 +155,18 @@ def _run_against(tmp_path: pathlib.Path, content: str) -> tuple[int, str]:
     wf = tmp_path / ".github" / "workflows"
     wf.mkdir(parents=True, exist_ok=True)
     (wf / "fixture.yml").write_text(content)
+    args: list[str] = []
+    if baseline is not None:
+        baseline_wf = tmp_path / "baseline" / ".github" / "workflows"
+        baseline_wf.mkdir(parents=True, exist_ok=True)
+        (baseline_wf / "fixture.yml").write_text(baseline)
+        args = ["--baseline-workflows", str(baseline_wf)]
     original = vnsrm.WORKFLOWS
     vnsrm.WORKFLOWS = wf
     err = io.StringIO()
     try:
         with redirect_stderr(err):
-            rc = vnsrm.main()
+            rc = vnsrm.main(args)
     finally:
         vnsrm.WORKFLOWS = original
     return rc, err.getvalue()
@@ -182,6 +190,102 @@ def test_teeth_provisioning_in_commented_job_is_caught(tmp_path: pathlib.Path) -
 def test_clean_commented_job_passes(tmp_path: pathlib.Path) -> None:
     rc, err = _run_against(tmp_path, CLEAN_JOB)
     assert rc == 0, err
+
+
+# ── pull-request baseline comparison ─────────────────────────────────────────
+
+
+def test_baseline_allows_an_unchanged_inherited_violation(tmp_path: pathlib.Path) -> None:
+    rc, err = _run_against(tmp_path, PROVISIONING_JOB, baseline=PROVISIONING_JOB)
+    assert rc == 0, err
+
+
+def test_baseline_rejects_a_new_violation(tmp_path: pathlib.Path) -> None:
+    candidate = PROVISIONING_JOB.replace(
+        "- uses: dtolnay/rust-toolchain@stable",
+        "- uses: dtolnay/rust-toolchain@stable\n      - uses: actions-rs/toolchain@stable",
+    )
+    rc, err = _run_against(tmp_path, candidate, baseline=PROVISIONING_JOB)
+    assert rc == 1
+    assert "1 new violation(s)" in err
+    assert "actions-rs/toolchain@stable" in err
+
+
+def test_baseline_rejects_a_new_versioned_toolchain_path(tmp_path: pathlib.Path) -> None:
+    candidate = CLEAN_JOB.replace(
+        "run: echo ok", "run: echo $HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin"
+    )
+    rc, err = _run_against(tmp_path, candidate, baseline=CLEAN_JOB)
+    assert rc == 1
+    assert "1 new violation(s)" in err
+    assert "hardcodes a versioned toolchain path" in err
+
+
+def test_baseline_counts_duplicate_identical_violations(tmp_path: pathlib.Path) -> None:
+    candidate = PROVISIONING_JOB.replace(
+        "- uses: dtolnay/rust-toolchain@stable",
+        "- uses: dtolnay/rust-toolchain@stable\n      - uses: dtolnay/rust-toolchain@stable",
+    )
+    rc, err = _run_against(tmp_path, candidate, baseline=PROVISIONING_JOB)
+    assert rc == 1
+    assert "1 new violation(s)" in err
+
+
+def test_baseline_ignores_line_movement_of_an_inherited_violation(tmp_path: pathlib.Path) -> None:
+    candidate = PROVISIONING_JOB.replace("steps:\n", "steps:\n      # line movement only\n")
+    rc, err = _run_against(tmp_path, candidate, baseline=PROVISIONING_JOB)
+    assert rc == 0, err
+
+
+def test_baseline_allows_removing_an_inherited_violation(tmp_path: pathlib.Path) -> None:
+    rc, err = _run_against(tmp_path, CLEAN_JOB, baseline=PROVISIONING_JOB)
+    assert rc == 0, err
+
+
+def test_baseline_parser_failure_is_loud(tmp_path: pathlib.Path) -> None:
+    malformed = "name: malformed\njobs:\n  broken:\n    runs-on: [self-hosted, mac\n"
+    rc, err = _run_against(tmp_path, CLEAN_JOB, baseline=malformed)
+    assert rc == 2
+    assert "parser failure" in err
+
+
+def test_baseline_zero_reach_is_loud(tmp_path: pathlib.Path) -> None:
+    rc, err = _run_against(tmp_path, CLEAN_JOB, baseline="name: hosted only\n")
+    assert rc == 2
+    assert "ZERO self-hosted jobs" in err
+
+
+def test_candidate_zero_reach_is_loud_in_baseline_mode(tmp_path: pathlib.Path) -> None:
+    rc, err = _run_against(tmp_path, "name: hosted only\n", baseline=CLEAN_JOB)
+    assert rc == 2
+    assert "ZERO self-hosted jobs" in err
+
+
+def test_actionlint_event_baseline_contract_is_immutable_and_strict_on_push() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "actionlint.yml").read_text(encoding="utf-8")
+    assert "expected_sha:" in workflow
+    assert "baseline_sha:" in workflow
+    assert "EXPECTED_SHA: ${{ inputs.expected_sha }}" in workflow
+    assert "EXPECTED_BASELINE_SHA: ${{ inputs.baseline_sha }}" in workflow
+    assert 'if [[ "$EXPECTED_SHA" != "$GITHUB_SHA" ]]' in workflow
+    assert 'if [[ ! "$EXPECTED_BASELINE_SHA" =~ ^[0-9a-f]{40}$ ]]' in workflow
+    assert "github.event.pull_request.head.sha || github.sha" in workflow
+    assert "ref: ${{ github.event.pull_request.base.sha }}" in workflow
+    assert "ref: main" in workflow
+    assert 'ACTUAL_BASELINE_SHA="$(git -C baseline rev-parse HEAD)"' in workflow
+    assert 'if [[ "$EXPECTED_BASELINE_SHA" != "$ACTUAL_BASELINE_SHA" ]]' in workflow
+    assert "if: github.event_name == 'pull_request'" in workflow
+    assert "if: github.event_name == 'workflow_dispatch'" in workflow
+    assert "--baseline-workflows baseline/.github/workflows" in workflow
+    assert workflow.count("persist-credentials: false") >= 3
+    assert (
+        'if [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then\n'
+        "            python3 scripts/validate_no_shared_rustup_mutation.py \\\n"
+        "              --baseline-workflows baseline/.github/workflows\n"
+        "          else\n"
+        "            python3 scripts/validate_no_shared_rustup_mutation.py\n"
+        "          fi"
+    ) in workflow
 
 
 # ── structural YAML forms ────────────────────────────────────────────────────

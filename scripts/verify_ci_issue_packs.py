@@ -38,13 +38,14 @@ CHECK_IDS = {
     "rust-worker-three-arm",
     "python-mutants-receipt",
     "python-mutants-shards",
+    "cargo-mutants-v27-inventory",
     "python-b170-owner-actions",
 }
 REQUIRED_PACK_CHECKS = {
     "issue-2440-ci-scoping": {"actionlint", "ci-pack-contract"},
     "issue-2437-worker-three-arm": {"ci-pack-contract", "rust-worker-three-arm"},
     "issue-1948-mutants-receipt": {"ci-pack-contract", "python-mutants-receipt"},
-    "issue-2457-mutants-shards": {"actionlint", "ci-pack-contract", "python-mutants-shards"},
+    "issue-2457-mutants-shards": {"actionlint", "ci-pack-contract", "python-mutants-shards", "cargo-mutants-v27-inventory"},
     "issue-1677-b170-owner-actions": {"ci-pack-contract", "python-b170-owner-actions"},
 }
 REQUIRED_PACK_JOBS = {pack_id: {"issue-pack"} for pack_id in REQUIRED_PACK_CHECKS}
@@ -66,6 +67,7 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "id: rust-worker-three-arm",
         "id: python-mutants-receipt",
         "id: python-mutants-shards",
+        "id: cargo-mutants-v27-inventory",
         "id: python-b170-owner-actions",
         "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards'",
         "if: inputs.pack_id == 'issue-2437-worker-three-arm'",
@@ -79,6 +81,9 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "python3 -m scripts.verify_i1863_mutants_hosted",
         "python3 -m scripts.verify_i1666_mutants_evidence",
         "tests/test_i2457_mutants_shards.py",
+        "cargo mutants --version | grep -Fx 'cargo-mutants 27.0.0'",
+        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > \"${RUNNER_TEMP}/full-inventory.json\"",
+        "python3 scripts/verify_i2457_mutants_shards.py build-inventory",
         "python3 -S scripts/verify_b170_owner_actions.py",
         "grep -Fq 'docs/customer/dpa-onboarding.md'",
         "grep -Fq 'lighthouse enterprise customer'",
@@ -90,6 +95,31 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         '[[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]',
     )
     errors = [f"central workflow is missing required contract: {item}" for item in required if item not in workflow_text]
+    normalized_workflow = re.sub(r"[ \t]*\\[ \t]*\r?\n[ \t]*", " ", workflow_text)
+    cargo_mutants_lines = [line.strip() for line in normalized_workflow.splitlines() if "cargo mutants" in line]
+    expected_cargo_mutants_lines = [
+        "cargo mutants --version | grep -Fx 'cargo-mutants 27.0.0'",
+        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > \"${RUNNER_TEMP}/full-inventory.json\"",
+    ]
+    if cargo_mutants_lines != expected_cargo_mutants_lines:
+        errors.append("central workflow must run only the pinned denominator-one v27 inventory commands")
+    forbidden = (
+        "--baseline",
+        "upload-artifact",
+        "download-artifact",
+        "repo-token",
+        "secrets.",
+        "github.token",
+        "GITHUB_TOKEN",
+        "id-token:",
+        "aws-actions/",
+        "azure/",
+        "google-github-actions/",
+        "cloudflare/",
+    )
+    found = [token for token in forbidden if token in workflow_text]
+    if found:
+        errors.append("central workflow contains forbidden inventory-pack controls: " + ", ".join(found))
     triggers = mapping_child_keys(workflow_text, "on")
     if triggers != ["workflow_dispatch"]:
         errors.append(f"central issue pack workflow must have only workflow_dispatch triggers; found {triggers}")
@@ -272,6 +302,27 @@ def self_test(catalog: dict) -> list[str]:
     )
     if not validate_workflow_contract(unbound_workflow):
         failures.append("workflow losing the candidate SHA binding was accepted")
+    missing_inventory_workflow = canonical_workflow.replace("id: cargo-mutants-v27-inventory", "id: removed-inventory-check", 1)
+    if not validate_workflow_contract(missing_inventory_workflow):
+        failures.append("workflow losing the v27 inventory check was accepted")
+    mutating_inventory_workflow = canonical_workflow.replace(
+        "--shard 0/1 --list --json", "--shard 0/1 --baseline=skip --list --json", 1
+    )
+    if not validate_workflow_contract(mutating_inventory_workflow):
+        failures.append("workflow adding a mutation control was accepted")
+    extra_cargo_mutants_workflow = canonical_workflow.replace(
+        "cargo mutants --version | grep -Fx 'cargo-mutants 27.0.0'",
+        "cargo mutants --package corelink-server",
+        1,
+    )
+    if not validate_workflow_contract(extra_cargo_mutants_workflow):
+        failures.append("workflow adding an unrelated cargo-mutants command was accepted")
+    multiline_cargo_mutants_workflow = canonical_workflow + "\n      - run: |\n          cargo \\\n            mutants --package corelink-server\n"
+    if not validate_workflow_contract(multiline_cargo_mutants_workflow):
+        failures.append("workflow adding a multiline cargo-mutants command was accepted")
+    token_workflow = canonical_workflow.replace("timeout-minutes: 10", "env: {GITHUB_TOKEN: leaked}\n        timeout-minutes: 10", 1)
+    if not validate_workflow_contract(token_workflow):
+        failures.append("workflow adding a credential route was accepted")
     if not paths_outside_pack(["crates/corelink-server/src/lib.rs"], catalog["packs"][0]["changed_surfaces"]):
         failures.append("out-of-pack changed file was accepted")
     return failures

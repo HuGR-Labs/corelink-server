@@ -153,6 +153,42 @@ jobs:
             tests/test_i2457_mutants_shards.py
         working-directory: candidate
 
+      - name: Assert the candidate workspace-pinned toolchain for issue 2457 inventory
+        if: inputs.pack_id == 'issue-2457-mutants-shards'
+        timeout-minutes: 3
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+        working-directory: candidate
+
+      - name: Install protoc for issue 2457 inventory discovery
+        if: inputs.pack_id == 'issue-2457-mutants-shards'
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        timeout-minutes: 3
+
+      - name: Install pinned cargo-mutants for issue 2457 inventory discovery
+        if: inputs.pack_id == 'issue-2457-mutants-shards'
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        timeout-minutes: 5
+        with:
+          tool: cargo-mutants@27.0.0
+          fallback: cargo-binstall
+
+      - name: Run the real cargo-mutants v27 denominator-one inventory
+        id: cargo-mutants-v27-inventory
+        if: inputs.pack_id == 'issue-2457-mutants-shards'
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo mutants --version | grep -Fx 'cargo-mutants 27.0.0'
+          cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > "${RUNNER_TEMP}/full-inventory.json"
+          python3 scripts/verify_i2457_mutants_shards.py build-inventory \
+            --raw "${RUNNER_TEMP}/full-inventory.json" \
+            --sha "${EXPECTED_SHA}" --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --out "${RUNNER_TEMP}/inventory-manifest.json"
+        env:
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+        working-directory: candidate
+
       - name: Run issue 1677 B-170 owner-actions verifier
         id: python-b170-owner-actions
         if: inputs.pack_id == 'issue-1677-b170-owner-actions'

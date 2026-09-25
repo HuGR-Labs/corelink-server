@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from scripts.verify_i1666_mutants_evidence import verify as verify_workflow
-from scripts.verify_i2457_mutants_shards import AGGREGATE_SCHEMA, SHARD_COUNT
+from scripts.verify_i2457_mutants_shards import AGGREGATE_SCHEMA, SHARD_COUNT, TOOL_VERSION, config_digest, digest
 
 
 WORKFLOW = Path(".github/workflows/issue-1863-mutants-hosted.yml")
@@ -43,6 +43,10 @@ def validate_successful_receipt(
         raise ValueError("hosted mutants aggregate is not from protected main")
     if receipt.get("shard_count") != SHARD_COUNT or receipt.get("covered_mutants", 0) <= 0:
         raise ValueError("aggregate receipt does not prove all 27 nonempty shards")
+    if receipt.get("tool_version") != TOOL_VERSION:
+        raise ValueError("aggregate receipt tool version is not pinned cargo-mutants 27.0.0")
+    if receipt.get("config_digest") != config_digest():
+        raise ValueError("aggregate receipt configuration digest is not canonical")
     for field in ("config_digest", "inventory_digest", "baseline_digest", "coverage_digest"):
         value = receipt.get(field)
         if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
@@ -66,6 +70,47 @@ def validate_successful_receipt(
         seen.add(item["index"])
     if seen != set(range(SHARD_COUNT)):
         raise ValueError("aggregate receipt per-shard artifact digest coverage is incomplete")
+    inventory_counts = receipt.get("inventory_mutant_counts")
+    covered_counts = receipt.get("covered_mutant_counts")
+    per_shard_counts = receipt.get("per_shard_occurrence_counts")
+    if not isinstance(inventory_counts, list) or not inventory_counts or inventory_counts != covered_counts:
+        raise ValueError("aggregate receipt does not preserve exact inventory multiplicity")
+    previous_identity = ""
+    inventory_total = 0
+    for item in inventory_counts:
+        if not isinstance(item, dict) or set(item) != {"identity", "count"}:
+            raise ValueError("aggregate receipt has invalid inventory multiplicity")
+        identity = item["identity"]
+        count = item["count"]
+        if not isinstance(identity, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", identity) or identity <= previous_identity:
+            raise ValueError("aggregate receipt has noncanonical inventory multiplicity")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise ValueError("aggregate receipt has invalid inventory multiplicity count")
+        previous_identity = identity
+        inventory_total += count
+    if inventory_total != receipt["covered_mutants"]:
+        raise ValueError("aggregate receipt inventory multiplicity does not equal coverage")
+    if not isinstance(per_shard_counts, list) or len(per_shard_counts) != SHARD_COUNT:
+        raise ValueError("aggregate receipt lacks all per-shard occurrence counts")
+    total = 0
+    count_indexes: set[int] = set()
+    for item in per_shard_counts:
+        if not isinstance(item, dict) or isinstance(item.get("index"), bool) or not isinstance(item.get("index"), int) or item["index"] in count_indexes:
+            raise ValueError("aggregate receipt has invalid per-shard occurrence identity")
+        occurrences = item.get("occurrences")
+        multiset_digest = item.get("multiset_digest")
+        if item["index"] < 0 or item["index"] >= SHARD_COUNT or isinstance(occurrences, bool) or not isinstance(occurrences, int) or occurrences < 0:
+            raise ValueError("aggregate receipt has invalid per-shard occurrence count")
+        if not isinstance(multiset_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", multiset_digest):
+            raise ValueError("aggregate receipt has invalid per-shard multiplicity digest")
+        total += occurrences
+        count_indexes.add(item["index"])
+    if count_indexes != set(range(SHARD_COUNT)) or total != receipt["covered_mutants"]:
+        raise ValueError("aggregate receipt occurrence counts do not equal coverage")
+    if receipt["coverage_digest"] != digest(
+        {"mutant_counts": covered_counts, "per_shard_occurrence_counts": per_shard_counts}
+    ):
+        raise ValueError("aggregate receipt coverage digest does not bind multiplicity")
 
 
 def validate_receipt_files(receipt_path: Path, run_path: Path, expected_sha: str) -> None:

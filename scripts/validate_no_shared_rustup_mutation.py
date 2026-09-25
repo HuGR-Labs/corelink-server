@@ -57,14 +57,23 @@ FAIL-CLOSED
 If this script finds ZERO self-hosted jobs it EXITS NON-ZERO rather than
 reporting success. A parser that silently matches nothing is the "green gate that
 proves nothing" failure mode this repo has been bitten by repeatedly.
+
+PULL-REQUEST BASELINE MODE
+--------------------------
+`--baseline-workflows` compares a candidate tree to its immutable PR base. It
+permits only findings already present in that base and fails on an added finding;
+push and manual runs stay strict. Both trees must parse and inspect a nonzero
+self-hosted population.
 """
 from __future__ import annotations
 
+import argparse
+from collections import Counter
 import pathlib
 import re
 import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
 
 try:
     import yaml
@@ -94,6 +103,37 @@ class Job:
     start: int
     end: int
     definition: Any = None
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One rustup-safety violation with a stable baseline-comparison key."""
+
+    workflow: str
+    job: str
+    rule: str
+    subject: str
+    lineno: int
+    source: str
+
+    @property
+    def identity(self) -> tuple[str, str, str, str]:
+        """Exclude line numbers so harmless movement cannot create a new finding."""
+        return (self.workflow, self.job, self.rule, self.subject)
+
+    def render(self) -> str:
+        if self.rule == "provisioning-action":
+            return (
+                f"{self.workflow}:{self.lineno}: job '{self.job}' provisions a toolchain on the shared-$HOME fleet.\n"
+                f"    uses: {self.subject}\n"
+                "    FIX: replace with `run: bash scripts/ci-use-host-toolchain.sh [targets…]`."
+            )
+        return (
+            f"{self.workflow}:{self.lineno}: job '{self.job}' hardcodes a versioned toolchain path — a second\n"
+            "    copy of the ADR-0015 pin that nothing keeps in sync with rust-toolchain.toml.\n"
+            f"    {self.source}\n"
+            "    FIX: `run: bash scripts/ci-use-host-toolchain.sh` (it reads the channel)."
+        )
 
 
 def _strip_trailing_comment(runs_on: str) -> str:
@@ -812,17 +852,17 @@ def _step_uses(lines: list[str], job: Job) -> list[tuple[int, str]]:
     ]
 
 
-def main() -> int:
-    violations: list[str] = []
+def _scan(workflows: pathlib.Path) -> tuple[int, list[Finding]]:
+    """Scan one workflow tree, retaining source locations for diagnostics."""
+    if not workflows.is_dir():
+        raise WorkflowParseError(f"{workflows}: workflow directory is missing")
+
+    findings: list[Finding] = []
     self_hosted_jobs = 0
     seen_jobs: set[tuple[str, str]] = set()
 
-    for path in sorted(WORKFLOWS.glob("*.yml")):
-        try:
-            jobs = _load_jobs(path)
-        except WorkflowParseError as exc:
-            print(f"::error::validate_no_shared_rustup_mutation: parser failure: {exc}", file=sys.stderr)
-            return 2
+    for path in sorted(workflows.glob("*.yml")):
+        jobs = _load_jobs(path)
         lines = path.read_text(encoding="utf-8").splitlines()
         for job in jobs:
             if not job_is_self_hosted(job):
@@ -830,48 +870,93 @@ def main() -> int:
             if (path.name, job.name) not in seen_jobs:
                 seen_jobs.add((path.name, job.name))
                 self_hosted_jobs += 1
-            try:
-                step_uses = _step_uses(lines, job)
-            except WorkflowParseError as exc:
-                print(f"::error::validate_no_shared_rustup_mutation: parser failure: {exc}", file=sys.stderr)
-                return 2
+            step_uses = _step_uses(lines, job)
             for lineno, action in step_uses:
                 if PROVISIONING_ACTIONS.search(action):
-                    violations.append(
-                        f"{path}:{lineno}: job '{job.name}' provisions a toolchain on the shared-$HOME fleet.\n"
-                        f"    uses: {action}\n"
-                        f"    FIX: replace with `run: bash scripts/ci-use-host-toolchain.sh [targets…]`."
+                    findings.append(
+                        Finding(
+                            workflow=f".github/workflows/{path.name}",
+                            job=job.name,
+                            rule="provisioning-action",
+                            subject=action,
+                            lineno=lineno,
+                            source=f"uses: {action}",
+                        )
                     )
             for lineno in range(job.start + 1, job.end + 1):
                 line = lines[lineno - 1]
                 if not line.strip() or line.lstrip().startswith("#"):
                     continue
-                if HARDCODED_CHANNEL.search(line):
-                    violations.append(
-                        f"{path}:{lineno}: job '{job.name}' hardcodes a versioned toolchain path — a second\n"
-                        f"    copy of the ADR-0015 pin that nothing keeps in sync with rust-toolchain.toml.\n"
-                        f"    {line.strip()}\n"
-                        f"    FIX: `run: bash scripts/ci-use-host-toolchain.sh` (it reads the channel)."
+                match = HARDCODED_CHANNEL.search(line)
+                if match:
+                    findings.append(
+                        Finding(
+                            workflow=f".github/workflows/{path.name}",
+                            job=job.name,
+                            rule="hardcoded-versioned-toolchain-path",
+                            subject=match.group(0),
+                            lineno=lineno,
+                            source=line.strip(),
+                        )
                     )
 
     if self_hosted_jobs == 0:
-        print(
-            "::error::validate_no_shared_rustup_mutation: found ZERO self-hosted jobs. "
-            "Either the fleet is gone or this script's parser broke — refusing to report "
-            "success on a check that inspected nothing.",
-            file=sys.stderr,
+        raise WorkflowParseError(
+            f"{workflows}: found ZERO self-hosted jobs. Either the fleet is gone or this script's "
+            "parser broke — refusing to report success on a check that inspected nothing."
         )
+    return self_hosted_jobs, findings
+
+
+def _new_findings(head: list[Finding], baseline: list[Finding]) -> list[Finding]:
+    """Return the multiset difference, so duplicate violations cannot hide."""
+    inherited = Counter(finding.identity for finding in baseline)
+    result: list[Finding] = []
+    for finding in head:
+        if inherited[finding.identity]:
+            inherited[finding.identity] -= 1
+        else:
+            result.append(finding)
+    return result
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--baseline-workflows",
+        type=pathlib.Path,
+        help="compare the candidate workflow tree to this baseline instead of requiring zero findings",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        self_hosted_jobs, findings = _scan(WORKFLOWS)
+        baseline_jobs = None
+        if args.baseline_workflows is not None:
+            baseline_jobs, baseline_findings = _scan(args.baseline_workflows)
+            findings = _new_findings(findings, baseline_findings)
+    except WorkflowParseError as exc:
+        print(f"::error::validate_no_shared_rustup_mutation: parser failure: {exc}", file=sys.stderr)
         return 2
 
-    if violations:
+    if findings:
+        comparison = "new " if baseline_jobs is not None else ""
+        baseline_note = f" (baseline: {baseline_jobs})" if baseline_jobs is not None else ""
         print(
-            f"::error::validate_no_shared_rustup_mutation: {len(violations)} violation(s) "
-            f"across {self_hosted_jobs} self-hosted job(s).",
+            f"::error::validate_no_shared_rustup_mutation: {len(findings)} {comparison}violation(s) "
+            f"across {self_hosted_jobs} self-hosted job(s){baseline_note}.",
             file=sys.stderr,
         )
-        for v in violations:
-            print(f"  {v}", file=sys.stderr)
+        for finding in findings:
+            print(f"  {finding.render()}", file=sys.stderr)
         return 1
+
+    if baseline_jobs is not None:
+        print(
+            f"OK: {self_hosted_jobs} candidate and {baseline_jobs} baseline self-hosted job(s) "
+            "inspected; no new toolchain provisioning or versioned toolchain paths."
+        )
+        return 0
 
     print(
         f"OK: {self_hosted_jobs} self-hosted job(s) inspected; none provisions a toolchain "
@@ -881,4 +966,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

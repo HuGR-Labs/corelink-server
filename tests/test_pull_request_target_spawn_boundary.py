@@ -20,7 +20,9 @@ ALL_PULL_REQUEST_TARGET_WORKFLOWS = {
     "dependabot-policy-trust-boundary.yml",
     "file-size-ratchet.yml",
     "backlog-verify.yml",
+    "issue-2176-grpc-deny-gate.yml",
     "pr-labels.yml",
+    "secrets-drift.yml",
     "welcome-first-pr.yml",
 }
 EXPECTED_JOBS = {
@@ -28,8 +30,10 @@ EXPECTED_JOBS = {
     "dependabot-policy.yml": {"sentinel", "policy-gate"},
     "dependabot-policy-trust-boundary.yml": {"trust-boundary-teeth"},
     "file-size-ratchet.yml": {"ratchet"},
-    "backlog-verify.yml": {"verify"},
+    "backlog-verify.yml": {"verify", "trusted_semantic"},
+    "issue-2176-grpc-deny-gate.yml": {"deny-contract"},
     "pr-labels.yml": {"label", "size"},
+    "secrets-drift.yml": {"secrets-drift"},
     "welcome-first-pr.yml": {"welcome"},
 }
 EXPECTED_RUNNERS = {
@@ -46,11 +50,13 @@ EXPECTED_RUNNERS = {
     "file-size-ratchet.yml": {
         "ratchet": "corelink",
     },
-    "backlog-verify.yml": {"verify": "corelink"},
+    "backlog-verify.yml": {"verify": "corelink", "trusted_semantic": "ubuntu-24.04"},
+    "issue-2176-grpc-deny-gate.yml": {"deny-contract": "ubuntu-24.04"},
     "pr-labels.yml": {
         "label": "corelink",
         "size": "corelink",
     },
+    "secrets-drift.yml": {"secrets-drift": "ubuntu-latest"},
     "welcome-first-pr.yml": {
         "welcome": ["self-hosted", "mac", "corelink-builder"],
     },
@@ -65,11 +71,13 @@ EXPECTED_PERMISSIONS = {
     "dependabot-policy-trust-boundary.yml": {"contents": "read"},
     "file-size-ratchet.yml": {"contents": "read"},
     "backlog-verify.yml": {"contents": "read"},
+    "issue-2176-grpc-deny-gate.yml": {"contents": "read"},
     "pr-labels.yml": {
         "contents": "read",
         "pull-requests": "write",
         "issues": "write",
     },
+    "secrets-drift.yml": {"contents": "read"},
     "welcome-first-pr.yml": {"issues": "write", "pull-requests": "write"},
 }
 
@@ -78,7 +86,7 @@ EXPECTED_PERMISSIONS = {
 # lets the protected-boundary assertions continue to cover actor gates,
 # permissions, and data-only checkout behavior while the shared workflows
 # migrate one bounded bundle at a time.
-HOSTED_RUNNERS = {"ubuntu-24.04", "macos-15", "macos-15-intel"}
+HOSTED_RUNNERS = {"ubuntu-24.04", "ubuntu-latest", "macos-15", "macos-15-intel"}
 
 
 _YAML_KEY = re.compile(r"^(?P<key>[^:#][^:]*?):(?:[ \t]*(?P<value>.*))?$")
@@ -633,13 +641,18 @@ def assert_file_size_trusted_base(test: unittest.TestCase, raw: str) -> None:
     )
 
 
-def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> None:
+def assert_backlog_verify_boundary(
+    test: unittest.TestCase, workflow: dict, raw: str | None = None
+) -> None:
     """The backlog PR lane executes only BASE control over PR data."""
     jobs = workflow.get("jobs")
-    test.assertEqual(set(jobs or {}), {"verify"})
+    test.assertEqual(set(jobs or {}), {"verify", "trusted_semantic"})
     test.assertEqual(workflow.get("permissions"), {"contents": "read"})
     assert_transition_runner(test, jobs["verify"].get("runs-on"), "corelink")
-    raw = (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
+    raw = raw or (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
+    verify_block = re.search(r"(?ms)^  verify:.*?(?=^  trusted_semantic:|\Z)", raw)
+    test.assertIsNotNone(verify_block, "verify job must remain structurally distinct")
+    verify_raw = verify_block.group(0)
     test.assertIn("pull_request_target:", raw)
     test.assertNotIn("\n  pull_request:\n", raw)
     test.assertGreaterEqual(raw.count("persist-credentials: false"), 2)
@@ -647,7 +660,7 @@ def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> N
     test.assertIn("github.event.pull_request.base.sha || github.sha", raw)
     test.assertNotIn("github.event.pull_request.head.ref", raw)
     test.assertNotIn("github.event.pull_request.base.ref", raw)
-    test.assertNotIn("GH_TOKEN", raw)
+    test.assertNotIn("GH_TOKEN", verify_raw)
     test.assertIn("path: _candidate", raw)
     test.assertIn("path: _base", raw)
     test.assertIn("working-directory: _base", raw)
@@ -655,6 +668,56 @@ def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> N
     test.assertIn("--trusted-file", raw)
     test.assertIn("--trusted-semantic", raw)
     test.assertIn("if: github.event_name == 'push' || github.event_name == 'schedule'", raw)
+    trusted = jobs["trusted_semantic"]
+    test.assertEqual(trusted.get("if"), "github.event_name == 'push' || github.event_name == 'schedule'")
+    trusted_block = raw[verify_block.end() :]
+    permissions_block = re.search(
+        r"(?ms)^    permissions:\n(?P<entries>(?:^      [^\n]+\n?)*)",
+        trusted_block,
+    )
+    test.assertIsNotNone(permissions_block, "trusted semantic job must declare permissions")
+    permissions = {}
+    for entry in permissions_block.group("entries").splitlines():
+        permission, value = _mapping_entry(entry.strip())
+        test.assertNotIn(permission, permissions, "duplicate trusted semantic permission")
+        permissions[permission] = _scalar(value)
+    test.assertEqual(
+        permissions,
+        {"contents": "read", "vulnerability-alerts": "read"},
+        "trusted semantic job must have the complete least-privilege permission map",
+    )
+    test.assertIn("GH_TOKEN: ${{ github.token }}", trusted_block)
+
+
+def assert_data_only_hosted_boundary(
+    test: unittest.TestCase, name: str, raw: str | None = None
+) -> None:
+    raw = raw or (WORKFLOWS / name).read_text(encoding="utf-8")
+
+    def checkout(step_name: str, ref: str, path: str) -> None:
+        match = re.search(
+            rf"(?ms)^      - name: {re.escape(step_name)}.*?(?=^      - |\\Z)", raw
+        )
+        test.assertIsNotNone(match, f"{name} must retain {step_name!r}")
+        block = match.group(0)
+        test.assertIn(f"ref: ${{{{ {ref} }}}}", block)
+        test.assertIn(f"path: {path}", block)
+        test.assertIn("persist-credentials: false", block)
+
+    if name == "issue-2176-grpc-deny-gate.yml":
+        checkout("Checkout protected-base verifier", "github.event.pull_request.base.sha", "trusted-base")
+        checkout("Checkout exact candidate head as inert data", "github.event.pull_request.head.sha", "candidate")
+        test.assertIn("github.repository_id == '1232040291'", raw)
+        test.assertIn("--trusted-base trusted-base", raw)
+        test.assertIn("--candidate candidate", raw)
+        test.assertIn("trusted-base/scripts/verify_i2176_grpc_deny_gate.py", raw)
+        test.assertIn("trusted-base/tests/test_verify_i2176_grpc_deny_gate.py", raw)
+    else:
+        checkout("Checkout trusted tooling", "github.event.pull_request.base.sha || github.sha", ".trusted")
+        checkout("Checkout pull-request tree as data", "github.event.pull_request.head.sha", ".candidate")
+        test.assertIn("${GITHUB_WORKSPACE}/.trusted/scripts/validate_secrets_matrix.py", raw)
+        test.assertIn("${GITHUB_WORKSPACE}/.trusted/scripts/check-env-contract.py", raw)
+        test.assertIn("${GITHUB_WORKSPACE}/.trusted/scripts/secrets-checklist-verify.sh", raw)
 
 
 def assert_welcome_boundary(test: unittest.TestCase, workflow: dict) -> None:
@@ -748,6 +811,8 @@ jobs:
                     assert_file_size_boundary(self, workflow)
                 elif name == "backlog-verify.yml":
                     assert_backlog_verify_boundary(self, workflow)
+                elif name in {"issue-2176-grpc-deny-gate.yml", "secrets-drift.yml"}:
+                    assert_data_only_hosted_boundary(self, name)
                 elif name in {"dependabot-policy.yml", "welcome-first-pr.yml"}:
                     # The sentinel and greeting lanes have distinct public
                     # purposes; their runner is checked by assert_runners.
@@ -769,6 +834,55 @@ jobs:
                 assert_transition_runner(
                     self, welcome.get("runs-on"), ["self-hosted", "mac", "corelink-builder"]
                 )
+
+    def test_data_only_hosted_boundaries_reject_ref_and_trusted_source_swaps(self) -> None:
+        cases = (
+            (
+                "issue-2176-grpc-deny-gate.yml",
+                "github.event.pull_request.base.sha",
+                "github.event.pull_request.head.sha",
+                "trusted-base/scripts/verify_i2176_grpc_deny_gate.py",
+                "candidate/scripts/verify_i2176_grpc_deny_gate.py",
+            ),
+            (
+                "secrets-drift.yml",
+                "github.event.pull_request.base.sha || github.sha",
+                "github.event.pull_request.head.sha",
+                "${GITHUB_WORKSPACE}/.trusted/scripts/validate_secrets_matrix.py",
+                "${GITHUB_WORKSPACE}/.candidate/scripts/validate_secrets_matrix.py",
+            ),
+        )
+        for name, trusted_ref, candidate_ref, trusted_source, candidate_source in cases:
+            raw = (WORKFLOWS / name).read_text(encoding="utf-8")
+            with self.subTest(name=name, mutant="swap checkout refs"), self.assertRaises(AssertionError):
+                assert_data_only_hosted_boundary(self, name, raw.replace(trusted_ref, candidate_ref, 1))
+            with self.subTest(name=name, mutant="swap trusted command source"), self.assertRaises(AssertionError):
+                assert_data_only_hosted_boundary(self, name, raw.replace(trusted_source, candidate_source, 1))
+
+    def test_backlog_verify_token_boundary_is_job_scoped(self) -> None:
+        workflow = load_workflow("backlog-verify.yml")
+        raw = (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
+        assert_backlog_verify_boundary(self, workflow, raw)
+        with self.assertRaises(AssertionError):
+            assert_backlog_verify_boundary(
+                self,
+                workflow,
+                raw.replace("jobs:\n  verify:", "jobs:\n  verify:\n    env:\n      GH_TOKEN: forbidden", 1),
+            )
+        trusted_token = raw.replace(
+            "GH_TOKEN: ${{ github.token }}", "GH_TOKEN: ${{ github.token }}", 1
+        )
+        assert_backlog_verify_boundary(self, workflow, trusted_token)
+        with self.assertRaises(AssertionError):
+            assert_backlog_verify_boundary(
+                self,
+                workflow,
+                raw.replace(
+                    "      vulnerability-alerts: read",
+                    "      vulnerability-alerts: read\n      issues: write",
+                    1,
+                ),
+            )
 
     def test_fabric_jobs_allow_only_trusted_associations(self) -> None:
         assert_labels_boundary(self, load_workflow("pr-labels.yml"))
