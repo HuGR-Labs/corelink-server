@@ -12,6 +12,7 @@ on:
       - "scripts/probe-cargo-cache-latency.sh"
       - "scripts/probe_i1671_b129.py"
       - "scripts/test_b103_b129_attribution.py"
+      - ".github/workflows/issue-1671-b129-diagnostic.yml"
       - "scripts/verify_b103_b129_attribution.py"
       - "tests/test_probe_i1671_b129.py"
       - "worker/src/index.ts"

@@ -43,7 +43,9 @@ concurrency:
 
 jobs:
   probe:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected }}
     runs-on: ubuntu-24.04
+    environment: production
     timeout-minutes: 8
     steps:
       - name: Checkout without write credentials
@@ -61,6 +63,7 @@ jobs:
           CORELINK_DEPLOYED_COMMIT: ${{ inputs.deployed_sha }}
           OWNER_APPROVED_PROBE: ${{ inputs.owner_approved_probe }}
           DEPLOYED_SERVER_TIMING_WDB_DETAIL: ${{ inputs.deployed_server_timing_wdb_detail }}
+          CORELINK_PERF_BASE: ${{ vars.CORELINK_PERF_BASE }}
           CORELINK_DOGFOOD_PAT: ${{ secrets.CORELINK_DOGFOOD_PAT }}
         run: |
           set -euo pipefail

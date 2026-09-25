@@ -153,6 +153,26 @@ def request(url: urllib.parse.SplitResult, token: str) -> tuple[int, dict[str, s
         conn.close()
 
 
+def _https_origin(value: str, label: str) -> str:
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment or not parsed.hostname:
+        fail(f"{label} must be an HTTPS origin without credentials, path, query, or fragment")
+    port = parsed.port
+    authority = parsed.hostname.lower()
+    if port not in (None, 443):
+        authority += f":{port}"
+    return f"https://{authority}"
+
+
+def resolve_target_origin(requested: str, configured: str) -> str:
+    """Require the dispatch target to match the protected production setting."""
+    target_origin = _https_origin(requested, "target")
+    configured_origin = _https_origin(configured, "CORELINK_PERF_BASE")
+    if target_origin != configured_origin:
+        fail("probe target does not match configured production origin")
+    return target_origin
+
+
 def validate_sample(status: int, headers: dict[str, str], values: dict[str, float], wall: float, deployed_sha: str, deployed_region: str) -> float:
     wire_sha = headers.get("x-corelink-deployed-sha") or headers.get("x-corelink-deployed-commit")
     if not wire_sha or wire_sha.lower() != deployed_sha.lower():
@@ -197,10 +217,9 @@ def main() -> int:
     token = os.environ.get("CORELINK_DOGFOOD_PAT")
     if not token:
         fail("CORELINK_DOGFOOD_PAT is required")
-    target = urllib.parse.urlsplit(args.target)
-    if target.scheme != "https" or target.username or target.password or target.path not in ("", "/") or target.query or target.fragment or not target.hostname:
-        fail("target must be an HTTPS origin without credentials, query, or fragment")
-    base = args.target.rstrip("/") + "/cargo/" + args.tenant + "/" + args.cargo_key
+    target_origin = resolve_target_origin(args.target, os.environ.get("CORELINK_PERF_BASE", ""))
+    target = urllib.parse.urlsplit(target_origin)
+    base = target_origin + "/cargo/" + args.tenant + "/" + args.cargo_key
     url = urllib.parse.urlsplit(base)
     if args.samples < 1 or args.samples > 10:
         fail("sample count must be between 1 and 10")
