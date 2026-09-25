@@ -59,6 +59,22 @@ copy_fixture "${TMP}/helper"
 sed -i.bak 's#python3 scripts/smoke_install_observe.py#python3 scripts/missing_observer.py#' "${TMP}/helper/.github/workflows/smoke-install.yml"
 expect_red helper "${TMP}/helper"
 
+copy_fixture "${TMP}/helper-always"
+sed -i.bak '/      - name: Observe process/{n;s/if: \${{ always() }}/if: \${{ success() }}/;}' "${TMP}/helper-always/.github/workflows/smoke-install.yml"
+expect_red helper-always "${TMP}/helper-always"
+
+copy_fixture "${TMP}/upload-always"
+sed -i.bak '/      - name: Upload structured observation/{n;s/if: \${{ always() }}/if: \${{ success() }}/;}' "${TMP}/upload-always/.github/workflows/smoke-install.yml"
+expect_red upload-always "${TMP}/upload-always"
+
+copy_fixture "${TMP}/upload-action"
+sed -i.bak 's#uses: actions/upload-artifact@#uses: actions/download-artifact@#' "${TMP}/upload-action/.github/workflows/smoke-install.yml"
+expect_red upload-action "${TMP}/upload-action"
+
+copy_fixture "${TMP}/upload-path"
+sed -i.bak 's#path: artifacts/i1672/#path: artifacts/missing/#' "${TMP}/upload-path/.github/workflows/smoke-install.yml"
+expect_red upload-path "${TMP}/upload-path"
+
 copy_fixture "${TMP}/receipt"
 sed -i.bak 's#--receipt artifacts/i1672/smoke-install-receipt.json#--receipt artifacts/i1672/receipt.json#' "${TMP}/receipt/.github/workflows/smoke-install.yml"
 expect_red receipt "${TMP}/receipt"

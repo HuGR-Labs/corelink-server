@@ -157,6 +157,36 @@ def require_run_on_hosted(text: str, where: str) -> None:
         )
 
 
+def workflow_steps(text: str) -> list[tuple[str, str]]:
+    """Return named step blocks from the workflow's four-space job layout."""
+
+    steps: list[tuple[str, str]] = []
+    name: str | None = None
+    block: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("      - name: "):
+            if name is not None:
+                steps.append((name, "\n".join(block)))
+            name = line.removeprefix("      - name: ")
+            block = [line]
+        elif name is not None and (not line.strip() or len(line) - len(line.lstrip()) > 6):
+            block.append(line)
+        elif name is not None:
+            steps.append((name, "\n".join(block)))
+            name = None
+            block = []
+    if name is not None:
+        steps.append((name, "\n".join(block)))
+    return steps
+
+
+def named_step(text: str, name: str, where: str) -> str:
+    matches = [block for step_name, block in workflow_steps(text) if step_name == name]
+    if len(matches) != 1:
+        raise ContractError(f"{where}: expected one step named {name!r}, got {len(matches)}")
+    return matches[0]
+
+
 def check_smoke(text: str) -> None:
     where = WORKFLOW_FILES["smoke-install"]
     script = executable_script(run_blocks(text))
@@ -176,8 +206,17 @@ def check_smoke(text: str) -> None:
     require_exec_line(script, 'exit "${rc}"', where)
     require_exec_line(script, "python3 scripts/smoke_install_observe.py \\", where)
     require_exec_line(script, "--receipt artifacts/i1672/smoke-install-receipt.json", where)
-    require(text, "if: ${{ always() }}", where)
-    require(text, "upload-artifact@", where)
+    helper_step = named_step(
+        text,
+        "Observe process, readiness, endpoint, death, timeout, and cleanup",
+        where,
+    )
+    require_line(helper_step, r"^\s*if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$", where)
+    upload_step = named_step(text, "Upload structured observation", where)
+    require_line(upload_step, r"^\s*if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$", where)
+    require_line(upload_step, r"^\s*uses:\s*actions/upload-artifact@[a-f0-9]{40}\s*$", where)
+    require_line(upload_step, r"^\s*path:\s*artifacts/i1672/\s*$", where)
+    require_line(upload_step, r"^\s*if-no-files-found:\s*error\s*$", where)
     if re.search(r"(?i)secrets\.|CORELINK_CANARY_PAT|CORELINK_TEST_TOKEN|docker build|docker run|corelink doctor", text):
         raise ContractError(f"{where}: credentialed install claims do not belong in the contract-free observation")
 
