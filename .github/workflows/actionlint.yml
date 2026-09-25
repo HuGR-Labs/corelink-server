@@ -79,7 +79,18 @@ jobs:
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # PR checks compare the candidate against the immutable base revision. This
+      # allows independent cleanup PRs to remove inherited findings while still
+      # rejecting any finding introduced by the candidate.
+      - name: Checkout pull-request baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
           persist-credentials: false
 
       # Use the official pinned 1.7.12 release installer when the runner image
@@ -123,7 +134,13 @@ jobs:
       # keeps in sync. Fails closed if it inspects zero self-hosted jobs.
       - name: Self-hosted jobs must not provision a Rust toolchain
         shell: bash
-        run: python3 scripts/validate_no_shared_rustup_mutation.py
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            python3 scripts/validate_no_shared_rustup_mutation.py \
+              --baseline-workflows baseline/.github/workflows
+          else
+            python3 scripts/validate_no_shared_rustup_mutation.py
+          fi
 
       # A `paths:` glob that matches nothing does not fail — it just stops
       # triggering its workflow, which looks exactly like "no problem found".
