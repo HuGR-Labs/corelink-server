@@ -89,7 +89,9 @@ export async function runScheduled(controller: ScheduledController, env: Env): P
           terminalReceipt["scheduled_at_ms"] !== controller.scheduledTime ||
           terminalReceipt["worker_revision"] !== expectedWorkerRevision ||
           terminalReceipt["serving_sha"] !== expectedServingSha ||
-          typeof terminalReceipt["receiver_worker_revision"] !== "string") {
+          typeof terminalReceipt["receiver_worker_revision"] !== "string" ||
+          terminalReceipt["receiver_worker_revision"].length < 1 ||
+          terminalReceipt["receiver_worker_revision"].length > 200) {
         console.error(`[scheduled_drill] failed drill=${drill} reason=terminal_receipt_invalid`);
         throw new Error("scheduled drill terminal receipt invalid");
       }

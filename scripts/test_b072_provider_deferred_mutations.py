@@ -22,6 +22,7 @@ def main() -> None:
         "correlation": ("scheduler", REQUIRED["scheduler correlation check"]),
         "execution time": ("scheduler", REQUIRED["scheduler execution check"]),
         "serving SHA": ("scheduler", REQUIRED["scheduler serving SHA check"]),
+        "scheduler receiver revision": ("scheduler", REQUIRED["scheduler receiver revision bounds"]),
         "receiver revision": ("receiver", REQUIRED["receiver revision fail-closed"]),
         "idempotent readback": ("receiver", REQUIRED["replay equality"]),
         "audit write": ("receiver", REQUIRED["audit on durable receipt"]),

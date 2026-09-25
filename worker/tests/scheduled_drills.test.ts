@@ -138,6 +138,20 @@ describe("scheduled drill delivery", () => {
     expect(error).toHaveBeenCalledWith("[scheduled_drill] failed drill=synthetic_page reason=terminal_receipt_invalid");
   });
 
+  it("rejects provider-deferred terminal receipts with a missing receiver revision", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
+      terminal: true, outcome: "provider_deferred", receiver_result: "persisted_provider_deferred",
+      drill_id: TEST_DRILL_ID, correlation_id: `PAT-CORRELATION-ID-001:${TEST_DRILL_ID}`,
+      scheduled_at_ms: TEST_SCHEDULED_AT_MS, worker_revision: "0123456789abcdef0123456789abcdef01234567",
+      serving_sha: "0123456789abcdef0123456789abcdef01234567", receiver_worker_revision: "",
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(workerHandler.scheduled!(controllerFor("0 14 * * 1"), envWithProviderDeferred(fetch), scheduledCtx()))
+      .rejects.toThrow("scheduled drill terminal receipt invalid");
+    expect(error).toHaveBeenCalledWith("[scheduled_drill] failed drill=synthetic_page reason=terminal_receipt_invalid");
+  });
+
   it("fails closed when the delivery binding is absent", async () => {
     const controller = controllerFor("0 14 * * 1");
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
