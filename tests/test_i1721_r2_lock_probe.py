@@ -75,12 +75,17 @@ class I1721R2LockProbeTests(unittest.TestCase):
     def test_hosted_contract_remains_staging_only_and_pinned(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         probe = PROBE.read_text(encoding="utf-8")
+        preflight = workflow.split("  preflight:", 1)[1].split("  proof:", 1)[0]
         self.assertIn("pull_request:", workflow)
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("environment: staging", workflow)
         self.assertIn("runs-on: ubuntu-24.04", workflow)
         self.assertIn("terraform_version: '1.11.4'", workflow)
         self.assertIn("if-no-files-found: error", workflow)
+        self.assertIn("actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", preflight)
+        self.assertIn("ref: ${{ github.sha }}", preflight)
+        self.assertIn("persist-credentials: false", preflight)
+        self.assertIn("bash scripts/validate_i1721_r2_dispatch.sh", preflight)
         self.assertIn("corelink-terraform-staging-state", probe)
         self.assertIn("corelink/issue-1721/$run/terraform.tfstate", probe)
         self.assertIn("use_lockfile=true", probe)
