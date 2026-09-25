@@ -9,6 +9,10 @@ the redacted receipt path. It does not provision or rotate production keys,
 read D1 or R2, exercise a Worker, prove that a retention horizon elapsed, or
 complete the real custody ceremony for #1794.
 
+Witness receipt signing seeds are never supplied to this drill. Their custody
+belongs to the separate Security-administered #1793 boundary; this receipt is
+not evidence for witness deployment, witness-key rotation, or its retention.
+
 The environment's existing reviewer list, self-review prevention, administrator
 bypass prohibition, and `main` branch policy are prerequisites. The GitHub
 environment approval gate requires an approval from a configured reviewer;

@@ -67,6 +67,16 @@ def main() -> int:
         must_reject("scanner ignores base64 key material", mutant)
 
         mutant = dict(baseline)
+        mutant["scanner"] = mutant["scanner"].replace(
+            'base64.urlsafe_b64encode(raw).rstrip(b"=")', "b''", 1
+        )
+        must_reject("scanner ignores unpadded base64 key material", mutant)
+
+        mutant = dict(baseline)
+        mutant["test"] = mutant["test"].replace('"malformed_encoding"', '"accepted"', 1)
+        must_reject("malformed historic key is not classified indeterminate", mutant)
+
+        mutant = dict(baseline)
         mutant["doc"] = mutant["doc"].replace(
             "self-review prevention", "self-review allowed"
         )
@@ -79,7 +89,7 @@ def main() -> int:
         print(f"B-054 custody mutation contract: FAIL ({error})", file=sys.stderr)
         return 1
 
-    print("B-054 custody mutation contract: PASS (9 unsafe mutations rejected)")
+    print("B-054 custody mutation contract: PASS (11 unsafe mutations rejected)")
     return 0
 
 

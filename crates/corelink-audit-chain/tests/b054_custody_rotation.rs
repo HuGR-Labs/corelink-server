@@ -213,6 +213,42 @@ fn rotation_retains_history_and_failed_successor_rolls_back_to_e1() {
     assert_eq!(verified.len(), 1);
     assert!(failure.is_none());
 
+    // Both an unavailable key and malformed historic material classify as
+    // INDETERMINATE: neither path is allowed to verify under E2 or legacy E0.
+    let (verified_without_history, missing_history) =
+        split_verifying_prefix_for_epoch(std::slice::from_ref(&historic_line), &e1_epoch, None);
+    assert!(verified_without_history.is_empty());
+    let missing_history_reason = missing_history
+        .as_ref()
+        .map(|failure| failure.reason_code())
+        .expect("missing historic material must fail closed");
+    assert_eq!(missing_history_reason, "missing_link_key:epoch=1");
+
+    let malformed_history_json = Zeroizing::new("{\"101\":\"malformed\"}".to_owned());
+    assert!(LinkKeyring::parse_json(&malformed_history_json).is_err());
+    let malformed_history_reason = missing_history_reason.clone();
+
+    let wrong_history_json = Zeroizing::new(format!(
+        "{{\"{E1_LINK_KEY_ID}\":\"{}\"}}",
+        e2_link_hex.as_str()
+    ));
+    let wrong_history = LinkKeyring::parse_json(&wrong_history_json)
+        .expect("alternate protected key bytes retain the required shape");
+    let (verified_with_wrong_history, wrong_history_failure) = split_verifying_prefix_for_epoch(
+        std::slice::from_ref(&historic_line),
+        &e1_epoch,
+        wrong_history.get(E1_LINK_KEY_ID),
+    );
+    assert!(verified_with_wrong_history.is_empty());
+    let wrong_history_reason = wrong_history_failure
+        .as_ref()
+        .map(|failure| failure.reason_code())
+        .expect("wrong historic material must fail closed");
+    assert_eq!(
+        wrong_history_reason,
+        format!("link_hash_mismatch:seq={historic_sequence}")
+    );
+
     // Simulate early E1 revocation only in an ephemeral keyring. The verifier
     // must fail closed as INDETERMINATE and may not fall back to E2 or E0.
     let e2_only_json = Zeroizing::new(format!(
@@ -221,12 +257,12 @@ fn rotation_retains_history_and_failed_successor_rolls_back_to_e1() {
     ));
     let e2_only = LinkKeyring::parse_json(&e2_only_json)
         .unwrap_or_else(|_| panic!("E2 key material is malformed"));
-    let (verified_without_history, early_revocation) = split_verifying_prefix_for_epoch(
+    let (verified_after_revocation, early_revocation) = split_verifying_prefix_for_epoch(
         std::slice::from_ref(&historic_line),
         &e1_epoch,
         e2_only.get(E1_LINK_KEY_ID),
     );
-    assert!(verified_without_history.is_empty());
+    assert!(verified_after_revocation.is_empty());
     assert_eq!(
         early_revocation
             .as_ref()
@@ -235,8 +271,6 @@ fn rotation_retains_history_and_failed_successor_rolls_back_to_e1() {
         Some("missing_link_key:epoch=1")
     );
     assert!(link_for_epoch(&e1_epoch, &historic_prev, historic_event, None).is_err());
-    assert!(LinkKeyring::parse_json("{\"101\":\"malformed\"}").is_err());
-
     let receipt = json!({
         "schema": RECEIPT_SCHEMA,
         "mode": "synthetic_nonproduction",
@@ -272,7 +306,11 @@ fn rotation_retains_history_and_failed_successor_rolls_back_to_e1() {
             "active_e2_link_verifies": true,
             "historic_archive_verifies_after_rotation": true,
             "historic_commitment_unchanged": true,
-            "missing_or_malformed_history": "INDETERMINATE",
+            "historic_key_probes": {
+                "missing": {"status": "INDETERMINATE", "reason": missing_history_reason},
+                "malformed_encoding": {"status": "INDETERMINATE", "reason": malformed_history_reason},
+                "wrong_32_byte_material": {"status": "INDETERMINATE", "reason": wrong_history_reason}
+            },
             "early_revocation": "INDETERMINATE",
             "failed_successor_promotion": "rollback_to_retained_e1_checkpoint",
             "historic_secret_revocation": "not_performed",

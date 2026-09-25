@@ -107,7 +107,9 @@ def assess(files: dict[str, str]) -> None:
         "ChainEpoch::keyed_successor",
         "LinkKeyring::parse_json",
         "split_verifying_prefix_for_epoch",
-        "missing_or_malformed_history",
+        "historic_key_probes",
+        '"malformed_encoding"',
+        '"status": "INDETERMINATE"',
         "rollback_to_retained_e1_checkpoint",
         "full_retention_horizon_elapsed",
         "Zeroizing",
@@ -124,7 +126,9 @@ def assess(files: dict[str, str]) -> None:
         '["git", "ls-files", "-z"]',
         "bytes.fromhex(value)",
         "base64.b64encode(raw)",
+        'base64.b64encode(raw).rstrip(b"=")',
         "base64.urlsafe_b64encode(raw)",
+        'base64.urlsafe_b64encode(raw).rstrip(b"=")',
         "value.upper().encode(\"ascii\")",
         "approval receipt",
         "redacted receipt",
@@ -141,6 +145,7 @@ def assess(files: dict[str, str]) -> None:
         "Never overwrite E1",
         "does not provision or rotate production keys",
         "retention horizon has not elapsed",
+        "separate Security-administered #1793 boundary",
     ):
         if token not in normalized_doc:
             raise ContractError(f"operator procedure is missing {token!r}")

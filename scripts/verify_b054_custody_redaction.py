@@ -51,7 +51,9 @@ def protected_values() -> list[bytes]:
                 value.upper().encode("ascii"),
                 raw,
                 base64.b64encode(raw),
+                base64.b64encode(raw).rstrip(b"="),
                 base64.urlsafe_b64encode(raw),
+                base64.urlsafe_b64encode(raw).rstrip(b"="),
             )
         )
     return values
