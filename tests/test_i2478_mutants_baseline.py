@@ -20,6 +20,7 @@ from scripts.verify_i2478_mutants_baseline import (
     build_plan,
     digest,
     membership,
+    run_shard,
     validate_plan,
 )
 
@@ -88,6 +89,47 @@ class BaselineMappingTests(unittest.TestCase):
         plan["entries"].pop()
         with self.assertRaisesRegex(VerificationError, "digest"):
             validate_plan(plan)
+
+    def test_run_shard_executes_workspace_relative_binary_from_package_directory(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = root / "workspace"
+            target = workspace / "target"
+            package = workspace / "crates" / "pkg"
+            package.mkdir(parents=True)
+            plan = self.plan()
+            for entry in membership(plan["entries"], 0):
+                executable = target / entry["executable"]
+                executable.parent.mkdir(parents=True, exist_ok=True)
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                os.chmod(executable, 0o755)
+            plan_path = root / "plan.json"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            output = root / "receipt.json"
+
+            run_shard(Namespace(plan=plan_path, workspace=workspace, target_dir=target, sha=self.sha, run_id=self.run_id, run_attempt=1, shard=0, out=output))
+
+            receipt = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(receipt["status"], "success")
+            self.assertEqual(receipt["completed_entry_ids"], receipt["entry_ids"])
+
+    def test_run_shard_writes_failure_receipt_when_binary_is_missing(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = root / "workspace"
+            (workspace / "crates" / "pkg").mkdir(parents=True)
+            target = workspace / "target"
+            plan = self.plan()
+            plan_path = root / "plan.json"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            output = root / "receipt.json"
+
+            with self.assertRaisesRegex(SystemExit, "failed entries"):
+                run_shard(Namespace(plan=plan_path, workspace=workspace, target_dir=target, sha=self.sha, run_id=self.run_id, run_attempt=1, shard=0, out=output))
+
+            receipt = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(receipt["status"], "failure")
+            self.assertEqual(receipt["failed_entry_ids"], receipt["entry_ids"])
 
     def test_aggregate_rejects_missing_or_unsuccessful_coverage(self) -> None:
         plan = self.plan()

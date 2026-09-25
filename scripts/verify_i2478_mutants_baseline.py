@@ -159,12 +159,14 @@ def run_shard(args: argparse.Namespace) -> None:
     plan = read(args.plan)
     entries = validate_plan(plan)
     require(plan.get("sha") == args.sha and plan.get("run_id") == args.run_id and plan.get("run_attempt") <= args.run_attempt, "baseline plan is not from this run lineage")
+    target_dir = args.target_dir.resolve()
     selected = membership(entries, args.shard)
     completed: list[str] = []
     failed: list[str] = []
     for entry in selected:
         if entry["kind"] == "binary":
-            executable = args.target_dir / entry["executable"]
+            executable = (target_dir / entry["executable"]).resolve()
+            require(executable.is_relative_to(target_dir), "baseline executable escapes target directory")
             command = [str(executable)]
             cwd = args.workspace / entry["working_directory"]
             if not executable.is_file():
@@ -173,7 +175,13 @@ def run_shard(args: argparse.Namespace) -> None:
         else:
             command = ["cargo", "test", "--locked", "--package", entry["package"], "--doc"]
             cwd = args.workspace
-        result = subprocess.run(command, cwd=cwd, check=False)
+        try:
+            result = subprocess.run(command, cwd=cwd, check=False)
+        except OSError:
+            # Keep a failure receipt even if a binary disappears or cannot be
+            # launched after the presence check. The workflow still fails closed.
+            failed.append(entry["id"])
+            continue
         (completed if result.returncode == 0 else failed).append(entry["id"])
     receipt = {
         "schema": SHARD_SCHEMA,
