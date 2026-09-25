@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - BACKLOG.md
+      - docs/campaigns/remediation/BACKLOG-WP-LEDGER.md
+      - docs/campaigns/remediation/backlog-ledger-snapshot-v0009.json
+      - scripts/backlog_ledger_successor.py
+      - scripts/verify_b057_ledger_successor.py
       - scripts/verify_b057_sli.py
       - tests/test_b057_sli_contract.py
       - .github/workflows/issue-2416-b057-python.yml
@@ -33,7 +37,7 @@ jobs:
           repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Require checkout and event to match the exact candidate
         shell: bash
@@ -55,3 +59,21 @@ jobs:
 
       - name: Run B-057 mutation contract tests
         run: python3 -S tests/test_b057_sli_contract.py
+
+      - name: Verify exact B-057 ledger successor
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            git worktree add --detach "$RUNNER_TEMP/issue-2416-trusted-base" "$PR_BASE_SHA"
+            python3 -S scripts/verify_b057_ledger_successor.py \
+              --expected-head "$EXPECTED_SHA" \
+              --expected-base "$PR_BASE_SHA" \
+              --trusted-root "$RUNNER_TEMP/issue-2416-trusted-base"
+          else
+            python3 -S scripts/verify_b057_ledger_successor.py \
+              --expected-head "$EXPECTED_SHA"
+          fi
