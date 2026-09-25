@@ -1,49 +1,44 @@
 name: i1664 GPG release identity audit
 
+# Keep this workflow disabled in repository Actions settings by default. The
+# #2571 owner controls the one authorized live dispatch and re-disables it
+# afterward. Configure required reviewers on the release-key-audit environment.
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
   audit:
-    name: read public release-key identity
+    name: read and verify the existing release-key identity
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.repository_id == '1232040291' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' && github.ref_protected
+    environment: release-key-audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    env:
-      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+    permissions:
+      contents: read
     steps:
-      - name: Import the existing release key into an ephemeral keyring
+      - name: Check out the protected audit implementation
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Run the protected access audit
         shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${GPG_PRIVATE_KEY}"
-          test -n "${GPG_KEY_ID}"
-          export GNUPGHOME="${RUNNER_TEMP}/i1664-gpg-audit"
-          mkdir -p "${GNUPGHOME}"
-          chmod 700 "${GNUPGHOME}"
-          trap 'rm -rf "${GNUPGHOME}"' EXIT
-          printf '%s' "${GPG_PRIVATE_KEY}" | gpg --batch --import
-
-          fingerprint="$(gpg --with-colons --fingerprint "${GPG_KEY_ID}" | awk -F: '$1 == "fpr" {print $10; exit}')"
-          case "${fingerprint}" in
-            [0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]) ;;
-            *) echo '::error::release key has no valid public fingerprint' >&2; exit 1 ;;
-          esac
-          expected_key_id="${GPG_KEY_ID#0x}"
-          expected_key_id="${expected_key_id#0X}"
-          expected_key_id="${expected_key_id^^}"
-          if [[ ! "${expected_key_id}" =~ ^[0-9A-F]{16}$ ]]; then
-            echo '::error::GPG_KEY_ID must be exactly 16 hexadecimal characters' >&2
-            exit 1
-          fi
-          test "${fingerprint: -16}" = "${expected_key_id}"
-
-          expires_at="$(gpg --with-colons --list-keys "${GPG_KEY_ID}" | awk -F: '$1 == "pub" {print $7; exit}')"
-          test -n "${expires_at}"
-          test "${expires_at}" -gt "$(date +%s)"
-          printf 'fingerprint=%s\n' "${fingerprint}" >> "${GITHUB_STEP_SUMMARY}"
-          printf 'expires_at=%s\n' "$(date -u -d "@${expires_at}" +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_STEP_SUMMARY}"
-          echo "::notice title=Release GPG identity::fingerprint=${fingerprint}; expiry=$(date -u -d "@${expires_at}" +%Y-%m-%dT%H:%M:%SZ)"
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY_PASS: ${{ secrets.GPG_PRIVATE_KEY_PASS }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
+          RUNNER_TEMP: ${{ runner.temp }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: python3 -S scripts/run_i2587_gpg_audit.py
