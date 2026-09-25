@@ -6,6 +6,7 @@ on:
       - scripts/ops/stripe-reconcile-webhook-events.sh
       - scripts/ops/stripe_webhook_inventory.py
       - tests/test_stripe_webhook_inventory.py
+      - docs/handoff/2026-09-25-i1649-stripe-readback-ledger.md
       - .github/workflows/i1649-webhook-inventory-contract.yml
 
 permissions:
