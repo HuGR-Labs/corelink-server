@@ -70,7 +70,7 @@ jobs:
         run: |
           python3 scripts/check_migration_prefixes.py
           python3 scripts/check_migrations_additive.py
-          python3 -m pytest -q tests/test_issue_2623_ownership_contract.py
+          python3 -I tests/test_issue_2623_ownership_contract.py
 
       - name: Check formatting and compile shared Rust API
         run: |

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,36 +21,39 @@ def database() -> sqlite3.Connection:
     return db
 
 
-def test_r2_intent_requires_registration_before_commit() -> None:
-    db = database()
-    db.execute("INSERT INTO staging_load_test_r2_intents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", INTENT)
-    with __import__("pytest").raises(sqlite3.IntegrityError):
-        db.execute("UPDATE staging_load_test_r2_intents SET state='committed', committed_at_ms=102")
-    db.execute("INSERT INTO staging_load_test_resources VALUES (?, ?, ?, ?, ?, ?, ?, ?)", RESOURCE)
-    db.execute("UPDATE staging_load_test_r2_intents SET state='committed', committed_at_ms=102")
-    assert db.execute("SELECT state FROM staging_load_test_r2_intents").fetchone() == ("committed",)
-
-
-def test_r2_intent_rejects_wrong_run_rewrite_reverse_and_delete() -> None:
-    db = database()
-    db.execute("INSERT INTO staging_load_test_r2_intents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", INTENT)
-    for sql in (
-        "UPDATE staging_load_test_r2_intents SET run_id='999'",
-        "UPDATE staging_load_test_r2_intents SET state='committed', committed_at_ms=102",
-        "DELETE FROM staging_load_test_r2_intents",
-    ):
-        with __import__("pytest").raises(sqlite3.IntegrityError):
-            db.execute(sql)
-
-
-def test_r2_prepare_requires_exact_open_staging_identity() -> None:
-    for index, changed in enumerate(("wrong", "d" * 40)):
+class R2IntentContractTests(unittest.TestCase):
+    def test_r2_intent_requires_registration_before_commit(self) -> None:
         db = database()
-        values = list(INTENT)
-        values[0] = f"{index + 1:064x}"
-        if index == 0:
-            values[2] = changed
-        else:
-            values[3] = changed
-        with __import__("pytest").raises(sqlite3.IntegrityError):
-            db.execute("INSERT INTO staging_load_test_r2_intents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", values)
+        db.execute("INSERT INTO staging_load_test_r2_intents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", INTENT)
+        with self.assertRaises(sqlite3.IntegrityError):
+            db.execute("UPDATE staging_load_test_r2_intents SET state='committed', committed_at_ms=102")
+        db.execute("INSERT INTO staging_load_test_resources VALUES (?, ?, ?, ?, ?, ?, ?, ?)", RESOURCE)
+        db.execute("UPDATE staging_load_test_r2_intents SET state='committed', committed_at_ms=102")
+        self.assertEqual(db.execute("SELECT state FROM staging_load_test_r2_intents").fetchone(), ("committed",))
+
+    def test_r2_intent_rejects_wrong_run_rewrite_reverse_and_delete(self) -> None:
+        db = database()
+        db.execute("INSERT INTO staging_load_test_r2_intents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", INTENT)
+        for sql in (
+            "UPDATE staging_load_test_r2_intents SET run_id='999'",
+            "UPDATE staging_load_test_r2_intents SET state='committed', committed_at_ms=102",
+            "DELETE FROM staging_load_test_r2_intents",
+        ):
+            with self.subTest(sql=sql), self.assertRaises(sqlite3.IntegrityError):
+                db.execute(sql)
+
+    def test_r2_prepare_requires_exact_open_staging_identity(self) -> None:
+        for index, changed in enumerate(("wrong", "d" * 40)):
+            db = database()
+            values = list(INTENT)
+            values[0] = f"{index + 1:064x}"
+            if index == 0:
+                values[2] = changed
+            else:
+                values[3] = changed
+            with self.subTest(index=index), self.assertRaises(sqlite3.IntegrityError):
+                db.execute("INSERT INTO staging_load_test_r2_intents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", values)
+
+
+if __name__ == "__main__":
+    unittest.main()
