@@ -95,7 +95,7 @@ def validate_successful_receipt(
     total = 0
     count_indexes: set[int] = set()
     for item in per_shard_counts:
-        if not isinstance(item, dict) or not isinstance(item.get("index"), int) or item["index"] in count_indexes:
+        if not isinstance(item, dict) or isinstance(item.get("index"), bool) or not isinstance(item.get("index"), int) or item["index"] in count_indexes:
             raise ValueError("aggregate receipt has invalid per-shard occurrence identity")
         occurrences = item.get("occurrences")
         multiset_digest = item.get("multiset_digest")

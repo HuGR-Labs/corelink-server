@@ -116,6 +116,17 @@ class HostedReceiptValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "per-shard occurrence"):
             validate_successful_receipt(self.receipt, self.run, self.sha)
 
+    def test_rejects_boolean_per_shard_occurrence_index(self) -> None:
+        self.receipt["per_shard_occurrence_counts"][0]["index"] = False
+        self.receipt["coverage_digest"] = digest(
+            {
+                "mutant_counts": self.receipt["covered_mutant_counts"],
+                "per_shard_occurrence_counts": self.receipt["per_shard_occurrence_counts"],
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "per-shard occurrence identity"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+
 
 if __name__ == "__main__":
     unittest.main()
