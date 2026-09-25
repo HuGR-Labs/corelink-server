@@ -24,6 +24,9 @@ const immediateEnvelope = {
     rotation_week: 0,
     emit_at_ms: 1_785_765_600_000,
     delivery_mode: "immediate",
+    provider_mode: "pagerduty",
+    worker_revision: "",
+    serving_sha: "",
     dedup_key: drillId,
     correlation_id: correlation,
   },
@@ -42,7 +45,7 @@ const deferredEnvelope = {
   },
 } as const;
 
-function fakeDb(options: { row?: unknown; persistedOutcome?: string; rows?: unknown[]; failBatch?: boolean; failBatchAt?: number } = {}) {
+function fakeDb(options: { row?: unknown; persistedOutcome?: string; rows?: unknown[]; failBatch?: boolean; failBatchAt?: number; providerReceipt?: unknown; providerAudit?: boolean } = {}) {
   const calls: string[] = [];
   let batchNumber = 0;
   const run = vi.fn().mockResolvedValue({ success: true });
@@ -72,6 +75,8 @@ function fakeDb(options: { row?: unknown; persistedOutcome?: string; rows?: unkn
         first: vi.fn().mockImplementation(async () =>
           sql.includes("SELECT outcome FROM synthetic_page_drills_b072")
             ? options.persistedOutcome === undefined ? null : { outcome: options.persistedOutcome }
+            : sql.includes("FROM synthetic_page_provider_receipts") ? options.providerReceipt ?? null
+            : sql.includes("FROM synthetic_page_provider_audit_events") ? options.providerAudit ? { present: 1 } : null
             : options.row ?? null),
         run,
       })),
@@ -92,7 +97,7 @@ function env(overrides: Partial<ReceiverEnv> = {}, dbOptions: Parameters<typeof 
       PAGERDUTY_WEBHOOK_SECRET: "webhook-secret",
       CONFIG_DB: database.db,
       ...overrides,
-    } satisfies ReceiverEnv,
+  } satisfies ReceiverEnv,
     database,
   };
 }
@@ -209,6 +214,105 @@ describe("synthetic receiver contract", () => {
     expect(pagerDutyFetch).not.toHaveBeenCalled();
   });
 
+  it("records an explicit provider-deferred terminal receipt without PagerDuty credentials", async () => {
+    const receipt = {
+      drill_id: deferredDrillId,
+      scheduled_at_ms: deferredEnvelope.scheduled_at_ms,
+      correlation_id: deferredCorrelation,
+      provider_mode: "provider_deferred",
+      outcome: "provider_deferred",
+      scheduler_worker_revision: "cf-scheduler-version-7",
+      serving_sha: "0123456789abcdef0123456789abcdef01234567",
+      receiver_worker_revision: "cf-receiver-version-9",
+      receiver_result: "persisted_provider_deferred",
+    };
+    const receiver = env({
+      SYNTHETIC_DRILL_PROVIDER_MODE: "provider_deferred",
+      PAGERDUTY_EVENTS_URL: undefined,
+      PAGERDUTY_SERVICE: undefined,
+      PAGERDUTY_SYNTHETIC_ROUTING_KEY: undefined,
+      PAGERDUTY_WEBHOOK_SECRET: undefined,
+      CF_VERSION_METADATA: { id: "cf-receiver-version-9" },
+    }, { providerReceipt: receipt, providerAudit: true });
+    const pagerDutyFetch = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", pagerDutyFetch);
+    const requestEnvelope = {
+      ...deferredEnvelope,
+      synthetic_page: { ...deferredEnvelope.synthetic_page,
+        provider_mode: "provider_deferred" as const,
+        worker_revision: "cf-scheduler-version-7",
+        serving_sha: "0123456789abcdef0123456789abcdef01234567" },
+    };
+    const response = await invoke(request(requestEnvelope), receiver.value);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ terminal: true, outcome: "provider_deferred",
+      receiver_result: "persisted_provider_deferred", drill_id: deferredDrillId,
+      correlation_id: deferredCorrelation, serving_sha: receipt.serving_sha });
+    expect(pagerDutyFetch).not.toHaveBeenCalled();
+    expect(receiver.database.batch).toHaveBeenCalledTimes(2);
+    expect(receiver.database.prepare.mock.calls.some(([sql]) => String(sql).includes("synthetic_page_provider_audit_events"))).toBe(true);
+  });
+
+  it("rejects missing correlation/provenance and unexpected provider fields", () => {
+    const providerEnvelope = { ...deferredEnvelope, synthetic_page: { ...deferredEnvelope.synthetic_page,
+      provider_mode: "provider_deferred" as const, worker_revision: "cf-scheduler-version-7",
+      serving_sha: "0123456789abcdef0123456789abcdef01234567" } };
+    expect(parseSyntheticPageEnvelope({ ...providerEnvelope, synthetic_page: {
+      ...providerEnvelope.synthetic_page, correlation_id: "forged" } })).toBeNull();
+    expect(parseSyntheticPageEnvelope({ ...providerEnvelope, synthetic_page: {
+      ...providerEnvelope.synthetic_page, worker_revision: "" } })).toBeNull();
+    expect(parseSyntheticPageEnvelope({ ...providerEnvelope, synthetic_page: {
+      ...providerEnvelope.synthetic_page, serving_sha: "unknown" } })).toBeNull();
+    expect(parseSyntheticPageEnvelope({ ...providerEnvelope, synthetic_page: {
+      ...providerEnvelope.synthetic_page, terminal: true } })).toBeNull();
+  });
+
+  it("rejects a provider mode that differs from receiver configuration", async () => {
+    const receiver = env();
+    const fetchStub = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchStub);
+    const response = await invoke(request({ ...deferredEnvelope, synthetic_page: {
+      ...deferredEnvelope.synthetic_page, provider_mode: "provider_deferred" as const,
+      worker_revision: "cf-scheduler-version-7", serving_sha: "0123456789abcdef0123456789abcdef01234567" } }), receiver.value);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "provider_mode_mismatch" });
+    expect(receiver.database.batch).not.toHaveBeenCalled();
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it("does not persist terminal work when the receiver revision is unavailable", async () => {
+    const receiver = env({ SYNTHETIC_DRILL_PROVIDER_MODE: "provider_deferred",
+      PAGERDUTY_EVENTS_URL: undefined, PAGERDUTY_SERVICE: undefined,
+      PAGERDUTY_SYNTHETIC_ROUTING_KEY: undefined, PAGERDUTY_WEBHOOK_SECRET: undefined,
+      CF_VERSION_METADATA: undefined });
+    const response = await invoke(request({ ...deferredEnvelope, synthetic_page: {
+      ...deferredEnvelope.synthetic_page, provider_mode: "provider_deferred" as const,
+      worker_revision: "cf-scheduler-version-7", serving_sha: "0123456789abcdef0123456789abcdef01234567" } }), receiver.value);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: "provider_deferred_provenance_unavailable" });
+    expect(receiver.database.batch).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when provider-deferred provenance does not match the stored receipt", async () => {
+    const receiver = env({
+      SYNTHETIC_DRILL_PROVIDER_MODE: "provider_deferred",
+      PAGERDUTY_EVENTS_URL: undefined,
+      PAGERDUTY_SERVICE: undefined,
+      PAGERDUTY_SYNTHETIC_ROUTING_KEY: undefined,
+      PAGERDUTY_WEBHOOK_SECRET: undefined,
+      CF_VERSION_METADATA: { id: "cf-receiver-version-9" },
+    }, { providerReceipt: { drill_id: deferredDrillId, scheduled_at_ms: deferredEnvelope.scheduled_at_ms,
+      correlation_id: "wrong-correlation", provider_mode: "provider_deferred", outcome: "provider_deferred",
+      scheduler_worker_revision: "cf-scheduler-version-7", serving_sha: "0123456789abcdef0123456789abcdef01234567",
+      receiver_worker_revision: "cf-receiver-version-9", receiver_result: "persisted_provider_deferred" }, providerAudit: true });
+    const requestEnvelope = { ...deferredEnvelope, synthetic_page: { ...deferredEnvelope.synthetic_page,
+      provider_mode: "provider_deferred" as const, worker_revision: "cf-scheduler-version-7",
+      serving_sha: "0123456789abcdef0123456789abcdef01234567" } };
+    const response = await invoke(request(requestEnvelope), receiver.value);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: "provider_deferred_replay_mismatch" });
+  });
+
   it("executes deferred delivery and retries with identical dedup/correlation", async () => {
     const receiver = env({}, {
       rows: [{
@@ -233,6 +337,18 @@ describe("synthetic receiver contract", () => {
     expect(pagerDutyFetch.mock.calls[0]?.[1]?.body).toBe(pagerDutyFetch.mock.calls[1]?.[1]?.body);
     expect(receiver.database.batch).toHaveBeenCalledOnce();
     expect(receiver.database.calls).toContain("batch");
+  });
+
+  it("never runs the deferred PagerDuty sweep in provider-deferred mode", async () => {
+    const receiver = env({ SYNTHETIC_DRILL_PROVIDER_MODE: "provider_deferred",
+      PAGERDUTY_SYNTHETIC_ROUTING_KEY: undefined }, { rows: [{ drill_id: deferredDrillId,
+      region: "boundary_handoff", emit_ts_ms: 1_788_134_340_000, scheduled_at_ms: 1_787_580_000_000,
+      correlation_id: deferredCorrelation, delivery_mode: "deferred", delivered_at_ms: null }] });
+    const pagerDutyFetch = vi.fn<typeof fetch>();
+    await expect(runDeferredDeliveries({ cron: "59 23 * * 0", scheduledTime: 1_788_134_340_000 } as ScheduledController,
+      receiver.value, pagerDutyFetch)).resolves.toBeUndefined();
+    expect(receiver.database.prepare).not.toHaveBeenCalled();
+    expect(pagerDutyFetch).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown receiver cron without enumerating durable rows", async () => {

@@ -1,6 +1,7 @@
 name = "corelink-synthetic-pager"
 main = "src/index.ts"
 compatibility_date = "2026-04-01"
+version_metadata = { binding = "CF_VERSION_METADATA" }
 workers_dev = false
 
 # Sunday 23:59 UTC is the deferred boundary-handoff delivery window. The

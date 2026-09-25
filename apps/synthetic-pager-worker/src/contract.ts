@@ -8,6 +8,10 @@ export const SYNTHETIC_CORRELATION_PREFIX = "PAT-CORRELATION-ID-001:" as const;
 
 export type SyntheticRegion = "americas" | "emea" | "apac" | "boundary_handoff";
 export type SyntheticDeliveryMode = "immediate" | "deferred";
+/** Explicit provider disposition; deferred mode never attempts alert delivery. */
+export type SyntheticProviderMode = "pagerduty" | "provider_deferred";
+/** Terminal D1 outcomes for provider-deferred receipts. */
+export type SyntheticTerminalOutcome = "provider_deferred";
 
 export interface SyntheticPagePayload {
   readonly service: typeof SYNTHETIC_SERVICE;
@@ -18,6 +22,9 @@ export interface SyntheticPagePayload {
   readonly rotation_week: 0 | 1 | 2 | 3;
   readonly emit_at_ms: number;
   readonly delivery_mode: SyntheticDeliveryMode;
+  readonly provider_mode: SyntheticProviderMode;
+  readonly worker_revision?: string;
+  readonly serving_sha?: string;
   readonly dedup_key: string;
   readonly correlation_id: string;
 }
@@ -32,11 +39,16 @@ export interface SyntheticPageEnvelope {
 export interface ReceiverEnv {
   readonly ENVIRONMENT?: string;
   readonly SYNTHETIC_DRILL_ENABLED?: string;
+  readonly SYNTHETIC_DRILL_PROVIDER_MODE?: "pagerduty" | "provider_deferred";
   readonly PAGERDUTY_EVENTS_URL?: string;
   readonly PAGERDUTY_SERVICE?: string;
   readonly PAGERDUTY_SYNTHETIC_ROUTING_KEY?: string;
   readonly PAGERDUTY_WEBHOOK_SECRET?: string;
   readonly CONFIG_DB?: D1Database;
+  /** Cloudflare deployment version identifier, supplied by version metadata. */
+  readonly CF_VERSION_METADATA?: { readonly id?: string };
+  /** Exact source commit SHA baked into the deployment. */
+  readonly SENTRY_RELEASE?: string;
 }
 
 export interface PagerDutyEvent {
@@ -79,6 +91,9 @@ const PAYLOAD_KEYS = [
   "rotation_week",
   "emit_at_ms",
   "delivery_mode",
+  "provider_mode",
+  "worker_revision",
+  "serving_sha",
   "dedup_key",
   "correlation_id",
 ] as const;
@@ -112,6 +127,7 @@ export function parseSyntheticPageEnvelope(value: unknown): SyntheticPageEnvelop
     ![0, 1, 2, 3].includes(page.rotation_week as number) ||
     !isInteger(page.emit_at_ms) ||
     !["immediate", "deferred"].includes(page.delivery_mode as string) ||
+    !["pagerduty", "provider_deferred"].includes((page.provider_mode ?? "pagerduty") as string) ||
     typeof page.dedup_key !== "string" ||
     page.dedup_key.length < 1 ||
     page.dedup_key.length > 200 ||
@@ -121,6 +137,10 @@ export function parseSyntheticPageEnvelope(value: unknown): SyntheticPageEnvelop
   ) {
     return null;
   }
+  const providerMode = page.provider_mode ?? "pagerduty";
+  if (providerMode === "provider_deferred" &&
+      (typeof page.worker_revision !== "string" || page.worker_revision.length < 1 || page.worker_revision.length > 200 ||
+       typeof page.serving_sha !== "string" || !/^[0-9a-f]{40}$/i.test(page.serving_sha))) return null;
   const scheduled = new Date(value.scheduled_at_ms);
   if (
     scheduled.getUTCDay() !== 1 ||
@@ -171,6 +191,9 @@ export function parseSyntheticPageEnvelope(value: unknown): SyntheticPageEnvelop
       rotation_week: page.rotation_week as 0 | 1 | 2 | 3,
       emit_at_ms: page.emit_at_ms,
       delivery_mode: page.delivery_mode as SyntheticDeliveryMode,
+      provider_mode: providerMode as SyntheticProviderMode,
+      worker_revision: typeof page.worker_revision === "string" ? page.worker_revision : undefined,
+      serving_sha: typeof page.serving_sha === "string" ? page.serving_sha : undefined,
       dedup_key: page.dedup_key,
       correlation_id: page.correlation_id,
     },
@@ -188,10 +211,13 @@ export function validateReceiverEnvironment(env: ReceiverEnv): string | null {
   }
   if (environment !== "dev" && environment !== "staging") return "unsupported receiver environment";
   if (env.SYNTHETIC_DRILL_ENABLED !== "true") return "synthetic drill receiver is disabled";
+  if (env.CONFIG_DB === undefined) return "synthetic drill database binding is unavailable";
+  if (env.SYNTHETIC_DRILL_PROVIDER_MODE === "provider_deferred") return null;
   if (env.PAGERDUTY_EVENTS_URL !== PAGERDUTY_EVENTS_URL) return "PagerDuty endpoint is not canonical";
   if (env.PAGERDUTY_SERVICE !== SYNTHETIC_SERVICE) return "PagerDuty service is not synthetic-drill";
-  if (!env.PAGERDUTY_SYNTHETIC_ROUTING_KEY?.trim()) return "synthetic routing key is unavailable";
-  if (env.CONFIG_DB === undefined) return "synthetic drill database binding is unavailable";
+  if (!env.PAGERDUTY_SYNTHETIC_ROUTING_KEY?.trim()) {
+    return "synthetic routing key is unavailable";
+  }
   return null;
 }
 

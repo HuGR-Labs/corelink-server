@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "captured_at": "2026-09-22T12:02:00Z",
+  "cron": "0 14 * * 1",
+  "correlation_id": "PAT-CORRELATION-ID-001:SP-1779105600000",
+  "scheduled_execution_id": "SP-1779105600000",
+  "scheduled_at_ms": 1779105600000,
+  "provider_mode": "provider_deferred",
+  "outcome": "provider_deferred",
+  "terminal_outcome": "provider_deferred",
+  "provider_delivery_claimed": false,
+  "receiver_run": "owner-held external-ref (redacted)",
+  "pagerduty_incident": null,
+  "d1_row": "owner-held external-ref (redacted)",
+  "worker_revision": "cf-scheduler-version-7",
+  "serving_sha": "0123456789abcdef0123456789abcdef01234567",
+  "receiver_worker_revision": "cf-receiver-version-9",
+  "receiver_result": "persisted_provider_deferred",
+  "terminal_at": "2026-09-22T12:01:00Z",
+  "operator": "owner-held operator"
+}

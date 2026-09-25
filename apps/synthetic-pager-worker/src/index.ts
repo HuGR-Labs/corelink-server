@@ -10,6 +10,7 @@ import {
   verifyPagerDutySignature,
   type ReceiverEnv,
   type SyntheticPageEnvelope,
+  type SyntheticTerminalOutcome,
 } from "./contract.js";
 
 const json = (body: unknown, status = 200): Response =>
@@ -28,6 +29,18 @@ type DrillRow = {
   delivered_at_ms: number | null;
 };
 
+type ProviderDeferredReceipt = {
+  drill_id: string;
+  scheduled_at_ms: number;
+  correlation_id: string;
+  provider_mode: "provider_deferred";
+  outcome: SyntheticTerminalOutcome;
+  scheduler_worker_revision: string;
+  serving_sha: string;
+  receiver_worker_revision: string;
+  receiver_result: "persisted_provider_deferred";
+};
+
 function pageForRow(row: DrillRow): SyntheticPageEnvelope {
   return {
     drill: "synthetic_page",
@@ -42,6 +55,9 @@ function pageForRow(row: DrillRow): SyntheticPageEnvelope {
       rotation_week: row.region === "boundary_handoff" ? 3 : 0,
       emit_at_ms: row.emit_ts_ms,
       delivery_mode: "deferred",
+      provider_mode: "pagerduty",
+      worker_revision: "",
+      serving_sha: "",
       dedup_key: row.drill_id,
       correlation_id: row.correlation_id,
     },
@@ -137,12 +153,82 @@ async function handleSyntheticPage(request: Request, env: ReceiverEnv): Promise<
   if (envelope === null || deliveryId !== envelope.synthetic_page.dedup_key) {
     return json({ error: "invalid_synthetic_page_contract" }, 400);
   }
+  const configuredProviderMode = env.SYNTHETIC_DRILL_PROVIDER_MODE ?? "pagerduty";
+  if (envelope.synthetic_page.provider_mode !== configuredProviderMode) {
+    return json({ error: "provider_mode_mismatch" }, 400);
+  }
+  const receiverRevision = env.CF_VERSION_METADATA?.id;
+  if (configuredProviderMode === "provider_deferred" &&
+      (receiverRevision === undefined || receiverRevision.length < 1 || receiverRevision.length > 200)) {
+    return json({ error: "provider_deferred_provenance_unavailable" }, 503);
+  }
 
   try {
     // Durable row + audit event are committed before any external page.
     await persistDelivery(env, envelope);
   } catch {
     return json({ error: "receiver_storage_unavailable" }, 503);
+  }
+
+  if (envelope.synthetic_page.provider_mode === "provider_deferred") {
+    const page = envelope.synthetic_page;
+    const schedulerRevision = page.worker_revision;
+    const servingSha = page.serving_sha;
+    if (schedulerRevision === undefined || servingSha === undefined || receiverRevision === undefined) {
+      return json({ error: "provider_deferred_provenance_unavailable" }, 503);
+    }
+    const receipt: ProviderDeferredReceipt = {
+      drill_id: deliveryId,
+      scheduled_at_ms: envelope.scheduled_at_ms,
+      correlation_id: page.correlation_id,
+      provider_mode: "provider_deferred",
+      outcome: "provider_deferred",
+      scheduler_worker_revision: schedulerRevision,
+      serving_sha: servingSha,
+      receiver_worker_revision: receiverRevision,
+      receiver_result: "persisted_provider_deferred",
+    };
+    const recordedAt = Date.now();
+    try {
+      await env.CONFIG_DB!.batch([
+        env.CONFIG_DB!.prepare(
+          `INSERT OR IGNORE INTO synthetic_page_provider_receipts
+             (drill_id, scheduled_at_ms, correlation_id, provider_mode, outcome,
+              scheduler_worker_revision, serving_sha, receiver_worker_revision,
+              receiver_result, recorded_at_ms)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE EXISTS (SELECT 1 FROM synthetic_page_drills_b072 WHERE drill_id = ? AND correlation_id = ?)`
+        ).bind(deliveryId, envelope.scheduled_at_ms, page.correlation_id, receipt.provider_mode,
+          receipt.outcome, schedulerRevision, servingSha, receiverRevision, receipt.receiver_result,
+          recordedAt, deliveryId, page.correlation_id),
+        env.CONFIG_DB!.prepare(
+          `INSERT OR IGNORE INTO synthetic_page_provider_audit_events
+             (event_id, drill_id, event_type, occurred_at_ms, correlation_id, source_event_id)
+           SELECT ?, ?, ?, ?, ?, ?
+            WHERE EXISTS (SELECT 1 FROM synthetic_page_provider_receipts
+                           WHERE drill_id = ? AND correlation_id = ? AND outcome = 'provider_deferred')`
+        ).bind(`provider-deferred:${deliveryId}`, deliveryId, receipt.outcome, recordedAt,
+          page.correlation_id, `provider-deferred:${deliveryId}`, deliveryId, page.correlation_id),
+      ]);
+    } catch {
+      return json({ error: "provider_deferred_receipt_unavailable" }, 503);
+    }
+    const persisted = await env.CONFIG_DB!.prepare(
+      `SELECT drill_id, scheduled_at_ms, correlation_id, provider_mode, outcome,
+              scheduler_worker_revision, serving_sha, receiver_worker_revision, receiver_result
+         FROM synthetic_page_provider_receipts WHERE drill_id = ?`
+    ).bind(deliveryId).first<ProviderDeferredReceipt>();
+    const audit = await env.CONFIG_DB!.prepare(
+      `SELECT 1 AS present FROM synthetic_page_provider_audit_events
+        WHERE drill_id = ? AND correlation_id = ? AND event_type = 'provider_deferred'`
+    ).bind(deliveryId, page.correlation_id).first<{ present: number }>();
+    if (persisted === null || audit === null) return json({ error: "provider_deferred_receipt_unavailable" }, 503);
+    const sameReceipt = Object.keys(receipt).every((key) =>
+      persisted[key as keyof ProviderDeferredReceipt] === receipt[key as keyof ProviderDeferredReceipt]);
+    if (!sameReceipt) return json({ error: "provider_deferred_replay_mismatch" }, 409);
+    return json({ terminal: true, outcome: "provider_deferred", receiver_result: receipt.receiver_result,
+      drill_id: deliveryId, correlation_id: page.correlation_id, scheduled_at_ms: envelope.scheduled_at_ms,
+      worker_revision: schedulerRevision, serving_sha: servingSha, receiver_worker_revision: receiverRevision }, 200);
   }
 
   if (envelope.synthetic_page.delivery_mode === "deferred") {
@@ -173,6 +259,7 @@ async function runDeferredDeliveries(
   fetchImpl: typeof fetch,
   nowImpl: () => number = Date.now,
 ): Promise<void> {
+  if (env.SYNTHETIC_DRILL_PROVIDER_MODE === "provider_deferred") return;
   const environmentError = validateReceiverEnvironment(env);
   if (environmentError !== null) throw new Error("receiver not ready");
   const result = await env.CONFIG_DB!.prepare(
@@ -180,6 +267,7 @@ async function runDeferredDeliveries(
        FROM synthetic_page_drills_b072
       WHERE delivery_mode = 'deferred' AND delivered_at_ms IS NULL
         AND outcome = 'unacked' AND emit_ts_ms <= ?
+        AND NOT EXISTS (SELECT 1 FROM synthetic_page_provider_receipts p WHERE p.drill_id = synthetic_page_drills_b072.drill_id)
       ORDER BY emit_ts_ms ASC
       LIMIT 20`,
   ).bind(controller.scheduledTime).all<DrillRow>();
