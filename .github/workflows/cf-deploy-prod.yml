@@ -90,6 +90,11 @@ jobs:
           chmod +x ./scripts/secrets-checklist-verify.sh
           ./scripts/secrets-checklist-verify.sh
 
+      - name: Verify Container env-forwarding contract
+        # Keep protected deployment admission at parity with the PR drift gate:
+        # every Container-read variable must reach it through the Worker DO.
+        run: python3 scripts/check-env-contract.py
+
       - name: Compute deploy matrix (all 5 envs unless one is specified)
         id: set-matrix
         env:

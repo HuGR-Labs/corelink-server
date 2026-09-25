@@ -390,6 +390,11 @@ export async function startContainer(
           // container default (OFF).
           OCI_PUBLIC_DEDUP_ENABLED: ctx.env.OCI_PUBLIC_DEDUP_ENABLED ?? "",
           OCI_UPSTREAM_ON_MISS: ctx.env.OCI_UPSTREAM_ON_MISS ?? "",
+          // #2576: staging admission claims are accepted only for the staging
+          // runtime and authenticated with this dedicated staging key.
+          CORELINK_ENVIRONMENT: ctx.env.CORELINK_ENVIRONMENT ?? "",
+          CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY:
+            ctx.env.CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY ?? "",
         },
       });
 

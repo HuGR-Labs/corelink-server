@@ -1,0 +1,91 @@
+name: Issue 2576 authenticated atomic admission
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-2576-admission.yml
+      - crates/corelink-container/src/storage.rs
+      - crates/corelink-container/src/storage/staging_load_test_admission.rs
+      - worker/src/durable_object_start.ts
+      - docs/internal/secrets-checklist.md
+      - .github/workflows/cf-deploy-prod.yml
+      - migrations/d1/0148_staging_load_test_admission_nonce.sql
+      - scripts/check_issue_2576_clippy.py
+      - scripts/verify_issue_2576_admission.py
+      - tests/test_issue_2576_staging_admission.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2576-admission-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  admission:
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact authored pull request head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind checkout to exact head and base
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXPECTED_BASE" "$EXPECTED_HEAD")" = "$EXPECTED_BASE"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Install pinned Protobuf compiler
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+
+      - name: Check migration prefix and additivity
+        run: |
+          python3 scripts/check_migration_prefixes.py
+          python3 scripts/check_migrations_additive.py
+
+      - name: Verify codec and authenticator negative fixtures
+        run: python3 -I scripts/verify_issue_2576_admission.py
+
+      - name: Run repository secrets and Container env drift gates
+        run: |
+          bash scripts/secrets-checklist-verify.sh
+          python3 scripts/check-env-contract.py
+
+      - name: Run adapter-bound SQLite adversarial matrix
+        run: python3 -I tests/test_issue_2576_staging_admission.py
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check full container library
+        run: cargo check --locked -p corelink-server --lib
+
+      - name: Run focused admission verifier tests
+        run: "cargo test --locked -p corelink-server --lib storage::staging_load_test_admission::tests:: -- --nocapture"
+
+      - name: Run candidate primary-span clippy gate
+        shell: bash
+        run: |
+          set +e
+          cargo clippy --locked -p corelink-server --lib --message-format=json > "$RUNNER_TEMP/issue-2576-clippy.jsonl" 2> "$RUNNER_TEMP/issue-2576-clippy.stderr"
+          clippy_status=$?
+          set -e
+          python3 -I scripts/check_issue_2576_clippy.py "$RUNNER_TEMP/issue-2576-clippy.jsonl"
+          printf 'cargo clippy status: %s\n' "$clippy_status"
+          cat "$RUNNER_TEMP/issue-2576-clippy.stderr"
