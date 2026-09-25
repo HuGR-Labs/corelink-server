@@ -8,6 +8,8 @@ on:
       - crates/corelink-container/src/storage.rs
       - crates/corelink-container/src/storage/staging_load_test_admission.rs
       - worker/src/durable_object_start.ts
+      - worker/src/index_env.ts
+      - worker/src/index_env_contract.ts
       - docs/internal/secrets-checklist.md
       - .github/workflows/cf-deploy-prod.yml
       - migrations/d1/0148_staging_load_test_admission_nonce.sql
@@ -37,6 +39,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v4.1.0
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
       - name: Bind checkout to exact head and base
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -61,6 +73,11 @@ jobs:
 
       - name: Verify codec and authenticator negative fixtures
         run: python3 -I scripts/verify_issue_2576_admission.py
+
+      - name: Typecheck Worker bindings and staging admission contract
+        run: |
+          pnpm install --frozen-lockfile --filter @corelink/worker...
+          pnpm --dir worker typecheck
 
       - name: Run repository secrets and Container env drift gates
         run: |
