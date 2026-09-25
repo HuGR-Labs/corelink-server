@@ -10,6 +10,22 @@ use sha2::{Digest, Sha256};
 
 use super::d1_http::D1HttpClient;
 
+const SQL_REGISTER_RESOURCE: &str = "INSERT INTO staging_load_test_resources \
+     (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) \
+     SELECT ?1, ?2, ?4, ?5, ?6, ?7, 'registered', ?8 \
+     WHERE EXISTS (SELECT 1 FROM staging_load_test_runs \
+       WHERE run_id = ?1 AND scenario = ?2 AND target_environment = 'staging' \
+         AND target_deployment_sha = ?3 AND state = 'open') \
+     RETURNING receipt_ref";
+
+// Keep ?3 unused here to preserve the same positional parameter array as the
+// insert query. D1's HTTP API accepts positional values, including values for
+// skipped numbered placeholders.
+const SQL_FIND_REGISTERED_RESOURCE: &str = "SELECT receipt_ref FROM staging_load_test_resources \
+     WHERE run_id = ?1 AND scenario = ?2 AND resource_class = ?4 \
+       AND receipt_ref = ?5 AND opaque_handle = ?6 AND disposition = ?7 \
+     LIMIT 1";
+
 /// One of the scenarios admitted by migration 0147.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StagingLoadTestScenario {
@@ -210,29 +226,31 @@ impl StagingLoadTestOwnershipWriter {
             .as_millis();
         let now_ms = i64::try_from(now_ms)
             .map_err(|_| "system clock timestamp is out of range".to_owned())?;
-        let rows = self
-            .d1
-            .query(
-                "INSERT INTO staging_load_test_resources \
-                 (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) \
-                 SELECT ?1, ?2, ?4, ?5, ?6, ?7, 'registered', ?8 \
-                 WHERE EXISTS (SELECT 1 FROM staging_load_test_runs \
-                   WHERE run_id = ?1 AND scenario = ?2 AND target_environment = 'staging' \
-                     AND target_deployment_sha = ?3 AND state = 'open') \
-                 RETURNING receipt_ref",
-                &[
-                    json!(registration.run_id),
-                    json!(registration.scenario.as_str()),
-                    json!(registration.target_deployment_sha),
-                    json!(registration.resource_class.as_str()),
-                    json!(receipt_ref),
-                    json!(registration.opaque_handle),
-                    json!(registration.disposition.as_str()),
-                    json!(now_ms),
-                ],
-            )
-            .await
-            .map_err(|_| "staging load-test resource registration failed".to_owned())?;
+        let params = [
+            json!(registration.run_id),
+            json!(registration.scenario.as_str()),
+            json!(registration.target_deployment_sha),
+            json!(registration.resource_class.as_str()),
+            json!(receipt_ref),
+            json!(registration.opaque_handle),
+            json!(registration.disposition.as_str()),
+            json!(now_ms),
+        ];
+        let rows = match self.d1.query(SQL_REGISTER_RESOURCE, &params).await {
+            Ok(rows) => rows,
+            Err(_) => {
+                // A uniqueness error is the normal signal for an exact
+                // idempotent retry. It can also indicate a conflicting
+                // resource_class/opaque_handle owned by another run, so only
+                // an exact identity lookup is allowed to recover success.
+                let existing = self
+                    .d1
+                    .query(SQL_FIND_REGISTERED_RESOURCE, lookup_params(&params))
+                    .await
+                    .map_err(|_| "staging load-test resource registration failed".to_owned())?;
+                return recover_exact_replay(&existing, &receipt_ref);
+            }
+        };
 
         let Some(row) = rows.first() else {
             return Ok(StagingLoadTestRegistrationOutcome::NoMatchingOpenRun);
@@ -246,6 +264,40 @@ impl StagingLoadTestOwnershipWriter {
         }
         Ok(StagingLoadTestRegistrationOutcome::Registered { receipt_ref })
     }
+}
+
+fn lookup_params(params: &[serde_json::Value; 8]) -> &[serde_json::Value] {
+    // SQL_FIND_REGISTERED_RESOURCE uses ?1, ?2, and ?4 through ?7. Retain the
+    // unused deployment SHA at ?3 so the positional binding indices stay
+    // aligned with SQL_REGISTER_RESOURCE.
+    &params[..7]
+}
+
+fn replay_receipt(
+    rows: &[serde_json::Map<String, serde_json::Value>],
+    expected_receipt: &str,
+) -> Result<Option<String>, String> {
+    let Some(row) = rows.first() else {
+        return Ok(None);
+    };
+    let receipt = row
+        .get("receipt_ref")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "D1 returned a malformed registration result".to_owned())?;
+    if receipt != expected_receipt {
+        return Err("D1 returned an unexpected registration receipt".to_owned());
+    }
+    Ok(Some(receipt.to_owned()))
+}
+
+fn recover_exact_replay(
+    rows: &[serde_json::Map<String, serde_json::Value>],
+    expected_receipt: &str,
+) -> Result<StagingLoadTestRegistrationOutcome, String> {
+    let Some(receipt_ref) = replay_receipt(rows, expected_receipt)? else {
+        return Err("staging load-test resource registration failed".to_owned());
+    };
+    Ok(StagingLoadTestRegistrationOutcome::Registered { receipt_ref })
 }
 
 fn validate_registration(
@@ -435,5 +487,47 @@ mod tests {
         let rendered = format!("{value:?}");
         assert!(!rendered.contains("must-not-appear"));
         assert!(rendered.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn exact_replay_returns_original_receipt_and_other_run_lookup_fails_closed() {
+        let expected_receipt = "b".repeat(64);
+        let row = serde_json::Map::from_iter([(
+            "receipt_ref".to_owned(),
+            serde_json::Value::String(expected_receipt.clone()),
+        )]);
+        assert_eq!(
+            recover_exact_replay(&[row], &expected_receipt),
+            Ok(StagingLoadTestRegistrationOutcome::Registered {
+                receipt_ref: expected_receipt.clone()
+            })
+        );
+        // The SQL lookup is bound to the exact run and resource identity. A
+        // collision on the global (resource_class, opaque_handle) key from a
+        // different run therefore returns no row and remains an error.
+        assert!(recover_exact_replay(&[], &expected_receipt).is_err());
+    }
+
+    #[test]
+    fn replay_lookup_uses_first_seven_positional_values_with_skipped_three() {
+        let params = std::array::from_fn(|index| json!(index + 1));
+        assert_eq!(
+            lookup_params(&params),
+            &[
+                json!(1),
+                json!(2),
+                json!(3),
+                json!(4),
+                json!(5),
+                json!(6),
+                json!(7)
+            ]
+        );
+        assert!(SQL_FIND_REGISTERED_RESOURCE.contains("?1"));
+        assert!(SQL_FIND_REGISTERED_RESOURCE.contains("?2"));
+        assert!(!SQL_FIND_REGISTERED_RESOURCE.contains("?3"));
+        for position in ["?4", "?5", "?6", "?7"] {
+            assert!(SQL_FIND_REGISTERED_RESOURCE.contains(position));
+        }
     }
 }
