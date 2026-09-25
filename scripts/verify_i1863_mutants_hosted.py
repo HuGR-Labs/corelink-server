@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from scripts.verify_i1666_mutants_evidence import verify as verify_workflow
-from scripts.verify_i2457_mutants_shards import AGGREGATE_SCHEMA, SHARD_COUNT, digest
+from scripts.verify_i2457_mutants_shards import AGGREGATE_SCHEMA, SHARD_COUNT, TOOL_VERSION, config_digest, digest
 
 
 WORKFLOW = Path(".github/workflows/issue-1863-mutants-hosted.yml")
@@ -43,6 +43,10 @@ def validate_successful_receipt(
         raise ValueError("hosted mutants aggregate is not from protected main")
     if receipt.get("shard_count") != SHARD_COUNT or receipt.get("covered_mutants", 0) <= 0:
         raise ValueError("aggregate receipt does not prove all 27 nonempty shards")
+    if receipt.get("tool_version") != TOOL_VERSION:
+        raise ValueError("aggregate receipt tool version is not pinned cargo-mutants 27.0.0")
+    if receipt.get("config_digest") != config_digest():
+        raise ValueError("aggregate receipt configuration digest is not canonical")
     for field in ("config_digest", "inventory_digest", "baseline_digest", "coverage_digest"):
         value = receipt.get(field)
         if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):

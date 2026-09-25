@@ -81,6 +81,15 @@ class HostedReceiptValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "protected main"):
             validate_successful_receipt(self.receipt, self.run, self.sha)
 
+    def test_rejects_unpinned_tool_or_configuration(self) -> None:
+        self.receipt["tool_version"] = "27.0.1"
+        with self.assertRaisesRegex(ValueError, "tool version"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+        self.receipt["tool_version"] = "27.0.0"
+        self.receipt["config_digest"] = digest(["drift"])
+        with self.assertRaisesRegex(ValueError, "configuration digest"):
+            validate_successful_receipt(self.receipt, self.run, self.sha)
+
     def test_rejects_incomplete_or_bad_lineage(self) -> None:
         self.receipt["covered_mutants"] = 0
         with self.assertRaisesRegex(ValueError, "nonempty"):
