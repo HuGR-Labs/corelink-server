@@ -216,7 +216,7 @@ def check_smoke(text: str) -> None:
     require_line(upload_step, r"^\s*if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$", where)
     require_line(
         upload_step,
-        r"^\s*uses:\s*actions/upload-artifact@[a-f0-9]{40}\s*(?:#.*)?$",
+        r"^\s*uses:\s*actions/upload-artifact@[a-f0-9]{40}(?:\s+#.*)?$",
         where,
     )
     require_line(upload_step, r"^\s*path:\s*artifacts/i1672/\s*$", where)

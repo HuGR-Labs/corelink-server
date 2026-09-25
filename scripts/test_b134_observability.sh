@@ -75,6 +75,24 @@ copy_fixture "${TMP}/upload-unpinned"
 sed -i.bak 's#uses: actions/upload-artifact@[a-f0-9]\{40\}#uses: actions/upload-artifact@v4#' "${TMP}/upload-unpinned/.github/workflows/smoke-install.yml"
 expect_red upload-unpinned "${TMP}/upload-unpinned"
 
+copy_fixture "${TMP}/upload-invalid-comment"
+python3 - "${TMP}/upload-invalid-comment/.github/workflows/smoke-install.yml" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+mutated, count = re.subn(
+    r"(uses: actions/upload-artifact@[a-f0-9]{40}) #",
+    r"\1#invalid",
+    text,
+)
+assert count == 1, f"expected one pinned upload action, found {count}"
+path.write_text(mutated, encoding="utf-8")
+PY
+expect_red upload-invalid-comment "${TMP}/upload-invalid-comment"
+
 copy_fixture "${TMP}/upload-path"
 sed -i.bak 's#path: artifacts/i1672/#path: artifacts/missing/#' "${TMP}/upload-path/.github/workflows/smoke-install.yml"
 expect_red upload-path "${TMP}/upload-path"
