@@ -37,6 +37,9 @@ def main() -> int:
     require(workflow, "scripts/probe_i1662_b106.py run", "probe implementation")
     require(workflow, "scripts/probe_i1662_b106.py cleanup", "revoke implementation")
     require(workflow, "CORELINK_B106_OWNER_SESSION", "protected owner session")
+    require(workflow, "secrets.CORELINK_B106_DOGFOOD_TENANT", "protected dogfood tenant")
+    if "inputs.tenant" in workflow:
+        raise SystemExit("dogfood tenant must not be persisted in workflow-dispatch inputs")
     require(workflow, "timeout-minutes: 7", "bounded timeout")
     require(workflow, "persist-credentials: false", "checkout credential isolation")
     require(workflow, "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", "pinned checkout")
@@ -52,7 +55,16 @@ def main() -> int:
     require(probe, 'method="GET"', "read-only data-plane method")
     require(probe, 'f"{base}/v1/customer/keys/{pat_id}/revoke"', "PAT revoke endpoint")
     require(probe, "args.state.unlink(missing_ok=True)", "state cleanup")
-    require(probe, '"token_fingerprint"', "redacted token binding")
+    require(probe, '"captured_at_epoch": time.time()', "per-request observation timestamp")
+    for forbidden in (
+        '"token_fingerprint"',
+        '"tenant_id": tenant',
+        'receipt["pat_id"]',
+        '"response_body_sha256"',
+        '"request_id":',
+    ):
+        if forbidden in probe:
+            raise SystemExit(f"B-106 receipt must not disclose sensitive field: {forbidden}")
     if re.search(r'print\([^\n]*token|logger\.[a-z]+\([^\n]*token', probe, re.IGNORECASE):
         raise SystemExit("probe must never print token material")
     if re.search(r"method=\"(?:PUT|PATCH|DELETE)\"", probe):
