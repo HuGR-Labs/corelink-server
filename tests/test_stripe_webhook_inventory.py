@@ -111,6 +111,5 @@ class StripeWebhookInventoryTests(unittest.TestCase):
             collect_v2(fetch)
         self.assertEqual(calls, 2)
 
-
 if __name__ == "__main__":
     unittest.main()
