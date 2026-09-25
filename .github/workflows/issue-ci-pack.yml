@@ -163,8 +163,6 @@ jobs:
         if: inputs.pack_id == 'issue-2457-mutants-shards'
         uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
         timeout-minutes: 3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install pinned cargo-mutants for issue 2457 inventory discovery
         if: inputs.pack_id == 'issue-2457-mutants-shards'
