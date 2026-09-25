@@ -41,7 +41,7 @@ def _provider_result(document: Any, field: str) -> Any:
     return document.get("result")
 
 
-def _active_version(document: Any) -> tuple[str, str, str]:
+def _active_version(document: Any) -> tuple[str, str, str, str]:
     result = _provider_result(document, "deployment")
     deployments = result.get("deployments") if isinstance(result, dict) else result
     if not isinstance(deployments, list) or not deployments:
@@ -67,7 +67,11 @@ def _active_version(document: Any) -> tuple[str, str, str]:
     created_on = deployment.get("created_on")
     if not isinstance(created_on, str) or not created_on:
         raise BindingError("Cloudflare deployment has no creation timestamp")
-    return deployment_id, version_id, created_on
+    annotations = deployment.get("annotations")
+    message = annotations.get("workers/message") if isinstance(annotations, dict) else None
+    if not isinstance(message, str):
+        raise BindingError("active Cloudflare deployment has no source-SHA annotation")
+    return deployment_id, version_id, created_on, message
 
 
 def verify_binding(
@@ -120,14 +124,12 @@ def verify_binding(
     ):
         raise BindingError("no successful container image build is bound to the source SHA")
 
-    provider_deployment_id, version_id, deployment_created_on = _active_version(deployments)
+    provider_deployment_id, version_id, deployment_created_on, message = _active_version(deployments)
     version_result = _provider_result(version, "version")
     if not isinstance(version_result, dict) or version_result.get("id") != version_id:
         raise BindingError("Worker version read does not match the active deployment")
-    annotations = version_result.get("annotations")
-    message = annotations.get("workers/message") if isinstance(annotations, dict) else None
     if message != f"corelink-source-sha={source_sha}":
-        raise BindingError("active Worker version source annotation does not match source SHA")
+        raise BindingError("active Worker deployment source annotation does not match source SHA")
 
     if not isinstance(github_deployments, list):
         raise BindingError("GitHub deployment response is malformed")
@@ -151,7 +153,8 @@ def verify_binding(
     if not isinstance(status, dict) or status.get("state") != "success":
         raise BindingError("latest matching GitHub deployment status is not successful")
 
-    version_created_on = version_result.get("created_on")
+    metadata = version_result.get("metadata")
+    version_created_on = metadata.get("created_on") if isinstance(metadata, dict) else None
     if not isinstance(version_created_on, str) or not version_created_on:
         raise BindingError("Cloudflare version has no creation timestamp")
     return {

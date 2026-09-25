@@ -18,11 +18,11 @@ APP_ID = "4d36f49d-06aa-4f4c-b4e2-25a6da2b9b10"
 def _evidence():
     deployments = {"success": True, "result": {"deployments": [{
         "id": DEPLOYMENT_ID, "created_on": "2026-09-25T08:00:00Z",
+        "annotations": {"workers/message": f"corelink-source-sha={SHA}"},
         "versions": [{"version_id": VERSION_ID, "percentage": 100}],
     }]}}
     version = {"success": True, "result": {
-        "id": VERSION_ID, "created_on": "2026-09-25T08:00:00Z",
-        "annotations": {"workers/message": f"corelink-source-sha={SHA}"},
+        "id": VERSION_ID, "metadata": {"created_on": "2026-09-25T08:00:00Z"},
     }}
     app = {"success": True, "result": {
         "id": APP_ID, "version": 101,
@@ -58,13 +58,15 @@ def test_provider_version_and_successful_github_deployment_bind_source_sha() -> 
     assert receipt["github_deployment_status"] == "success"
 
 
-@pytest.mark.parametrize("mutation", ["partial", "annotation", "sha", "failure"])
+@pytest.mark.parametrize("mutation", ["partial", "annotation", "metadata", "sha", "failure"])
 def test_provider_or_github_mismatch_is_rejected(mutation: str) -> None:
     deployments, version, app, image_commit, builds, github_deployments, statuses = deepcopy(_evidence())
     if mutation == "partial":
         deployments["result"]["deployments"][0]["versions"][0]["percentage"] = 99
     elif mutation == "annotation":
-        version["result"]["annotations"]["workers/message"] = "corelink-source-sha=" + "0" * 40
+        deployments["result"]["deployments"][0]["annotations"]["workers/message"] = "corelink-source-sha=" + "0" * 40
+    elif mutation == "metadata":
+        version["result"].pop("metadata")
     elif mutation == "sha":
         github_deployments[0]["sha"] = "0" * 40
     else:
