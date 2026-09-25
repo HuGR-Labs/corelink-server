@@ -641,13 +641,18 @@ def assert_file_size_trusted_base(test: unittest.TestCase, raw: str) -> None:
     )
 
 
-def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> None:
+def assert_backlog_verify_boundary(
+    test: unittest.TestCase, workflow: dict, raw: str | None = None
+) -> None:
     """The backlog PR lane executes only BASE control over PR data."""
     jobs = workflow.get("jobs")
     test.assertEqual(set(jobs or {}), {"verify", "trusted_semantic"})
     test.assertEqual(workflow.get("permissions"), {"contents": "read"})
     assert_transition_runner(test, jobs["verify"].get("runs-on"), "corelink")
-    raw = (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
+    raw = raw or (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
+    verify_block = re.search(r"(?ms)^  verify:.*?(?=^  trusted_semantic:|\Z)", raw)
+    test.assertIsNotNone(verify_block, "verify job must remain structurally distinct")
+    verify_raw = verify_block.group(0)
     test.assertIn("pull_request_target:", raw)
     test.assertNotIn("\n  pull_request:\n", raw)
     test.assertGreaterEqual(raw.count("persist-credentials: false"), 2)
@@ -655,7 +660,7 @@ def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> N
     test.assertIn("github.event.pull_request.base.sha || github.sha", raw)
     test.assertNotIn("github.event.pull_request.head.ref", raw)
     test.assertNotIn("github.event.pull_request.base.ref", raw)
-    test.assertNotIn("GH_TOKEN", raw)
+    test.assertNotIn("GH_TOKEN", verify_raw)
     test.assertIn("path: _candidate", raw)
     test.assertIn("path: _base", raw)
     test.assertIn("working-directory: _base", raw)
@@ -666,6 +671,8 @@ def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> N
     trusted = jobs["trusted_semantic"]
     test.assertEqual(trusted.get("if"), "github.event_name == 'push' || github.event_name == 'schedule'")
     test.assertEqual(trusted.get("permissions"), {"contents": "read", "vulnerability-alerts": "read"})
+    trusted_block = raw[verify_block.end() :]
+    test.assertIn("GH_TOKEN: ${{ github.token }}", trusted_block)
 
 
 def assert_data_only_hosted_boundary(
@@ -837,6 +844,21 @@ jobs:
                 assert_data_only_hosted_boundary(self, name, raw.replace(trusted_ref, candidate_ref, 1))
             with self.subTest(name=name, mutant="swap trusted command source"), self.assertRaises(AssertionError):
                 assert_data_only_hosted_boundary(self, name, raw.replace(trusted_source, candidate_source, 1))
+
+    def test_backlog_verify_token_boundary_is_job_scoped(self) -> None:
+        workflow = load_workflow("backlog-verify.yml")
+        raw = (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
+        assert_backlog_verify_boundary(self, workflow, raw)
+        with self.assertRaises(AssertionError):
+            assert_backlog_verify_boundary(
+                self,
+                workflow,
+                raw.replace("jobs:\n  verify:", "jobs:\n  verify:\n    env:\n      GH_TOKEN: forbidden", 1),
+            )
+        trusted_token = raw.replace(
+            "GH_TOKEN: ${{ github.token }}", "GH_TOKEN: ${{ github.token }}", 1
+        )
+        assert_backlog_verify_boundary(self, workflow, trusted_token)
 
     def test_fabric_jobs_allow_only_trusted_associations(self) -> None:
         assert_labels_boundary(self, load_workflow("pr-labels.yml"))
