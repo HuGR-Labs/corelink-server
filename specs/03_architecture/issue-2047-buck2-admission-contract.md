@@ -8,9 +8,12 @@ state.
 
 The current public Worker rejects `application/grpc` before routing under
 #2176's transport-denial contract. That denial remains the admission state
-until #2176 supplies its protected deployed transport receipt and #2183 merges
-the complete authenticated cache-only service composition. A root-authorized,
-manual #2047 runtime dispatch is permitted only after those prerequisites.
+until #2176 supplies a protected deployed standard-gRPC-client receipt for the
+exact SHA that proves HTTP/2, authorization metadata, terminal trailers,
+streaming, and cancellation through Worker → Durable Object → Container, and
+#2183 merges the complete authenticated cache-only service composition. A
+root-authorized, manual #2047 runtime dispatch is permitted only after those
+prerequisites.
 
 ## Frozen admission axioms
 

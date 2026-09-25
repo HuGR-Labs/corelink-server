@@ -139,6 +139,9 @@ def verify(
         "**BLOCKED — static contract only.**",
         "#2176",
         "#2183",
+        "protected deployed standard-gRPC-client receipt",
+        "HTTP/2, authorization metadata, terminal trailers,",
+        "streaming, and cancellation through Worker → Durable Object → Container",
         "| Auth |",
         "| Cold/warm |",
         "| Isolation |",
@@ -149,6 +152,11 @@ def verify(
     ):
         _require(admission_contract, marker, "admission contract")
     _require(worker_fetch, 'import { rejectUnprovenGrpcTransport } from "./grpc_transport_gate.js";', "gRPC transport gate")
+    _require(
+        worker_fetch,
+        "const grpcTransportGate = rejectUnprovenGrpcTransport(request);",
+        "gRPC transport gate/invocation",
+    )
     _require_before(
         worker_fetch,
         "if (grpcTransportGate !== null) return grpcTransportGate;",
@@ -198,6 +206,14 @@ def verify(
         "name: Install Buck2",
         "runtime workflow/benchmark/authentication order",
     )
+    cold_marker = "name: Cold build — buck2 build :hello (populate remote cache)"
+    warm_marker = "name: Warm build — assert ≥ 80 % remote cache hits"
+    _require_before(build, cold_marker, warm_marker, "runtime workflow/cold-to-warm order")
+    cold_step = build[build.index(cold_marker):build.index(warm_marker)]
+    _require(cold_step, "buck2 clean", "runtime workflow/cold build")
+    _require(cold_step, "--build-report /tmp/cold-report.json", "runtime workflow/cold build")
+    warm_step = build[build.index(warm_marker):]
+    _require(warm_step, "buck2 clean", "runtime workflow/warm build")
 
     for marker in (
         "id: validate-pat",
@@ -391,6 +407,24 @@ def mutation_checks(sources: dict[str, str]) -> None:
                     "// transport gate bypassed",
                     1,
                 ),
+            ),
+        ),
+        (
+            "gRPC transport invocation bypass",
+            lambda s: s.__setitem__(
+                "worker_fetch",
+                s["worker_fetch"].replace(
+                    "const grpcTransportGate = rejectUnprovenGrpcTransport(request);",
+                    "const grpcTransportGate = null;",
+                    1,
+                ),
+            ),
+        ),
+        (
+            "cold build clean removal",
+            lambda s: s.__setitem__(
+                "workflow",
+                s["workflow"].replace("          buck2 clean\n", "", 1),
             ),
         ),
         (
