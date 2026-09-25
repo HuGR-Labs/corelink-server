@@ -390,6 +390,21 @@ mod tests {
         }
     }
 
+    fn webhook_registration<'a>(
+        run_id: &'a str,
+        deployment_sha: &'a str,
+        opaque_handle: &'a str,
+    ) -> StagingLoadTestResourceRegistration<'a> {
+        StagingLoadTestResourceRegistration {
+            run_id,
+            scenario: StagingLoadTestScenario::Webhook,
+            target_deployment_sha: deployment_sha,
+            resource_class: StagingLoadTestResourceClass::WebhookInbox,
+            disposition: StagingLoadTestDisposition::Disposable,
+            opaque_handle,
+        }
+    }
+
     fn insert_registration(
         db: &Connection,
         registration: &StagingLoadTestResourceRegistration<'_>,
@@ -582,13 +597,7 @@ mod tests {
         )
         .expect("open webhook run");
 
-        let registration = registration(
-            "123",
-            &sha,
-            "evt_load_123",
-            StagingLoadTestResourceClass::WebhookInbox,
-            StagingLoadTestDisposition::Disposable,
-        );
+        let registration = webhook_registration("123", &sha, "evt_load_123");
         let receipt = receipt_ref(&registration);
         let first = insert_registration(&db, &registration, &receipt, 2)
             .expect("first append returns a receipt");
@@ -624,23 +633,11 @@ mod tests {
             )
             .expect("open webhook run");
         }
-        let first = registration(
-            "123",
-            &sha,
-            "evt_load_unique",
-            StagingLoadTestResourceClass::WebhookInbox,
-            StagingLoadTestDisposition::Disposable,
-        );
+        let first = webhook_registration("123", &sha, "evt_load_unique");
         let first_receipt = receipt_ref(&first);
         insert_registration(&db, &first, &first_receipt, 2).expect("first run owns the handle");
 
-        let second = registration(
-            "124",
-            &sha,
-            "evt_load_unique",
-            StagingLoadTestResourceClass::WebhookInbox,
-            StagingLoadTestDisposition::Disposable,
-        );
+        let second = webhook_registration("124", &sha, "evt_load_unique");
         let second_receipt = receipt_ref(&second);
         let conflicting_insert = insert_registration(&db, &second, &second_receipt, 3);
         assert!(matches!(
