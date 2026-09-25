@@ -1,6 +1,7 @@
 name: issue-1662 B-106 static contract
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - ".github/workflows/issue-1662-b106-cold-warm.yml"
