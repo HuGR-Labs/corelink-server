@@ -50,6 +50,9 @@ jobs:
             test "$PR_HEAD_SHA" = "$EXPECTED_SHA"
           fi
 
+      - name: Install the pinned Python test runner
+        run: python3 -m pip install --disable-pip-version-check --no-cache-dir pytest==8.3.5
+
       - name: Prove the bounded v0009 policy and its negative controls
         timeout-minutes: 5
         run: python3 -m pytest -q tests/test_backlog_ledger_successor.py
