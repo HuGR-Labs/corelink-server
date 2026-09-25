@@ -28,12 +28,13 @@ and deletion limited to the target/cache/temp allowlist.
    test or compiler failure keeps `TEST_FAILURE` precedence over incidental
    infrastructure text.
 2. A failed write or linker operation with a disk-full signature is classified
-   as `ENOSPC`, while cancellation and timeout keep their own classifications.
+   as `ENOSPC`, while cancellation and timeout keep their own classifications;
+   runner-loss text is `CANCELLED` only for a non-zero result.
 3. The actionable infrastructure annotation and structured classification are
    emitted before the original non-zero gate status is returned unchanged.
-4. Hosted failure evidence includes capacity and available-byte measurements
-   before filling and after the run-owned fixture is removed, without exposing
-   runner names or filesystem paths.
+4. Hosted failure evidence identifies its Actions run and exact commit SHA,
+   includes capacity and available-byte measurements before filling and after
+   the run-owned fixture is removed, and omits runner names and filesystem paths.
 5. Cleanup is bounded to run-owned fixture paths, is verified by readback, and
    retains an EXIT-trap fallback for interrupted jobs.
 
