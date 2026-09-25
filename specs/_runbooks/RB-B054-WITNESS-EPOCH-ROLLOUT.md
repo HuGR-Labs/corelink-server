@@ -188,6 +188,43 @@ authenticated registry/evidence set.
 
 ## 5. Exact epoch-admin requests
 
+Every request also carries `approval_jcs_b64` and `approval_signature_b64`.
+The provider signs the exact RFC-8785 JCS approval object with the Ed25519
+private key whose id is in `CORELINK_ADMIN_APPROVAL_TRUST_ROOTS_JSON`. The
+signature covers
+`UTF8("corelink/audit-chain/admin-approval/v1\\0") || approval_jcs`.
+The object has exactly these fields:
+
+```json
+{
+  "approval_id": "<opaque single-use id>",
+  "approval_version": 1,
+  "approver_eligible": true,
+  "approver_role": "Security approver",
+  "approver_subject_id": "<opaque provider subject>",
+  "audience": "corelink-b054-epoch-admin-v1",
+  "executor_eligible": true,
+  "executor_role": "SRE executor",
+  "executor_subject_id": "<opaque provider subject>",
+  "expires_at_ms": 0,
+  "issued_at_ms": 0,
+  "issuer": "<trust-root id>",
+  "nonce": "<64 lower-case hex characters>",
+  "operation_digest_hex": "<64 lower-case hex characters>",
+  "trust_root_key_id": "<trust-root id>"
+}
+```
+
+The subject ids must differ. The operation digest is lowercase hex BLAKE3 of
+`UTF8("corelink/audit-chain/admin-operation/v1\\0") || operation_jcs`, where
+`operation_jcs` is RFC-8785 serialization of the exact typed `operation`
+object without approval fields. Approvals expire within five minutes and are
+recorded in the append-only D1 approval ledger before the requested operation;
+duplicate approval ids or nonces fail closed. The provider must assert that
+each subject is an eligible, independently authenticated human in the named
+role. Separate credential bytes and a valid provider signature alone do not
+establish that the provider performed this role and separation check.
+
 Set these local variables in a protected shell. `CORELINK_INTERNAL_ORIGIN` is
 the directly reachable container origin, not the public witness origin.
 `B054_ADMIN_TOKEN` is the SRE executor principal's current
@@ -201,9 +238,14 @@ separately held, and never logged. Epoch-admin requires both
 export CORELINK_INTERNAL_ORIGIN='<DIRECT_CONTAINER_ORIGIN>'
 export B054_ADMIN_TOKEN='<FROM_PROTECTED_STORE>'
 export B054_SECURITY_APPROVAL_TOKEN='<FROM_SEPARATE_SECURITY_STORE>'
+export B054_APPROVAL_JCS_B64='<PROVIDER_SIGNED_APPROVAL_FOR_EXACT_REQUEST>'
+export B054_APPROVAL_SIGNATURE_B64='<PROVIDER_SIGNATURE>'
 export DISPOSABLE_TENANT_ID='<CANONICAL_UUIDV7>'
 export DISPOSABLE_REGION='<CANONICAL_REGION>'
 ```
+
+Request a fresh provider approval for each operation after the exact operation
+fields are fixed. Never reuse an approval artifact between the examples.
 
 The runtime accepts canonical regions supported by the audit implementation;
 use the partition's stored canonical spelling and do not case-normalize it in
@@ -216,7 +258,9 @@ Provision the authenticated signing registry:
 jq -cn \
   --arg jcs "$REGISTRY_JCS_B64" \
   --arg sig "$REGISTRY_SIGNATURE_B64" \
-  '{operation:"provision_signing_key",registry_jcs_b64:$jcs,registry_signature_b64:$sig}' | \
+  --arg approval "$B054_APPROVAL_JCS_B64" \
+  --arg approval_sig "$B054_APPROVAL_SIGNATURE_B64" \
+  '{operation:"provision_signing_key",registry_jcs_b64:$jcs,registry_signature_b64:$sig,approval_jcs_b64:$approval,approval_signature_b64:$approval_sig}' | \
 curl --fail-with-body --silent --show-error \
   -H "x-corelink-internal-auth: $B054_ADMIN_TOKEN" \
   -H "x-corelink-security-approval: $B054_SECURITY_APPROVAL_TOKEN" \
@@ -231,7 +275,9 @@ Provision the link-key registry:
 jq -cn \
   --argjson link_key_id "$LINK_KEY_ID" \
   --argjson registered_at_ms "$LINK_REGISTERED_AT_MS" \
-  '{operation:"provision_link_key",link_key_id:$link_key_id,registered_at_ms:$registered_at_ms}' | \
+  --arg approval "$B054_APPROVAL_JCS_B64" \
+  --arg approval_sig "$B054_APPROVAL_SIGNATURE_B64" \
+  '{operation:"provision_link_key",link_key_id:$link_key_id,registered_at_ms:$registered_at_ms,approval_jcs_b64:$approval,approval_signature_b64:$approval_sig}' | \
 curl --fail-with-body --silent --show-error \
   -H "x-corelink-internal-auth: $B054_ADMIN_TOKEN" \
   -H "x-corelink-security-approval: $B054_SECURITY_APPROVAL_TOKEN" \
@@ -246,7 +292,9 @@ Bootstrap E0 after a read-only preflight of the complete legacy prefix:
 jq -cn \
   --arg tenant_id "$DISPOSABLE_TENANT_ID" \
   --arg region "$DISPOSABLE_REGION" \
-  '{operation:"bootstrap_e0",tenant_id:$tenant_id,region:$region}' | \
+  --arg approval "$B054_APPROVAL_JCS_B64" \
+  --arg approval_sig "$B054_APPROVAL_SIGNATURE_B64" \
+  '{operation:"bootstrap_e0",tenant_id:$tenant_id,region:$region,approval_jcs_b64:$approval,approval_signature_b64:$approval_sig}' | \
 curl --fail-with-body --silent --show-error \
   -H "x-corelink-internal-auth: $B054_ADMIN_TOKEN" \
   -H "x-corelink-security-approval: $B054_SECURITY_APPROVAL_TOKEN" \
@@ -265,7 +313,9 @@ jq -cn \
   --arg tenant_id "$DISPOSABLE_TENANT_ID" \
   --arg region "$DISPOSABLE_REGION" \
   --argjson link_key_id "$LINK_KEY_ID" \
-  '{operation:"transition_e1",tenant_id:$tenant_id,region:$region,link_key_id:$link_key_id}' | \
+  --arg approval "$B054_APPROVAL_JCS_B64" \
+  --arg approval_sig "$B054_APPROVAL_SIGNATURE_B64" \
+  '{operation:"transition_e1",tenant_id:$tenant_id,region:$region,link_key_id:$link_key_id,approval_jcs_b64:$approval,approval_signature_b64:$approval_sig}' | \
 curl --fail-with-body --silent --show-error \
   -H "x-corelink-internal-auth: $B054_ADMIN_TOKEN" \
   -H "x-corelink-security-approval: $B054_SECURITY_APPROVAL_TOKEN" \

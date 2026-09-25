@@ -9,6 +9,7 @@ on:
       - "migrations/d1/0109_audit_chain_epoch_contract.sql"
       - "migrations/d1/0110_audit_chain_epoch_row_metadata.sql"
       - "migrations/d1/0124_audit_chain_witness_receipts.sql"
+      - "migrations/d1/0146_b054_admin_approval_ledger.sql"
       - "docs/internal/secrets-checklist.md"
       - ".github/workflows/audit-chain-daily-verify.yml"
       - "scripts/verify_b054_audit_chain_contract.py"
@@ -67,6 +68,7 @@ jobs:
       - name: Exercise archive contract primitives
         run: |
           set -euo pipefail
+          cargo test --locked -p corelink-container --lib admin_approval_tests -- --nocapture
           cargo test --locked -p corelink-audit-chain --lib epoch -- --nocapture
           cargo test --locked -p corelink-audit-chain --lib sealed_archive -- --nocapture
           cargo test --locked -p corelink-audit-chain --lib object_lock_archive -- --nocapture
