@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import sys
 
 import pytest
 
-from scripts.verify_i1667_b122_provider_binding import BindingError, verify_binding
+from scripts.verify_i1667_b122_provider_binding import BindingError, main, verify_binding
 
 
 SHA = "af79ca2f296f39b8149931de16441f8e4582b53c"
@@ -14,6 +15,19 @@ BUILD_SHA = "123456789abcdef0123456789abcdef012345678"
 VERSION_ID = "2d36f49d-06aa-4f4c-b4e2-25a6da2b9b10"
 DEPLOYMENT_ID = "1d36f49d-06aa-4f4c-b4e2-25a6da2b9b10"
 APP_ID = "4d36f49d-06aa-4f4c-b4e2-25a6da2b9b10"
+
+
+def test_cli_requires_worker_serving_sha(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", [
+        "verify", "--worker-name", "corelink-prod", "--deployments", "d",
+        "--version", "v", "--github-deployments", "gd", "--github-statuses", "gs",
+        "--container-application", "ca", "--container-image-commit", "ci",
+        "--container-build-runs", "cb", "--build-is-ancestor", "ba",
+        "--b122-is-ancestor", "b2",
+    ])
+    with pytest.raises(SystemExit) as error:
+        main()
+    assert error.value.code == 2
 
 
 def _evidence():

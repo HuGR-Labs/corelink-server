@@ -204,7 +204,6 @@ def verify_binding(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--worker-name", required=True)
-    parser.add_argument("--source-sha", required=True)
     parser.add_argument("--deployments", type=Path, required=True)
     parser.add_argument("--version", type=Path, required=True)
     parser.add_argument("--github-deployments", type=Path, required=True)

@@ -41,6 +41,7 @@ def main() -> None:
         "container-build-push-prod.yml/runs?head_sha=${container_build_sha}",
         "compare/${container_build_sha}...${source_sha}",
         "a5d56cb4516a2c11f5234eb83a738baa97a41c3d...${container_build_sha}",
+        '--worker-serving-sha "${source_sha}"',
         "provider_binding",
         "timeout 25s curl",
         "request_id=%header{x-request-id}",
@@ -79,6 +80,8 @@ def main() -> None:
         )
         if needle not in binding_text
     )
+    if 'parser.add_argument("--source-sha"' in binding_text:
+        missing.append("provider verifier: obsolete required --source-sha argument")
     missing.extend(
         f"deploy provenance: {needle}"
         for needle in (
