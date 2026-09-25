@@ -20,8 +20,10 @@ assert_classification() {
 assert_classification ENOSPC 7 'cargo: could not create target: No space left on device (os error 28)'
 assert_classification TEST_FAILURE 7 'test parser ... FAILED; assertion failed'
 assert_classification SUCCESS 0 'test parser ... ok; ENOSPC is only a fixture word'
+assert_classification SUCCESS 0 'example text says the runner lost connection; this command succeeded'
 assert_classification LINKER_FAILURE 1 'collect2: fatal error: ld terminated with signal 7 [Bus error]'
 assert_classification TEST_FAILURE 9 'error[E0308]; collect2: ld failed with Bus error'
+assert_classification CANCELLED 143 'Runner lost connection; received SIGTERM'
 
 artifact="${CORELINK_CLASSIFICATION_ARTIFACT:-${CORELINK_ARTIFACT_DIR:-$tmp/artifact}/classification.json}"
 summary="$tmp/summary.md"

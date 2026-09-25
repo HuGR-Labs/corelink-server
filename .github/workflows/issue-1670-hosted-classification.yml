@@ -132,6 +132,14 @@ jobs:
           linker_rc=$?
           set -e
 
+          # Capture recovery only after removing the complete run-owned fixture.
+          # The measurement uses /dev/shm because fs_root no longer exists.
+          rm -rf -- "$fs_root"
+          test ! -e "$fs_root"
+          shm_post_size="$(df --output=size -B1 /dev/shm | awk 'NR == 2 { print $1 }')"
+          shm_post_free="$(df --output=avail -B1 /dev/shm | awk 'NR == 2 { print $1 }')"
+          test -n "$shm_post_size" -a -n "$shm_post_free"
+
           enospc_class="$(sed -n 's/^classification: //p' "$enospc_log" | tail -1)"
           linker_class="$(sed -n 's/^classification: //p' "$linker_log" | tail -1)"
           test -n "$enospc_class" -a -n "$linker_class"
@@ -157,23 +165,33 @@ jobs:
               assert receipt["original_exit_code"] == expected_status, receipt
               assert receipt["original_status_preserved"] is True, receipt
           PY
-          python3 - "$report" "$shm_size" "$shm_block_size" "$enospc_rc" "$enospc_class" "$linker_rc" "$linker_class" "$enospc_remaining" "$linker_remaining" <<'PY'
+          python3 - "$report" "$GITHUB_RUN_ID" "$GITHUB_SHA" "$shm_size" "$shm_free" "$shm_post_size" "$shm_post_free" "$shm_block_size" "$enospc_rc" "$enospc_class" "$linker_rc" "$linker_class" "$enospc_remaining" "$linker_remaining" <<'PY'
           import json
           import sys
 
-          (out, shm_size, shm_block_size, enospc_rc, enospc_class, linker_rc,
+          (out, run_id, commit_sha, shm_size, shm_pre_free, shm_post_size,
+           shm_post_free, shm_block_size, enospc_rc, enospc_class, linker_rc,
            linker_class, enospc_remaining, linker_remaining) = sys.argv[1:]
           json.dump({
               "issue": 1670,
+              "run_id": int(run_id),
+              "commit_sha": commit_sha,
               "runner": "GitHub-hosted ubuntu-24.04",
               "filesystem": "/dev/shm tmpfs",
               "bounded_filesystem_bytes": int(shm_size),
               "filesystem_block_bytes": int(shm_block_size),
+              "capacity_receipt": {
+                  "pre_capacity_bytes": int(shm_size),
+                  "pre_available_bytes": int(shm_pre_free),
+                  "post_capacity_bytes": int(shm_post_size),
+                  "post_available_bytes": int(shm_post_free),
+                  "fixture_removed_before_post_measurement": True,
+              },
               "enospc_remaining_bytes": int(enospc_remaining),
               "linker_remaining_bytes": int(linker_remaining),
               "enospc": {"exit_code": int(enospc_rc), "classification": enospc_class},
               "linker": {"exit_code": int(linker_rc), "classification": linker_class},
-              "cleanup": "performed by EXIT trap",
+              "cleanup": "run-owned tmpfs fixture explicitly removed and absence verified before post measurement; EXIT trap handles earlier failure paths",
           }, open(out, "w"), indent=2)
           PY
           cp "$report" "$GITHUB_WORKSPACE/issue-1670-report.json"
@@ -181,11 +199,14 @@ jobs:
           cp "$linker_log" "$GITHUB_WORKSPACE/issue-1670-linker.log"
           {
             echo "## Issue #1670 hosted evidence"
+            echo "- run: ${GITHUB_RUN_ID}"
+            echo "- commit: ${GITHUB_SHA}"
             echo "- runner: GitHub-hosted ubuntu-24.04"
             echo "- bounded filesystem: /dev/shm tmpfs (${shm_size} bytes)"
+            echo "- capacity receipt: pre=${shm_free}/${shm_size} bytes free; post=${shm_post_free}/${shm_post_size} bytes free after fixture removal"
             echo "- ENOSPC: exit=$enospc_rc classification=$enospc_class"
             echo "- linker: exit=$linker_rc classification=$linker_class"
-            echo "- cleanup: performed by EXIT trap"
+            echo "- cleanup: run-owned fixture explicitly removed and absence verified; EXIT trap handles earlier failure paths"
           } >>"$GITHUB_STEP_SUMMARY"
           # Emit the captured workflow commands after verifying them so Actions
           # records the infrastructure annotations on the failed gate step.
@@ -206,10 +227,20 @@ jobs:
           import sys
 
           report = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert report["run_id"] > 0, report
+          assert len(report["commit_sha"]) == 40, report
+          assert all(char in "0123456789abcdef" for char in report["commit_sha"]), report
           for name in ("enospc", "linker"):
               result = report[name]
               assert result["exit_code"] != 0, (name, result)
               assert result["classification"] == "ENOSPC", (name, result)
+          receipt = report["capacity_receipt"]
+          for capacity, available in (("pre_capacity_bytes", "pre_available_bytes"),
+                                      ("post_capacity_bytes", "post_available_bytes")):
+              assert receipt[capacity] > 0, (capacity, receipt)
+              assert 0 <= receipt[available] <= receipt[capacity], (available, receipt)
+          assert receipt["fixture_removed_before_post_measurement"] is True, receipt
+          assert "absence verified" in report["cleanup"], report["cleanup"]
           PY
 
       - name: Upload reproducible evidence
