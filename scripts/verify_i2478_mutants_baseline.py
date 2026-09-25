@@ -48,6 +48,11 @@ def build_plan(args: argparse.Namespace) -> None:
     metadata = read(args.metadata)
     packages = {item["id"]: item for item in metadata["packages"] if item["id"] in metadata["workspace_members"]}
     require(packages, "workspace metadata has no members")
+    targets = {
+        (package_id, target["name"], tuple(sorted(target["kind"]))): target
+        for package_id, package in packages.items()
+        for target in package["targets"]
+    }
     entries: dict[str, dict[str, Any]] = {}
     for line in args.artifacts.read_text(encoding="utf-8").splitlines():
         event = json.loads(line)
@@ -61,6 +66,14 @@ def build_plan(args: argparse.Namespace) -> None:
             continue
         kind = ",".join(sorted(kinds))
         if not set(kinds) & {"lib", "bin", "test", "example", "bench"}:
+            continue
+        metadata_target = targets.get((event["package_id"], target.get("name"), tuple(sorted(kinds))))
+        require(metadata_target is not None, f"cargo test artifact has no metadata target: {package['name']}:{target.get('name')}")
+        # Cargo compiles ordinary examples in a test profile, but it does not
+        # turn them into libtest harnesses or run them.  The metadata `test`
+        # flag is Cargo's target-level execution contract: include every true
+        # runnable target and never try `--list` on a normal example binary.
+        if metadata_target.get("test") is not True:
             continue
         executable_path = Path(executable).resolve()
         try:

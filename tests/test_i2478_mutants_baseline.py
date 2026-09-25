@@ -46,25 +46,38 @@ class BaselineMappingTests(unittest.TestCase):
         self.assertEqual(validate_plan(plan), plan["entries"])
         self.assertEqual(sum(len(membership(plan["entries"], index)) for index in range(SHARD_COUNT)), len(plan["entries"]))
 
-    def test_build_plan_records_each_binary_test_name(self) -> None:
+    def test_build_plan_excludes_ordinary_examples_and_keeps_test_enabled_examples(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             package = root / "crates" / "pkg"
             target = root / "target"
             executable = target / "debug" / "deps" / "unit"
+            ordinary_example = target / "debug" / "examples" / "ordinary"
+            test_example = target / "debug" / "examples" / "test-enabled"
             package.mkdir(parents=True)
             executable.parent.mkdir(parents=True)
             executable.write_text("#!/bin/sh\nprintf 'alpha: test\\nbeta: test\\n2 tests, 0 benchmarks\\n'\n", encoding="utf-8")
+            ordinary_example.parent.mkdir(parents=True)
+            ordinary_example.write_text("#!/bin/sh\nexit 91\n", encoding="utf-8")
+            test_example.write_text("#!/bin/sh\nprintf 'example_test: test\\n1 test, 0 benchmarks\\n'\n", encoding="utf-8")
             os.chmod(executable, 0o755)
-            metadata = {"workspace_members": ["pkg-id"], "packages": [{"id": "pkg-id", "name": "pkg", "manifest_path": str(package / "Cargo.toml"), "targets": [{"kind": ["lib"]}]}]}
-            artifacts = {"reason": "compiler-artifact", "package_id": "pkg-id", "profile": {"test": True}, "executable": str(executable), "target": {"name": "pkg", "kind": ["lib"]}}
+            os.chmod(ordinary_example, 0o755)
+            os.chmod(test_example, 0o755)
+            metadata = {"workspace_members": ["pkg-id"], "packages": [{"id": "pkg-id", "name": "pkg", "manifest_path": str(package / "Cargo.toml"), "targets": [{"name": "pkg", "kind": ["lib"], "test": True}, {"name": "ordinary", "kind": ["example"], "test": False}, {"name": "test-enabled", "kind": ["example"], "test": True}]}]}
+            artifacts = [
+                {"reason": "compiler-artifact", "package_id": "pkg-id", "profile": {"test": True}, "executable": str(executable), "target": {"name": "pkg", "kind": ["lib"]}},
+                {"reason": "compiler-artifact", "package_id": "pkg-id", "profile": {"test": True}, "executable": str(ordinary_example), "target": {"name": "ordinary", "kind": ["example"]}},
+                {"reason": "compiler-artifact", "package_id": "pkg-id", "profile": {"test": True}, "executable": str(test_example), "target": {"name": "test-enabled", "kind": ["example"]}},
+            ]
             (root / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
-            (root / "artifacts.jsonl").write_text(json.dumps(artifacts) + "\n", encoding="utf-8")
+            (root / "artifacts.jsonl").write_text("".join(json.dumps(item) + "\n" for item in artifacts), encoding="utf-8")
             output = root / "plan.json"
             build_plan(Namespace(metadata=root / "metadata.json", artifacts=root / "artifacts.jsonl", workspace=root, target_dir=target, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output))
             plan = json.loads(output.read_text(encoding="utf-8"))
-            binary = next(item for item in plan["entries"] if item["kind"] == "binary")
-            self.assertEqual(binary["test_names"], ["alpha", "beta"])
+            binary_entries = {item["id"]: item for item in plan["entries"] if item["kind"] == "binary"}
+            self.assertEqual(binary_entries["binary:pkg:lib:pkg"]["test_names"], ["alpha", "beta"])
+            self.assertEqual(binary_entries["binary:pkg:example:test-enabled"]["test_names"], ["example_test"])
+            self.assertNotIn("binary:pkg:example:ordinary", binary_entries)
 
     def test_rejects_unsafe_or_tampered_mapping(self) -> None:
         plan = self.plan()
