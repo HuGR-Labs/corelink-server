@@ -50,6 +50,11 @@ class WindowsReadinessContractTests(unittest.TestCase):
     def test_probe_rejects_public_metadata_variable_drift_or_fallback(self) -> None:
         self.assert_rejected(probe=self.probe.replace("vars.WINDOWS_CODE_SIGNING_ISSUER", "vars.WINDOWS_CODE_SIGNING_SUBJECT", 1))
         self.assert_rejected(probe=self.probe.replace("vars.WINDOWS_SIGNING_RENEWAL_DATE", "vars.WINDOWS_SIGNING_RENEWAL_DATE || vars.OLD_DATE", 1))
+        self.assert_rejected(probe=self.probe.replace("REPOSITORY: ${{ github.repository }}", "EXTRA: ${{ vars.EXTRA }}\n          REPOSITORY: ${{ github.repository }}", 1))
+        self.assert_rejected(probe=self.probe.replace("WINDOWS_CODE_SIGNING_ISSUER: ${{ vars.WINDOWS_CODE_SIGNING_ISSUER }}", "# WINDOWS_CODE_SIGNING_ISSUER: ${{ vars.WINDOWS_CODE_SIGNING_ISSUER }}", 1))
+
+    def test_probe_rejects_job_level_write_permissions(self) -> None:
+        self.assert_rejected(probe=self.probe.replace("      contents: read\n    steps:", "      contents: read\n      actions: write\n    steps:", 1))
 
     def test_signer_secret_contract_rejects_reordering_duplicates_comments_and_fallbacks(self) -> None:
         reordered = self.signer.replace("WINDOWS_CODE_SIGNING_FINGERPRINT", "__TEMP_FINGERPRINT__", 1)
@@ -82,6 +87,18 @@ class WindowsReadinessContractTests(unittest.TestCase):
         self.assert_rejected(script=self.script.replace("final_byte_verification", "byte_verification", 1))
         self.assert_rejected(probe=self.probe.replace("authenticode-credential-binding-metadata-only", "sign-and-publish", 1))
         self.assert_rejected(signer=self.signer.replace("http://timestamp.digicert.com", "http://unapproved.invalid", 1))
+        self.assert_rejected(script=self.script.replace("'issuer_match', 'subject_match'", "'issuer_match', 'subject', 'subject_match'", 1))
+
+    def test_exact_head_pack_binds_protected_main_and_executable_commands(self) -> None:
+        self.assert_rejected(ci=self.ci.replace('EXPECTED_BASE="$(git merge-base "$TRUSTED_MAIN_SHA" "$EXPECTED_SHA")"', 'EXPECTED_BASE="$(git merge-base "$TARGET_BASE_SHA" "$EXPECTED_SHA")"', 1))
+        self.assert_rejected(ci=self.ci.replace('          [[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]', '          # [[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]', 1))
+        self.assert_rejected(ci=self.ci.replace("      contents: read\n    steps:", "      contents: read\n      actions: write\n    steps:", 1))
+        self.assert_rejected(ci=self.ci.replace("          ref: refs/heads/main", "          # ref: refs/heads/main", 1))
+        self.assert_rejected(ci=self.ci.replace("            tests/test_i2586_windows_readiness.py | sort)", "            # tests/test_i2586_windows_readiness.py | sort)", 1))
+
+    def test_receipt_schema_rejects_nested_fields_that_could_disclose_names(self) -> None:
+        self.assert_rejected(script=self.script.replace("'issuer_match', 'subject_match', 'sha256_fingerprint'", "'issuer_match', 'subject_match', 'subject', 'sha256_fingerprint'", 1))
+        self.assertIn("$entry.Value.PSObject.Properties.Name", self.script)
 
     def test_signing_timestamp_publication_and_export_surfaces_fail(self) -> None:
         self.assert_rejected(script=self.script + "\n& signtool sign app.exe\n")

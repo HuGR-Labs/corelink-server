@@ -27,12 +27,18 @@ EXPECTED_PUBLIC_VARS = [
     "WINDOWS_SIGNING_RENEWAL_OWNER",
     "WINDOWS_SIGNING_RENEWAL_DATE",
 ]
+EXPECTED_TIMESTAMP_POLICY = "DigiCert RFC 3161 http://timestamp.digicert.com; SHA-256 file and timestamp digests; not invoked"
 RECEIPT_FIELDS = [
     "schema_version", "evidence_type", "repository", "workflow", "commit_sha",
     "run_id", "run_url", "observed_at", "actor_role", "approved_operation",
     "certificate", "chain_revocation", "timestamp_policy", "result",
     "artifact_signature", "final_byte_verification", "renewal",
 ]
+CERTIFICATE_RECEIPT_FIELDS = [
+    "issuer_match", "subject_match", "sha256_fingerprint", "valid_from", "expires_at"
+]
+CHAIN_RECEIPT_FIELDS = ["status", "mode"]
+RENEWAL_RECEIPT_FIELDS = ["owner", "date"]
 ALLOWED_PATHS = {
     ".github/workflows/issue-2586-windows-readiness.yml",
     ".github/workflows/issue-2586-windows-contract.yml",
@@ -62,7 +68,63 @@ def workflow_secret_names(text: str) -> list[str]:
 
 
 def workflow_public_var_names(text: str) -> list[tuple[str, str]]:
-    return re.findall(r"^\s{10}(WINDOWS_[A-Z_]+):\s*\$\{\{\s*vars\.(WINDOWS_[A-Z_]+)\s*}}\s*$", text, re.M)
+    return re.findall(r"^\s{10}([A-Z][A-Z0-9_]+):\s*\$\{\{\s*vars\.([A-Z][A-Z0-9_]+)\s*}}\s*$", text, re.M)
+
+
+def permission_blocks(text: str, parent_indents: set[int]) -> list[list[str]]:
+    lines = text.splitlines()
+    blocks: list[list[str]] = []
+    for index, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip())
+        if indent not in parent_indents or line.strip() != "permissions:":
+            continue
+        children: list[str] = []
+        for child in lines[index + 1 :]:
+            if not child.strip():
+                continue
+            child_indent = len(child) - len(child.lstrip())
+            if child_indent <= indent:
+                break
+            if child_indent == indent + 2:
+                children.append(child.strip())
+        blocks.append(children)
+    return blocks
+
+
+def step_run_body(text: str, step_name: str) -> list[str]:
+    block = step_block(text, step_name)
+    if not block:
+        return []
+    run_index = next((i for i, line in enumerate(block) if re.match(r"^\s+run:\s*\|\s*$", line)), None)
+    if run_index is None:
+        return []
+    run_indent = len(block[run_index]) - len(block[run_index].lstrip())
+    body: list[str] = []
+    for line in block[run_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip()) <= run_indent:
+            break
+        body.append(line[run_indent + 2 :] if len(line) >= run_indent + 2 else "")
+    return body
+
+
+def step_block(text: str, step_name: str) -> list[str]:
+    lines = text.splitlines()
+    step_index = next((i for i, line in enumerate(lines) if re.fullmatch(r"\s*- name: " + re.escape(step_name), line)), None)
+    if step_index is None:
+        return []
+    step_indent = len(lines[step_index]) - len(lines[step_index].lstrip())
+    step_end = next(
+        (i for i in range(step_index + 1, len(lines)) if
+         len(lines[i]) - len(lines[i].lstrip()) == step_indent and lines[i].lstrip().startswith("- ")),
+        len(lines),
+    )
+    return lines[step_index:step_end]
+
+
+def step_scalar_run(text: str, step_name: str) -> str | None:
+    block = step_block(text, step_name)
+    run = next((line for line in block[1:] if re.match(r"^\s+run:\s*[^|>]", line)), None)
+    return run.split("run:", 1)[1].strip() if run else None
 
 
 def signer_contract_names(text: str) -> list[str]:
@@ -98,7 +160,7 @@ def validate_texts(probe: str, ci: str, signer: str, script: str) -> list[str]:
         "permissions:\n  contents: read",
         "persist-credentials: false",
         "-ExpectedOperation 'authenticode-credential-binding-metadata-only'",
-        "-TimestampPolicy 'DigiCert RFC 3161 http://timestamp.digicert.com; SHA-256 file and timestamp digests; not invoked'",
+        f"-TimestampPolicy '{EXPECTED_TIMESTAMP_POLICY}'",
     ):
         if required not in probe:
             errors.append(f"readiness workflow missing protected boundary: {required}")
@@ -109,6 +171,10 @@ def validate_texts(probe: str, ci: str, signer: str, script: str) -> list[str]:
     actual_vars = workflow_public_var_names(probe)
     if [value for _binding, value in actual_vars] != EXPECTED_PUBLIC_VARS or [binding for binding, _value in actual_vars] != EXPECTED_PUBLIC_VARS:
         errors.append("readiness workflow public metadata and renewal vars must match approved names in order")
+    if re.findall(r"\bvars\.([A-Z][A-Z0-9_]*)\b", probe) != EXPECTED_PUBLIC_VARS:
+        errors.append("readiness workflow contains missing, duplicate, or unapproved vars references")
+    if permission_blocks(probe, {0, 4}) != [["contents: read"], ["contents: read"]]:
+        errors.append("readiness workflow permissions must be exactly contents: read at workflow and job scope")
     if signer_contract_names(signer) != EXPECTED_SECRETS:
         errors.append("sign-windows workflow_call contract changed, was reordered, duplicated, commented, or renamed")
     if "http://timestamp.digicert.com" not in signer or "/fd SHA256" not in signer or "/td SHA256" not in signer:
@@ -120,23 +186,67 @@ def validate_texts(probe: str, ci: str, signer: str, script: str) -> list[str]:
 
     if top_level_on_triggers(ci) != ["workflow_dispatch"]:
         errors.append("credentialless CI workflow must be manual-only")
+    if permission_blocks(ci, {0, 4}) != [["contents: read"], ["contents: read"]]:
+        errors.append("credentialless CI workflow permissions must remain read-only")
+    if re.findall(r"^\s{10}ref:\s*\$\{\{\s*inputs\.candidate_sha\s*}}\s*$", ci, re.M) != ["          ref: ${{ inputs.candidate_sha }}"] * 2:
+        errors.append("both CI jobs must use the exact candidate SHA as checkout ref")
+    for step_name in ("Fetch the protected main base", "Bind exact head and base"):
+        if len(re.findall(r"^\s*- name: " + re.escape(step_name) + r"\s*$", ci, re.M)) != 1:
+            errors.append(f"CI pack must contain exactly one {step_name} step")
+    protected_checkout = step_block(ci, "Fetch the protected main base")
+    active_checkout = [line for line in protected_checkout if not line.lstrip().startswith("#")]
+    checkout_requirements = (
+        r"\s*- name: Fetch the protected main base",
+        r"\s+uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7\.0\.0",
+        r"\s+ref: refs/heads/main",
+        r"\s+path: trusted-main",
+        r"\s+persist-credentials: false",
+    )
+    if not active_checkout or any(
+        not any(re.fullmatch(pattern, line) for line in active_checkout)
+        for pattern in checkout_requirements
+    ):
+        errors.append("CI pack must fetch protected main as a separate credentialless checkout")
     for required in (
         "type: string",
         "EXPECTED_SHA: ${{ inputs.candidate_sha }}",
         "TARGET_BASE_SHA: ${{ inputs.target_base_sha }}",
-        '[[ "$GITHUB_SHA" == "$EXPECTED_SHA" ]]',
-        '[[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]',
         "runs-on: ubuntu-24.04",
         "runs-on: windows-2022",
         "python3 -S -m unittest -q tests/test_i2586_windows_readiness.py",
         "scripts/windows_signing_readiness.ps1 -SelfTest",
-        "ref: ${{ inputs.candidate_sha }}",
         "persist-credentials: false",
     ):
         if required not in ci:
             errors.append(f"credentialless CI pack missing exact-head or focused check: {required}")
     if ci.count("ref: ${{ inputs.candidate_sha }}") != 2:
         errors.append("both credentialless runner jobs must check out the exact candidate SHA")
+    binding_commands = {
+        '[[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]',
+        '[[ "$TARGET_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]',
+        '[[ "$GITHUB_SHA" == "$EXPECTED_SHA" ]]',
+        '[[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]',
+        'git fetch "$GITHUB_WORKSPACE/trusted-main" refs/heads/main:refs/remotes/target/main',
+        'TRUSTED_MAIN_SHA="$(git rev-parse refs/remotes/target/main)"',
+        'EXPECTED_BASE="$(git merge-base "$TRUSTED_MAIN_SHA" "$EXPECTED_SHA")"',
+        '[[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]',
+        '[[ "$actual_paths" == "$expected_paths" ]]',
+    }
+    if not binding_commands.issubset({line.strip() for line in step_run_body(ci, "Bind exact head and base") if line.strip() and not line.lstrip().startswith("#")}):
+        errors.append("credentialless CI pack does not bind head and target base to protected main using executable checks")
+    binding_body = [
+        line for line in step_run_body(ci, "Bind exact head and base")
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    path_literals = []
+    for line in binding_body:
+        token = line.strip().split(maxsplit=1)[0].strip("'\"") if line.strip() else ""
+        if token in ALLOWED_PATHS:
+            path_literals.append(token)
+    if sorted(path_literals) != sorted(ALLOWED_PATHS):
+        errors.append("credentialless CI pack path boundary does not match the exclusive ownership map")
+    if step_scalar_run(ci, "Run synthetic metadata fixtures only") != "./scripts/windows_signing_readiness.ps1 -SelfTest":
+        errors.append("Windows CI job must execute the credentialless PowerShell self-test as its actual step command")
     if re.search(r"(?i)(secrets\.|vars\.|sign-windows\.yml|issue-2586-windows-readiness\.yml\s+-|dispatch.*readiness)", ci):
         errors.append("credentialless CI pack accesses secrets or executes the readiness workflow")
     for path in sorted(ALLOWED_PATHS):
@@ -164,6 +274,15 @@ def validate_texts(probe: str, ci: str, signer: str, script: str) -> list[str]:
     actual_fields = re.findall(r"'([a-z_]+)'", schema.group(1)) if schema else []
     if actual_fields != RECEIPT_FIELDS:
         errors.append("PowerShell receipt fields do not exactly match the approved readiness schema")
+    for array_name, expected_fields in (
+        ("CertificateReceiptFields", CERTIFICATE_RECEIPT_FIELDS),
+        ("ChainReceiptFields", CHAIN_RECEIPT_FIELDS),
+        ("RenewalReceiptFields", RENEWAL_RECEIPT_FIELDS),
+    ):
+        nested = re.search(r"(?is)\$script:" + array_name + r"\s*=\s*@\((.*?)\)", script)
+        found = re.findall(r"'([a-z_]+)'", nested.group(1)) if nested else []
+        if found != expected_fields:
+            errors.append(f"PowerShell {array_name} do not match the frozen redacted receipt schema")
     return errors
 
 

@@ -37,6 +37,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Fetch the protected main base
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: refs/heads/main
+          path: trusted-main
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Bind exact head and base
         env:
           EXPECTED_SHA: ${{ inputs.candidate_sha }}
@@ -48,7 +56,10 @@ jobs:
           [[ "$TARGET_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_SHA" == "$EXPECTED_SHA" ]]
           [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
-          [[ "$(git merge-base "$TARGET_BASE_SHA" "$EXPECTED_SHA")" == "$TARGET_BASE_SHA" ]]
+          git fetch "$GITHUB_WORKSPACE/trusted-main" refs/heads/main:refs/remotes/target/main
+          TRUSTED_MAIN_SHA="$(git rev-parse refs/remotes/target/main)"
+          EXPECTED_BASE="$(git merge-base "$TRUSTED_MAIN_SHA" "$EXPECTED_SHA")"
+          [[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]
           actual_paths="$(git diff --name-only "$TARGET_BASE_SHA...$EXPECTED_SHA" | sort)"
           expected_paths="$(printf '%s\n' \
             .github/workflows/issue-2586-windows-contract.yml \

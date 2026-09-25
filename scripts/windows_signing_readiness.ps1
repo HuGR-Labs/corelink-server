@@ -20,13 +20,16 @@ $script:ReceiptFields = @(
     'certificate', 'chain_revocation', 'timestamp_policy', 'result',
     'artifact_signature', 'final_byte_verification', 'renewal'
 )
+$script:CertificateReceiptFields = @(
+    'issuer_match', 'subject_match', 'sha256_fingerprint', 'valid_from', 'expires_at'
+)
+$script:ChainReceiptFields = @('status', 'mode')
+$script:RenewalReceiptFields = @('owner', 'date')
 
 function ConvertTo-NormalizedName {
     param([Parameter(Mandatory)][string] $Value)
 
-    (($Value -replace '\s*([,=])\s*', '$1' -split '(?<!\\),') |
-        ForEach-Object { $_.Trim().ToUpperInvariant() } |
-        Sort-Object -CaseSensitive) -join ','
+    ($Value -replace '\s*([,=])\s*', '$1').Trim().ToUpperInvariant()
 }
 
 function ConvertTo-UtcSecond {
@@ -92,13 +95,11 @@ function Assert-ReadinessClaims {
     if ($renewalDay.Date -le $ObservedAt.UtcDateTime.Date) {
         throw 'renewal_date_not_future'
     }
-    if ($RenewalOwner -match '[@\r\n\t]' -or $RenewalOwner -notmatch '^[A-Za-z][A-Za-z0-9 &().-]{1,79}$') {
-        throw 'renewal_owner_not_role_label'
-    }
+    if ($RenewalOwner -cne 'Release Engineering') { throw 'renewal_owner_not_approved_role' }
 
     return [PSCustomObject]@{
-        issuer = [string] $Metadata.Issuer
-        subject = [string] $Metadata.Subject
+        issuer_match = $true
+        subject_match = $true
         sha256_fingerprint = $actualFingerprint
         valid_from = ConvertTo-UtcSecond $notBefore
         expires_at = ConvertTo-UtcSecond $expiresAt
@@ -113,6 +114,15 @@ function Assert-ReceiptShape {
     if ($Receipt.result -cne 'ready' -or $Receipt.evidence_type -cne 'readiness') { throw 'receipt_result_invalid' }
     if ($Receipt.artifact_signature -cne 'not_claimed' -or $Receipt.final_byte_verification -cne 'not_claimed') {
         throw 'receipt_artifact_claim_invalid'
+    }
+    foreach ($entry in @(
+        @{ Value = $Receipt.certificate; Fields = $script:CertificateReceiptFields }
+        @{ Value = $Receipt.chain_revocation; Fields = $script:ChainReceiptFields }
+        @{ Value = $Receipt.renewal; Fields = $script:RenewalReceiptFields }
+    )) {
+        if (($entry.Value.PSObject.Properties.Name -join '|') -cne ($entry.Fields -join '|')) {
+            throw 'receipt_nested_field_drift'
+        }
     }
     if (($Receipt | ConvertTo-Json -Depth 8 -Compress) -match '(?i)(password|private.?key|token|secret.?value|pfx.?bytes|certificate.?bytes|@)') {
         throw 'receipt_sensitive_field'
@@ -142,8 +152,8 @@ function Invoke-CredentiallessSelfTest {
         ObservedAt = $now
     }
     $metadata = [PSCustomObject]@{
-        Issuer = 'C=US, O=Example CA, CN=Example Issuing CA'
-        Subject = 'C=US, O=Example Org, CN=CoreLink Windows Signing'
+        Issuer = 'CN=Example Issuing CA,O=Example CA,C=US'
+        Subject = 'CN=CoreLink Windows Signing,O=Example Org,C=US'
         Fingerprint = ('A' * 64)
         NotBefore = '2026-01-01T00:00:00Z'
         ExpiresAt = '2027-01-01T00:00:00Z'
@@ -155,6 +165,8 @@ function Invoke-CredentiallessSelfTest {
     $cases = @(
         @{ Label = 'missing issuer'; Change = { param($m) $m.Issuer = '' } }
         @{ Label = 'mismatched subject'; Change = { param($m) $m.Subject = 'CN=Wrong,O=Example Org,C=US' } }
+        @{ Label = 'reordered issuer'; Change = { param($m) $m.Issuer = 'C=US,O=Example CA,CN=Example Issuing CA' } }
+        @{ Label = 'reordered subject'; Change = { param($m) $m.Subject = 'C=US,O=Example Org,CN=CoreLink Windows Signing' } }
         @{ Label = 'mismatched fingerprint'; Change = { param($m) $m.Fingerprint = ('B' * 64) } }
         @{ Label = 'expired certificate'; Change = { param($m) $m.ExpiresAt = '2026-09-24T00:00:00Z' } }
         @{ Label = 'not-yet-valid certificate'; Change = { param($m) $m.NotBefore = '2026-09-26T00:00:00Z' } }
@@ -209,6 +221,12 @@ function Invoke-CredentiallessSelfTest {
     $driftRejected = $false
     try { Assert-ReceiptShape $driftedReceipt } catch { $driftRejected = $true }
     if (-not $driftRejected) { throw 'self-test failed: receipt field drift was accepted' }
+    $dnReceipt = $receipt | Select-Object *
+    $dnReceipt.certificate = $receipt.certificate | Select-Object *
+    $dnReceipt.certificate | Add-Member -NotePropertyName subject -NotePropertyValue 'synthetic personal name'
+    $dnRejected = $false
+    try { Assert-ReceiptShape $dnReceipt } catch { $dnRejected = $true }
+    if (-not $dnRejected) { throw 'self-test failed: raw distinguished name was accepted in the receipt' }
     $secretLikeReceipt = $receipt | Select-Object *
     $secretLikeReceipt.actor_role = 'operator@example.invalid'
     $secretRejected = $false
