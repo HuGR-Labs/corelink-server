@@ -494,6 +494,9 @@ jobs:
           # runner's workspace disk.
           root="${RUNNER_TEMP:-/tmp}/i1670"
           fs_root="/dev/shm/corelink-i1670-${GITHUB_RUN_ID:-$$}"
+          shm_pre_size="$(df --output=size -B1 /dev/shm | awk 'NR == 2 { print $1 }')"
+          shm_pre_free="$(df --output=avail -B1 /dev/shm | awk 'NR == 2 { print $1 }')"
+          shm_block_size="$(stat -fc '%S' /dev/shm)"
           mkdir -p "$root" "$fs_root" artifacts/campaign-ci/i1670
           cleanup() {
             set +e
@@ -556,13 +559,16 @@ jobs:
           fill_to_margin "$fs_root/fill.bin"
           enospc_remaining="$(drain_remaining_blocks "$fs_root/enospc-drain.bin")"
           set +e
-          CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/enospc-classification.json" \
+          GITHUB_STEP_SUMMARY=/dev/null CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/enospc-classification.json" \
             scripts/run-with-infra-classification.sh \
             dd if=/dev/zero of="$fs_root/write.bin" bs=1M count=1 status=none \
-            >artifacts/campaign-ci/i1670/enospc.log 2>&1
+            >"$root/enospc.raw.log" 2>&1
           enospc_rc=$?
           set -e
           test "$enospc_rc" -ne 0
+          python3 scripts/redact_i1670_classification_log.py \
+            --input "$root/enospc.raw.log" \
+            --output artifacts/campaign-ci/i1670/enospc.log
           grep -Eq '^classification: (ENOSPC|LINKER_FAILURE)$' artifacts/campaign-ci/i1670/enospc.log
 
           rm -rf "$fs_root"
@@ -581,17 +587,24 @@ jobs:
           fill_to_margin "$fs_root/fill.bin"
           linker_remaining="$(drain_remaining_blocks "$fs_root/linker-drain.bin")"
           set +e
-          CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/linker-classification.json" \
+          GITHUB_STEP_SUMMARY=/dev/null CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/linker-classification.json" \
             scripts/run-with-infra-classification.sh \
             bash "$linker_cmd" "$root/main.o" "$fs_root/out/linked" \
-            >artifacts/campaign-ci/i1670/linker.log 2>&1
+            >"$root/linker.raw.log" 2>&1
           linker_rc=$?
           set -e
           test "$linker_rc" -ne 0
+          python3 scripts/redact_i1670_classification_log.py \
+            --input "$root/linker.raw.log" \
+            --output artifacts/campaign-ci/i1670/linker.log
           grep -Eq '^classification: (ENOSPC|LINKER_FAILURE)$' artifacts/campaign-ci/i1670/linker.log
           grep -Eq 'No space left on device|os error 28|ENOSPC|collect2|ld:' artifacts/campaign-ci/i1670/linker.log
           test -s artifacts/campaign-ci/i1670/enospc-classification.json
           test -s artifacts/campaign-ci/i1670/linker-classification.json
+          rm -rf "$fs_root"
+          test ! -e "$fs_root"
+          shm_post_size="$(df --output=size -B1 /dev/shm | awk 'NR == 2 { print $1 }')"
+          shm_post_free="$(df --output=avail -B1 /dev/shm | awk 'NR == 2 { print $1 }')"
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -602,27 +615,50 @@ jobs:
               if classification not in {"ENOSPC", "LINKER_FAILURE"}:
                   raise SystemExit(f"unexpected classifier receipt: {classification}")
           PY
-          SHM_SIZE="$(df --output=size -B1 "$fs_root" | awk 'NR == 2 { print $1 }')" \
-          SHM_BLOCK_SIZE="$(stat -fc '%S' "$fs_root")" \
+          SHM_PRE_SIZE="$shm_pre_size" SHM_PRE_FREE="$shm_pre_free" \
+          SHM_POST_SIZE="$shm_post_size" SHM_POST_FREE="$shm_post_free" \
+          SHM_BLOCK_SIZE="$shm_block_size" \
           ENOSPC_REMAINING="$enospc_remaining" LINKER_REMAINING="$linker_remaining" \
-          ENOSPC_RC="$enospc_rc" LINKER_RC="$linker_rc" python3 - <<'PY'
+          ENOSPC_RC="$enospc_rc" LINKER_RC="$linker_rc" \
+          I1670_RUN_ID="$GITHUB_RUN_ID" I1670_COMMIT_SHA="$GITHUB_SHA" python3 - <<'PY'
           import json, os
           from pathlib import Path
           root = Path("artifacts/campaign-ci/i1670")
+          run_id = int(os.environ["I1670_RUN_ID"])
+          commit_sha = os.environ["I1670_COMMIT_SHA"]
+          pre_capacity = int(os.environ["SHM_PRE_SIZE"])
+          pre_available = int(os.environ["SHM_PRE_FREE"])
+          post_capacity = int(os.environ["SHM_POST_SIZE"])
+          post_available = int(os.environ["SHM_POST_FREE"])
+          if run_id <= 0 or len(commit_sha) != 40 or any(c not in "0123456789abcdef" for c in commit_sha):
+              raise SystemExit("invalid run-bound B-128 receipt identity")
+          if pre_capacity <= 0 or post_capacity != pre_capacity:
+              raise SystemExit("bounded filesystem capacity changed during fixture")
+          if not 0 <= pre_available <= pre_capacity or not 0 <= post_available <= post_capacity:
+              raise SystemExit("invalid bounded filesystem free-byte measurement")
           report = {
               "schema": "corelink.issue-1670.hosted-classification.v1",
-              "runner": "ubuntu-24.04",
-              "filesystem": "/dev/shm tmpfs",
-              "bounded_filesystem_bytes": int(os.environ["SHM_SIZE"]),
+              "run_id": run_id,
+              "commit_sha": commit_sha,
+              "bounded_filesystem_bytes": pre_capacity,
               "filesystem_block_bytes": int(os.environ["SHM_BLOCK_SIZE"]),
               "enospc_remaining_bytes": int(os.environ["ENOSPC_REMAINING"]),
               "linker_remaining_bytes": int(os.environ["LINKER_REMAINING"]),
+              "capacity_receipt": {
+                  "pre_capacity_bytes": int(os.environ["SHM_PRE_SIZE"]),
+                  "pre_available_bytes": int(os.environ["SHM_PRE_FREE"]),
+                  "post_capacity_bytes": int(os.environ["SHM_POST_SIZE"]),
+                  "post_available_bytes": int(os.environ["SHM_POST_FREE"]),
+                  "fixture_removed_before_post_measurement": True,
+              },
               "enospc_exit": int(os.environ["ENOSPC_RC"]),
               "linker_exit": int(os.environ["LINKER_RC"]),
               "enospc_classification": json.loads((root / "enospc-classification.json").read_text())["classification"],
               "linker_classification": json.loads((root / "linker-classification.json").read_text())["classification"],
-              "cleanup": "EXIT trap removes the bounded tmpfs fixture",
+              "cleanup": {"fixture_empty": True},
           }
+          if report["capacity_receipt"]["fixture_removed_before_post_measurement"] is not True:
+              raise SystemExit("fixture cleanup readback missing")
           (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
           PY
 
