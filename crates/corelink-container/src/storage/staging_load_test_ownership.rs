@@ -10,6 +10,24 @@ use sha2::{Digest, Sha256};
 
 use super::d1_http::D1HttpClient;
 
+const SQL_REGISTER_RESOURCE: &str = "INSERT INTO staging_load_test_resources \
+    (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) \
+    SELECT ?1, ?2, ?4, ?5, ?6, ?7, 'registered', ?8 \
+    WHERE EXISTS (SELECT 1 FROM staging_load_test_runs \
+      WHERE run_id = ?1 AND scenario = ?2 AND target_environment = 'staging' \
+        AND target_deployment_sha = ?3 AND state = 'open') \
+    ON CONFLICT DO NOTHING \
+    RETURNING receipt_ref";
+
+const SQL_FIND_REGISTERED_RESOURCE: &str = "SELECT receipt_ref FROM staging_load_test_resources \
+    WHERE run_id = ?1 AND scenario = ?2 AND resource_class = ?4 \
+      AND receipt_ref = ?5 AND opaque_handle = ?6 AND disposition = ?7 \
+      AND state = 'registered' LIMIT 1";
+
+const SQL_FIND_OPEN_RUN: &str = "SELECT 1 FROM staging_load_test_runs \
+    WHERE run_id = ?1 AND scenario = ?2 AND target_environment = 'staging' \
+      AND target_deployment_sha = ?3 AND state = 'open' LIMIT 1";
+
 /// One of the scenarios admitted by migration 0147.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StagingLoadTestScenario {
@@ -153,6 +171,15 @@ pub enum StagingLoadTestRegistrationOutcome {
         /// Domain-separated SHA-256 receipt reference.
         receipt_ref: String,
     },
+    /// An identical append request was already registered and no row changed.
+    ///
+    /// Replays return the original receipt only when every immutable ownership
+    /// field still matches. A handle owned by another run is never treated as
+    /// this run's success.
+    AlreadyRegistered {
+        /// Domain-separated SHA-256 receipt reference.
+        receipt_ref: String,
+    },
     /// No open staging run matched the supplied exact identity.
     NoMatchingOpenRun,
 }
@@ -210,42 +237,85 @@ impl StagingLoadTestOwnershipWriter {
             .as_millis();
         let now_ms = i64::try_from(now_ms)
             .map_err(|_| "system clock timestamp is out of range".to_owned())?;
+        let params = registration_params(&registration, &receipt_ref, now_ms);
         let rows = self
             .d1
-            .query(
-                "INSERT INTO staging_load_test_resources \
-                 (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) \
-                 SELECT ?1, ?2, ?4, ?5, ?6, ?7, 'registered', ?8 \
-                 WHERE EXISTS (SELECT 1 FROM staging_load_test_runs \
-                   WHERE run_id = ?1 AND scenario = ?2 AND target_environment = 'staging' \
-                     AND target_deployment_sha = ?3 AND state = 'open') \
-                 RETURNING receipt_ref",
-                &[
-                    json!(registration.run_id),
-                    json!(registration.scenario.as_str()),
-                    json!(registration.target_deployment_sha),
-                    json!(registration.resource_class.as_str()),
-                    json!(receipt_ref),
-                    json!(registration.opaque_handle),
-                    json!(registration.disposition.as_str()),
-                    json!(now_ms),
-                ],
-            )
+            .query(SQL_REGISTER_RESOURCE, &params)
             .await
             .map_err(|_| "staging load-test resource registration failed".to_owned())?;
 
-        let Some(row) = rows.first() else {
-            return Ok(StagingLoadTestRegistrationOutcome::NoMatchingOpenRun);
-        };
-        let returned_receipt = row
-            .get("receipt_ref")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| "D1 returned a malformed registration result".to_owned())?;
-        if returned_receipt != receipt_ref {
-            return Err("D1 returned an unexpected registration receipt".to_owned());
+        match rows.as_slice() {
+            [row] => {
+                let returned_receipt =
+                    row.get("receipt_ref")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or_else(|| "D1 returned a malformed registration result".to_owned())?;
+                if returned_receipt != receipt_ref {
+                    return Err("D1 returned an unexpected registration receipt".to_owned());
+                }
+                Ok(StagingLoadTestRegistrationOutcome::Registered { receipt_ref })
+            }
+            [] => self.registration_replay_outcome(&params, receipt_ref).await,
+            _ => Err("D1 returned multiple registration results".to_owned()),
         }
-        Ok(StagingLoadTestRegistrationOutcome::Registered { receipt_ref })
     }
+
+    async fn registration_replay_outcome(
+        &self,
+        params: &[serde_json::Value],
+        receipt_ref: String,
+    ) -> Result<StagingLoadTestRegistrationOutcome, String> {
+        let existing = self
+            .d1
+            .query(SQL_FIND_REGISTERED_RESOURCE, params)
+            .await
+            .map_err(|_| "staging load-test registration lookup failed".to_owned())?;
+        match existing.as_slice() {
+            [row] => {
+                let returned_receipt =
+                    row.get("receipt_ref")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or_else(|| "D1 returned a malformed registration lookup".to_owned())?;
+                if returned_receipt != receipt_ref {
+                    return Err("D1 returned an unexpected registration receipt".to_owned());
+                }
+                Ok(StagingLoadTestRegistrationOutcome::AlreadyRegistered { receipt_ref })
+            }
+            [] => {
+                let open_run = self
+                    .d1
+                    .query(SQL_FIND_OPEN_RUN, &params[..3])
+                    .await
+                    .map_err(|_| "staging load-test run lookup failed".to_owned())?;
+                if open_run.is_empty() {
+                    Ok(StagingLoadTestRegistrationOutcome::NoMatchingOpenRun)
+                } else {
+                    Err(
+                        "staging load-test resource registration conflicts with existing ownership"
+                            .to_owned(),
+                    )
+                }
+            }
+            _ => Err("D1 returned multiple registration lookup results".to_owned()),
+        }
+    }
+}
+
+fn registration_params(
+    registration: &StagingLoadTestResourceRegistration<'_>,
+    receipt_ref: &str,
+    now_ms: i64,
+) -> [serde_json::Value; 8] {
+    [
+        json!(registration.run_id),
+        json!(registration.scenario.as_str()),
+        json!(registration.target_deployment_sha),
+        json!(registration.resource_class.as_str()),
+        json!(receipt_ref),
+        json!(registration.opaque_handle),
+        json!(registration.disposition.as_str()),
+        json!(now_ms),
+    ]
 }
 
 fn validate_registration(
@@ -299,6 +369,8 @@ fn receipt_ref(registration: &StagingLoadTestResourceRegistration<'_>) -> String
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::{params, Connection};
+
     use super::*;
 
     fn registration<'a>(
@@ -316,6 +388,65 @@ mod tests {
             disposition,
             opaque_handle,
         }
+    }
+
+    fn insert_registration(
+        db: &Connection,
+        registration: &StagingLoadTestResourceRegistration<'_>,
+        receipt: &str,
+        now_ms: i64,
+    ) -> rusqlite::Result<String> {
+        db.query_row(
+            SQL_REGISTER_RESOURCE,
+            params![
+                registration.run_id,
+                registration.scenario.as_str(),
+                registration.target_deployment_sha,
+                registration.resource_class.as_str(),
+                receipt,
+                registration.opaque_handle,
+                registration.disposition.as_str(),
+                now_ms,
+            ],
+            |row| row.get("receipt_ref"),
+        )
+    }
+
+    fn find_registration(
+        db: &Connection,
+        registration: &StagingLoadTestResourceRegistration<'_>,
+        receipt: &str,
+        now_ms: i64,
+    ) -> rusqlite::Result<String> {
+        db.query_row(
+            SQL_FIND_REGISTERED_RESOURCE,
+            params![
+                registration.run_id,
+                registration.scenario.as_str(),
+                registration.target_deployment_sha,
+                registration.resource_class.as_str(),
+                receipt,
+                registration.opaque_handle,
+                registration.disposition.as_str(),
+                now_ms,
+            ],
+            |row| row.get("receipt_ref"),
+        )
+    }
+
+    fn find_open_run(
+        db: &Connection,
+        registration: &StagingLoadTestResourceRegistration<'_>,
+    ) -> rusqlite::Result<i64> {
+        db.query_row(
+            SQL_FIND_OPEN_RUN,
+            params![
+                registration.run_id,
+                registration.scenario.as_str(),
+                registration.target_deployment_sha,
+            ],
+            |row| row.get(0),
+        )
     }
 
     #[test]
@@ -435,5 +566,94 @@ mod tests {
         let rendered = format!("{value:?}");
         assert!(!rendered.contains("must-not-appear"));
         assert!(rendered.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn registration_sql_returns_the_same_receipt_for_an_exact_replay() {
+        let db = Connection::open_in_memory().expect("in-memory D1 ledger");
+        db.execute_batch(include_str!(
+            "../../../../migrations/d1/0147_staging_load_test_run_ownership.sql"
+        ))
+        .expect("apply ownership migration");
+        let sha = "a".repeat(40);
+        db.execute(
+            "INSERT INTO staging_load_test_runs VALUES (?1, 'webhook', 'staging', ?2, 'open', 1)",
+            params!["123", &sha],
+        )
+        .expect("open webhook run");
+
+        let registration = registration(
+            "123",
+            &sha,
+            "evt_load_123",
+            StagingLoadTestResourceClass::WebhookInbox,
+            StagingLoadTestDisposition::Disposable,
+        );
+        let receipt = receipt_ref(&registration);
+        let first = insert_registration(&db, &registration, &receipt, 2)
+            .expect("first append returns a receipt");
+        assert_eq!(first, receipt);
+
+        let replay = insert_registration(&db, &registration, &receipt, 2);
+        assert!(matches!(replay, Err(rusqlite::Error::QueryReturnedNoRows)));
+        let found = find_registration(&db, &registration, &receipt, 2)
+            .expect("exact replay finds only its original immutable registration");
+        assert_eq!(found, receipt);
+        let count: i64 = db
+            .query_row(
+                "SELECT count(*) FROM staging_load_test_resources",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count registrations");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn registration_sql_does_not_adopt_a_handle_owned_by_another_run() {
+        let db = Connection::open_in_memory().expect("in-memory D1 ledger");
+        db.execute_batch(include_str!(
+            "../../../../migrations/d1/0147_staging_load_test_run_ownership.sql"
+        ))
+        .expect("apply ownership migration");
+        let sha = "a".repeat(40);
+        for run_id in ["123", "124"] {
+            db.execute(
+                "INSERT INTO staging_load_test_runs VALUES (?1, 'webhook', 'staging', ?2, 'open', 1)",
+                params![run_id, &sha],
+            )
+            .expect("open webhook run");
+        }
+        let first = registration(
+            "123",
+            &sha,
+            "evt_load_unique",
+            StagingLoadTestResourceClass::WebhookInbox,
+            StagingLoadTestDisposition::Disposable,
+        );
+        let first_receipt = receipt_ref(&first);
+        insert_registration(&db, &first, &first_receipt, 2).expect("first run owns the handle");
+
+        let second = registration(
+            "124",
+            &sha,
+            "evt_load_unique",
+            StagingLoadTestResourceClass::WebhookInbox,
+            StagingLoadTestDisposition::Disposable,
+        );
+        let second_receipt = receipt_ref(&second);
+        let conflicting_insert = insert_registration(&db, &second, &second_receipt, 3);
+        assert!(matches!(
+            conflicting_insert,
+            Err(rusqlite::Error::QueryReturnedNoRows)
+        ));
+        let matching_second = find_registration(&db, &second, &second_receipt, 3);
+        assert!(matches!(
+            matching_second,
+            Err(rusqlite::Error::QueryReturnedNoRows)
+        ));
+        let open_run = find_open_run(&db, &second)
+            .expect("second run is still open, so its absent exact row is a conflict");
+        assert_eq!(open_run, 1);
     }
 }
