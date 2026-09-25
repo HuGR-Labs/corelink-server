@@ -668,19 +668,35 @@ def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> N
     test.assertEqual(trusted.get("permissions"), {"contents": "read", "vulnerability-alerts": "read"})
 
 
-def assert_data_only_hosted_boundary(test: unittest.TestCase, name: str) -> None:
-    raw = (WORKFLOWS / name).read_text(encoding="utf-8")
-    test.assertEqual(raw.count("persist-credentials: false"), 2)
-    test.assertIn("github.event.pull_request.base.sha", raw)
-    test.assertIn("github.event.pull_request.head.sha", raw)
+def assert_data_only_hosted_boundary(
+    test: unittest.TestCase, name: str, raw: str | None = None
+) -> None:
+    raw = raw or (WORKFLOWS / name).read_text(encoding="utf-8")
+
+    def checkout(step_name: str, ref: str, path: str) -> None:
+        match = re.search(
+            rf"(?ms)^      - name: {re.escape(step_name)}.*?(?=^      - |\\Z)", raw
+        )
+        test.assertIsNotNone(match, f"{name} must retain {step_name!r}")
+        block = match.group(0)
+        test.assertIn(f"ref: ${{{{ {ref} }}}}", block)
+        test.assertIn(f"path: {path}", block)
+        test.assertIn("persist-credentials: false", block)
+
     if name == "issue-2176-grpc-deny-gate.yml":
+        checkout("Checkout protected-base verifier", "github.event.pull_request.base.sha", "trusted-base")
+        checkout("Checkout exact candidate head as inert data", "github.event.pull_request.head.sha", "candidate")
         test.assertIn("github.repository_id == '1232040291'", raw)
         test.assertIn("--trusted-base trusted-base", raw)
         test.assertIn("--candidate candidate", raw)
+        test.assertIn("trusted-base/scripts/verify_i2176_grpc_deny_gate.py", raw)
+        test.assertIn("trusted-base/tests/test_verify_i2176_grpc_deny_gate.py", raw)
     else:
-        test.assertIn("path: .trusted", raw)
-        test.assertIn("path: .candidate", raw)
+        checkout("Checkout trusted tooling", "github.event.pull_request.base.sha || github.sha", ".trusted")
+        checkout("Checkout pull-request tree as data", "github.event.pull_request.head.sha", ".candidate")
         test.assertIn("${GITHUB_WORKSPACE}/.trusted/scripts/validate_secrets_matrix.py", raw)
+        test.assertIn("${GITHUB_WORKSPACE}/.trusted/scripts/check-env-contract.py", raw)
+        test.assertIn("${GITHUB_WORKSPACE}/.trusted/scripts/secrets-checklist-verify.sh", raw)
 
 
 def assert_welcome_boundary(test: unittest.TestCase, workflow: dict) -> None:
@@ -797,6 +813,30 @@ jobs:
                 assert_transition_runner(
                     self, welcome.get("runs-on"), ["self-hosted", "mac", "corelink-builder"]
                 )
+
+    def test_data_only_hosted_boundaries_reject_ref_and_trusted_source_swaps(self) -> None:
+        cases = (
+            (
+                "issue-2176-grpc-deny-gate.yml",
+                "github.event.pull_request.base.sha",
+                "github.event.pull_request.head.sha",
+                "trusted-base/scripts/verify_i2176_grpc_deny_gate.py",
+                "candidate/scripts/verify_i2176_grpc_deny_gate.py",
+            ),
+            (
+                "secrets-drift.yml",
+                "github.event.pull_request.base.sha || github.sha",
+                "github.event.pull_request.head.sha",
+                "${GITHUB_WORKSPACE}/.trusted/scripts/validate_secrets_matrix.py",
+                "${GITHUB_WORKSPACE}/.candidate/scripts/validate_secrets_matrix.py",
+            ),
+        )
+        for name, trusted_ref, candidate_ref, trusted_source, candidate_source in cases:
+            raw = (WORKFLOWS / name).read_text(encoding="utf-8")
+            with self.subTest(name=name, mutant="swap checkout refs"), self.assertRaises(AssertionError):
+                assert_data_only_hosted_boundary(self, name, raw.replace(trusted_ref, candidate_ref, 1))
+            with self.subTest(name=name, mutant="swap trusted command source"), self.assertRaises(AssertionError):
+                assert_data_only_hosted_boundary(self, name, raw.replace(trusted_source, candidate_source, 1))
 
     def test_fabric_jobs_allow_only_trusted_associations(self) -> None:
         assert_labels_boundary(self, load_workflow("pr-labels.yml"))
