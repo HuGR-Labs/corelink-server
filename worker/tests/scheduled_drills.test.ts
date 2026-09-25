@@ -29,6 +29,12 @@ function envWithDelivery(fetch: typeof globalThis.fetch): Env {
   return { ENVIRONMENT: "dev", SCHEDULED_DRILL_DELIVERY: { fetch } } as Env;
 }
 
+function envWithProviderDeferred(fetch: typeof globalThis.fetch): Env {
+  return { ENVIRONMENT: "staging", SYNTHETIC_DRILL_PROVIDER_MODE: "provider_deferred",
+    SENTRY_RELEASE: "0123456789abcdef0123456789abcdef01234567",
+    CF_VERSION_METADATA: { id: "cf-scheduler-version-7" }, SCHEDULED_DRILL_DELIVERY: { fetch } } as Env;
+}
+
 function scheduledCtx(): ExecutionContext {
   return {
     waitUntil: (_promise: Promise<unknown>) => undefined,
@@ -107,6 +113,29 @@ describe("scheduled drill delivery", () => {
 
     expect(controller.noRetrySpy).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledWith("[scheduled_drill] failed drill=synthetic_page reason=delivery_status");
+  });
+
+  it("accepts provider-deferred mode only with a fully correlated terminal receipt", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
+      terminal: true, outcome: "provider_deferred", receiver_result: "persisted_provider_deferred",
+      drill_id: TEST_DRILL_ID, correlation_id: `PAT-CORRELATION-ID-001:${TEST_DRILL_ID}`,
+      scheduled_at_ms: TEST_SCHEDULED_AT_MS, worker_revision: "cf-scheduler-version-7",
+      serving_sha: "0123456789abcdef0123456789abcdef01234567", receiver_worker_revision: "cf-receiver-version-9",
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    await expect(workerHandler.scheduled!(controllerFor("0 14 * * 1"), envWithProviderDeferred(fetch), scheduledCtx())).resolves.toBeUndefined();
+    const [, init] = fetch.mock.calls[0] ?? [];
+    expect(JSON.parse(String((init as RequestInit).body)).synthetic_page).toMatchObject({ provider_mode: "provider_deferred",
+      worker_revision: "cf-scheduler-version-7", serving_sha: "0123456789abcdef0123456789abcdef01234567" });
+    expect(info).toHaveBeenCalledWith("[scheduled_drill] completed drill=synthetic_page result=provider_deferred_terminal");
+  });
+
+  it("rejects generic 2xx and forged provider-deferred terminal receipts", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({ accepted: true }), { status: 200 }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(workerHandler.scheduled!(controllerFor("0 14 * * 1"), envWithProviderDeferred(fetch), scheduledCtx()))
+      .rejects.toThrow("scheduled drill terminal receipt invalid");
+    expect(error).toHaveBeenCalledWith("[scheduled_drill] failed drill=synthetic_page reason=terminal_receipt_invalid");
   });
 
   it("fails closed when the delivery binding is absent", async () => {

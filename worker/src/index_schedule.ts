@@ -27,6 +27,9 @@ export async function runScheduled(controller: ScheduledController, env: Env): P
     // stable for a Cloudflare retry and unique for each weekly tick.
     const deliveryId = `SP-${controller.scheduledTime}`;
     const week = scheduledWeekNumber(controller.scheduledTime);
+    const providerMode = env.SYNTHETIC_DRILL_PROVIDER_MODE === "provider_deferred"
+      ? "provider_deferred"
+      : "pagerduty";
     const body = {
       drill,
       cron: controller.cron,
@@ -37,6 +40,9 @@ export async function runScheduled(controller: ScheduledController, env: Env): P
         rotation_week: ((week % 4) + 4) % 4,
         emit_at_ms: syntheticEmitAtMs(controller.scheduledTime, week),
         delivery_mode: ((week % 4) + 4) % 4 === 3 ? "deferred" : "immediate",
+        provider_mode: providerMode,
+        worker_revision: env.CF_VERSION_METADATA?.id ?? "",
+        serving_sha: env.SENTRY_RELEASE ?? "",
         dedup_key: deliveryId,
         correlation_id: `PAT-CORRELATION-ID-001:${deliveryId}`,
       },
@@ -66,5 +72,32 @@ export async function runScheduled(controller: ScheduledController, env: Env): P
       throw new Error("scheduled drill delivery failed");
     }
 
-    console.info(`[scheduled_drill] delivered drill=${drill} result=accepted`);
+    if (providerMode === "provider_deferred") {
+      let receipt: unknown;
+      try { receipt = await response.json(); } catch { receipt = null; }
+      const expectedWorkerRevision = env.CF_VERSION_METADATA?.id;
+      const expectedServingSha = env.SENTRY_RELEASE;
+      const terminalReceipt = typeof receipt === "object" && receipt !== null
+        ? receipt as Record<string, unknown>
+        : null;
+      if (terminalReceipt === null ||
+          terminalReceipt["terminal"] !== true ||
+          terminalReceipt["outcome"] !== "provider_deferred" ||
+          terminalReceipt["receiver_result"] !== "persisted_provider_deferred" ||
+          terminalReceipt["drill_id"] !== deliveryId ||
+          terminalReceipt["correlation_id"] !== `PAT-CORRELATION-ID-001:${deliveryId}` ||
+          terminalReceipt["scheduled_at_ms"] !== controller.scheduledTime ||
+          terminalReceipt["worker_revision"] !== expectedWorkerRevision ||
+          terminalReceipt["serving_sha"] !== expectedServingSha ||
+          typeof terminalReceipt["receiver_worker_revision"] !== "string") {
+        console.error(`[scheduled_drill] failed drill=${drill} reason=terminal_receipt_invalid`);
+        throw new Error("scheduled drill terminal receipt invalid");
+      }
+    }
+
+    if (providerMode === "provider_deferred") {
+      console.info(`[scheduled_drill] completed drill=${drill} result=provider_deferred_terminal`);
+    } else {
+      console.info(`[scheduled_drill] delivered drill=${drill} result=accepted`);
+    }
 }
