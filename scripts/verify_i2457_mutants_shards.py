@@ -348,9 +348,15 @@ def validate_shard_receipt(receipt: Mapping[str, Any], inventory: Mapping[str, A
     require_digest(receipt.get("artifact_digest"), "shard.artifact_digest")
     if receipt.get("evidence_present") is not True:
         raise VerificationError(f"shard {index} evidence artifact is missing")
-    if receipt.get("outcomes_complete") is not True:
-        raise VerificationError(f"shard {index} does not prove complete outcomes")
     counts = receipt.get("outcome_counts")
+    outcomes_complete = receipt.get("outcomes_complete")
+    if outcomes_complete is False:
+        if receipt.get("status") != "incomplete" or counts is not None:
+            raise VerificationError(f"shard {index} incomplete status does not bind absent terminal outcomes")
+        require_string(receipt.get("incomplete_reason"), f"shard {index} incomplete_reason")
+        return index
+    if outcomes_complete is not True:
+        raise VerificationError(f"shard {index} does not prove complete outcomes")
     if not isinstance(counts, Mapping) or set(counts) != set(OUTCOME_COUNT_FIELDS):
         raise VerificationError(f"shard {index} outcome summary is invalid")
     if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts.values()):
@@ -426,6 +432,8 @@ def aggregate_receipts(
             raise VerificationError(f"shard {index} is bound to another baseline")
         if validate_shard_receipt(receipt, inventory) != index:
             raise VerificationError(f"shard {index} identity drifted")
+        if receipt.get("status") == "incomplete":
+            raise VerificationError(f"shard {index} has incomplete terminal outcomes: {receipt['incomplete_reason']}")
         if downloaded_shard_digests is not None:
             key = (index, receipt["run_attempt"])
             downloaded = downloaded_shard_digests.get(key)
@@ -525,6 +533,8 @@ def shard_artifact_digest(evidence: Path) -> str:
 def validate_redacted_evidence(evidence: Path, receipt: Mapping[str, Any]) -> None:
     """Require retained redacted terminal outcome evidence to bind exact membership."""
     manifest = read_json(evidence / "shard-evidence-manifest.json")
+    if not isinstance(manifest, Mapping):
+        raise VerificationError("redacted shard evidence manifest must be an object")
     if manifest.get("schema") != EVIDENCE_SCHEMA:
         raise VerificationError("redacted shard evidence has an unsupported schema")
     expected_ids = receipt.get("mutant_ids")
@@ -532,7 +542,13 @@ def validate_redacted_evidence(evidence: Path, receipt: Mapping[str, Any]) -> No
     if manifest.get("expected_mutant_ids") != expected_ids or manifest.get("expected_mutant_counts") != expected_counts:
         raise VerificationError("redacted shard evidence expected list does not bind the receipt")
     if receipt.get("outcomes_complete") is False:
-        if receipt.get("status") != "incomplete" or manifest.get("observed_mutant_ids") is not None or manifest.get("terminal_outcomes") is not None:
+        observed_ids = manifest.get("observed_mutant_ids")
+        observed_counts = manifest.get("observed_mutant_counts")
+        if observed_ids is not None and observed_ids != expected_ids:
+            raise VerificationError("redacted incomplete shard evidence observed list differs from expected membership")
+        if observed_counts is not None and observed_counts != expected_counts:
+            raise VerificationError("redacted incomplete shard evidence observed counts differ from expected membership")
+        if receipt.get("status") != "incomplete" or manifest.get("terminal_outcomes") is not None or manifest.get("outcome_counts") is not None:
             raise VerificationError("redacted shard evidence incomplete state is invalid")
         return
     if manifest.get("observed_mutant_ids") != expected_ids or manifest.get("observed_mutant_counts") != expected_counts:
@@ -623,35 +639,36 @@ def command_write_shard(args: argparse.Namespace) -> None:
 
 def command_aggregate(args: argparse.Namespace) -> None:
     root = args.artifacts
-    inventories = [read_json(path) for path in root.rglob("inventory-manifest.json")]
-    baselines = [read_json(path) for path in root.rglob("baseline-receipt.json")]
-    shard_paths = list(root.rglob("shard-receipt.json"))
-    shards = [read_json(path) for path in shard_paths]
+    inventories: list[Any] = []
+    baselines: list[Any] = []
+    shard_paths: list[Path] = []
+    shards: list[Any] = []
     downloaded: dict[tuple[int, int], dict[str, str]] = {}
-    for receipt_path, shard in zip(shard_paths, shards, strict=True):
-        shard_identity = shard.get("shard")
-        if not isinstance(shard_identity, dict):
-            raise VerificationError("downloaded shard receipt lacks shard identity")
-        index = shard_identity.get("index")
-        if isinstance(index, bool) or not isinstance(index, int):
-            raise VerificationError("downloaded shard receipt has invalid shard index")
-        attempt = require_attempt(shard.get("run_attempt"), "downloaded shard.run_attempt")
-        key = (index, attempt)
-        if key in downloaded:
-            raise VerificationError(f"duplicate downloaded shard artifact for shard {index} attempt {attempt}")
-        artifact_root = receipt_path.parent
-        # upload-artifact preserves the least-common-ancestor relative path.
-        # Each artifact contains a direct receipt plus only its redacted list
-        # evidence, never the raw cargo-mutants source payload.
-        evidence = artifact_root / "redacted-evidence"
-        if not (evidence / "shard-evidence-manifest.json").is_file():
-            raise VerificationError(f"downloaded evidence bytes are missing for shard {index} attempt {attempt}")
-        validate_redacted_evidence(evidence, shard)
-        downloaded[key] = {
-            "evidence_digest": directory_digest(evidence) if evidence.is_dir() else digest([]),
-            "artifact_digest": shard_artifact_digest(evidence),
-        }
+    failure_reason: str | None = None
     try:
+        inventories = [read_json(path) for path in sorted(root.rglob("inventory-manifest.json"))]
+        baselines = [read_json(path) for path in sorted(root.rglob("baseline-receipt.json"))]
+        shard_paths = sorted(root.rglob("shard-receipt.json"))
+        shards = [read_json(path) for path in shard_paths]
+        for receipt_path, shard in zip(shard_paths, shards, strict=True):
+            shard_identity = shard.get("shard") if isinstance(shard, Mapping) else None
+            if not isinstance(shard_identity, dict):
+                raise VerificationError("downloaded shard receipt lacks shard identity")
+            index = shard_identity.get("index")
+            if isinstance(index, bool) or not isinstance(index, int):
+                raise VerificationError("downloaded shard receipt has invalid shard index")
+            attempt = require_attempt(shard.get("run_attempt"), "downloaded shard.run_attempt")
+            key = (index, attempt)
+            if key in downloaded:
+                raise VerificationError(f"duplicate downloaded shard artifact for shard {index} attempt {attempt}")
+            evidence = receipt_path.parent / "redacted-evidence"
+            if not (evidence / "shard-evidence-manifest.json").is_file():
+                raise VerificationError(f"downloaded evidence bytes are missing for shard {index} attempt {attempt}")
+            downloaded[key] = {
+                "evidence_digest": directory_digest(evidence),
+                "artifact_digest": shard_artifact_digest(evidence),
+            }
+            validate_redacted_evidence(evidence, shard)
         receipt = aggregate_receipts(
             inventories,
             baselines,
@@ -661,8 +678,47 @@ def command_aggregate(args: argparse.Namespace) -> None:
             args.run_attempt,
             downloaded,
         )
-    except VerificationError as error:
-        received = sorted({shard.get("shard", {}).get("index") for shard in shards if isinstance(shard.get("shard"), Mapping) and isinstance(shard["shard"].get("index"), int)})
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        failure_reason = str(error)
+        received = sorted({shard.get("shard", {}).get("index") for shard in shards if isinstance(shard, Mapping) and isinstance(shard.get("shard"), Mapping) and isinstance(shard["shard"].get("index"), int) and not isinstance(shard["shard"].get("index"), bool)})
+        inventory = next((item for item in inventories if isinstance(item, Mapping)), {})
+        baseline = next((item for item in baselines if isinstance(item, Mapping)), {})
+        observed_coverage: list[dict[str, Any]] = []
+        outcome_totals = Counter()
+        terminal_shards = 0
+        terminal_mutants = 0
+        for shard in shards:
+            if not isinstance(shard, Mapping) or not isinstance(shard.get("shard"), Mapping):
+                continue
+            index = shard["shard"].get("index")
+            if isinstance(index, bool) or not isinstance(index, int):
+                continue
+            ids = shard.get("mutant_ids")
+            ids = ids if isinstance(ids, list) and all(isinstance(identity, str) for identity in ids) else []
+            counts = shard.get("outcome_counts")
+            valid_counts = (
+                isinstance(counts, Mapping)
+                and set(counts) == set(OUTCOME_COUNT_FIELDS)
+                and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in counts.values())
+                and sum(counts.values()) == len(ids)
+            )
+            complete = shard.get("outcomes_complete") is True and valid_counts
+            if complete:
+                terminal_shards += 1
+                terminal_mutants += len(ids)
+                for field in OUTCOME_COUNT_FIELDS:
+                    outcome_totals[field] += counts[field]
+            observed_coverage.append({"index": index, "mutants": len(ids), "outcomes_complete": complete})
+        artifact_digests = [
+            {"index": index, "run_attempt": attempt, **values}
+            for (index, attempt), values in sorted(downloaded.items())
+        ]
+        inventory_ids = inventory.get("mutant_ids")
+        expected_coverage = [
+            {"index": index, "mutants": len(membership(inventory_ids, index)) if isinstance(inventory_ids, list) else None}
+            for index in range(SHARD_COUNT)
+        ]
+        partial_outcomes = dict(sorted(outcome_totals.items())) if terminal_shards else None
         receipt = {
             "schema": AGGREGATE_SCHEMA,
             "run_id": args.run_id,
@@ -671,13 +727,31 @@ def command_aggregate(args: argparse.Namespace) -> None:
             "tool_version": TOOL_VERSION,
             "config_digest": config_digest(),
             "shard_count": SHARD_COUNT,
+            "expected_shards": list(range(SHARD_COUNT)),
             "received_shards": received,
             "missing_shards": sorted(set(range(SHARD_COUNT)) - set(received)),
+            "inventory_digest": inventory.get("inventory_digest"),
+            "baseline_digest": baseline.get("baseline_digest"),
+            "expected_mutants": len(inventory_ids) if isinstance(inventory_ids, list) else None,
+            "expected_shard_coverage": expected_coverage,
+            "observed_shard_coverage": sorted(observed_coverage, key=lambda item: item["index"]),
+            "expected_coverage_digest": digest(expected_coverage),
+            "observed_mutants_with_terminal_outcomes": terminal_mutants,
+            "observed_coverage_digest": digest(sorted(observed_coverage, key=lambda item: item["index"])),
+            "terminal_shards": terminal_shards,
             "outcomes_complete": False,
+            "outcome_counts": partial_outcomes,
+            "outcome_digest": digest(partial_outcomes) if partial_outcomes is not None else None,
+            "shard_artifact_digests": artifact_digests,
             "status": "failure",
             "failure_reason": str(error),
         }
+    if failure_reason is None and receipt.get("status") != "success":
+        failure_reason = "one or more shards failed or terminal mutation outcomes include survivors or timeouts"
+        receipt["failure_reason"] = failure_reason
     write_json(args.out, receipt)
+    if failure_reason is not None:
+        raise VerificationError(failure_reason)
 
 
 def command_select_latest(args: argparse.Namespace) -> None:
@@ -720,6 +794,10 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
         "verify_i2457_mutants_shards.py aggregate",
+        "id: upload-aggregate-receipt",
+        "steps.upload-aggregate-receipt.outputs.artifact-digest",
+        "Record retained aggregate artifact digest",
+        "re.fullmatch(r\"[0-9a-f]{64}\", digest)",
         "retention-days: 30",
         "cancel-in-progress: false",
     )
