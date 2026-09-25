@@ -25,17 +25,17 @@ def main() -> int:
     valid = json.loads(FIXTURE.read_text(encoding="utf-8"))
     if verify(FIXTURE) != 0:
         raise AssertionError("valid B-072 fixture rejected")
+    for outcome in ("acked", "escalated"):
+        if run_case({**valid, "terminal_outcome": outcome}) != 0:
+            raise AssertionError(f"valid B-072 terminal outcome rejected: {outcome}")
 
     mutations = {
         "missing correlation": {**valid, "correlation_id": "drifted"},
         "wrong cron": {**valid, "cron": "0 6 * * 1"},
         "credential": {**valid, "pagerduty_incident": "routing_key=secret"},
         "unredacted reference": {**valid, "d1_row": "row-123"},
-        "ack after escalation": {
-            **valid,
-            "acknowledged_at": valid["escalated_at"],
-            "escalated_at": valid["acknowledged_at"],
-        },
+        "unknown terminal outcome": {**valid, "terminal_outcome": "unacked"},
+        "terminal event after capture": {**valid, "terminal_at": "2026-09-22T12:11:00Z"},
     }
     for name, mutation in mutations.items():
         if run_case(mutation) == 0:
