@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS audit_chain_admin_approval (
     ),
     executor_subject_id TEXT NOT NULL CHECK (length(executor_subject_id) BETWEEN 1 AND 256),
     approver_subject_id TEXT NOT NULL CHECK (length(approver_subject_id) BETWEEN 1 AND 256),
-    CHECK (executor_subject_id <> approver_subject_id),
     operation_digest_hex TEXT NOT NULL CHECK (
         length(operation_digest_hex) = 64 AND operation_digest_hex NOT GLOB '*[^0-9a-f]*'
     ),
@@ -20,7 +19,8 @@ CREATE TABLE IF NOT EXISTS audit_chain_admin_approval (
     ),
     consumed_at_ms INTEGER NOT NULL CHECK (
         consumed_at_ms >= issued_at_ms AND consumed_at_ms < expires_at_ms
-    )
+    ),
+    CHECK (executor_subject_id <> approver_subject_id)
 );
 
 CREATE TRIGGER IF NOT EXISTS audit_chain_admin_approval_no_update
