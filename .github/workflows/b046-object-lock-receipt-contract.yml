@@ -1,0 +1,24 @@
+name: B-046 object-lock receipt contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/aws-s3-object-lock-live-proof.yml
+      - scripts/build_b046_object_lock_receipt.py
+      - tests/test_verify_b046_object_lock_probe.py
+
+permissions:
+  contents: read
+
+jobs:
+  verify-receipt-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Verify B-046 object-lock probe contract
+        run: python3 scripts/verify_b046_object_lock_probe.py
+      - name: Run B-046 object-lock receipt unit tests
+        run: python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py
