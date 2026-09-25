@@ -18,10 +18,13 @@ from typing import Callable
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/buck2-starter-ci.yml"
 CONTRACT_WORKFLOW = ROOT / ".github/workflows/issue-2047-buck2-cache-contract.yml"
+ADMISSION_CONTRACT = ROOT / "specs/03_architecture/issue-2047-buck2-admission-contract.md"
 CONFIG = ROOT / "examples/buck2-starter/.buckconfig"
 BUCK = ROOT / "examples/buck2-starter/BUCK"
 TOOLCHAIN = ROOT / "examples/buck2-starter/toolchains/BUCK"
 BENCHMARK = ROOT / "examples/buck2-starter/scripts/benchmark.sh"
+GRPC_GATE = ROOT / "worker/src/grpc_transport_gate.ts"
+WORKER_FETCH = ROOT / "worker/src/index_fetch.ts"
 
 EXPECTED_CACHE_KEY = "buck2-build-${{ github.repository }}-${{ github.sha }}"
 EXPECTED_CACHE_PATH = "examples/buck2-starter/buck-out/v2/cache"
@@ -90,10 +93,14 @@ def _require_cache_pair(job: str, label: str, *, restore: bool, save: bool = Fal
 
 def verify(
     workflow: str,
+    contract_workflow: str,
+    admission_contract: str,
     config: str,
     buck: str,
     toolchain: str,
     benchmark: str,
+    grpc_gate: str,
+    worker_fetch: str,
 ) -> None:
     """Verify the complete authenticated warm-cache contract."""
 
@@ -104,6 +111,57 @@ def verify(
     _require(active, "permissions:\n  contents: read", "runtime workflow")
     if "permissions:" in _job(active, "benchmark"):
         raise ContractError("runtime workflow/benchmark: job-level permissions are forbidden")
+
+    contract_active = _active(contract_workflow)
+    _require(contract_active, "pull_request:", "contract workflow")
+    _require_once(contract_active, "workflow_dispatch: {}", "contract workflow")
+    _require(contract_active, "permissions:\n  contents: read", "contract workflow")
+    _require(
+        contract_active,
+        "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+        "contract workflow/exact head checkout",
+    )
+    _require(contract_active, "persist-credentials: false", "contract workflow")
+    _require(contract_active, "EXPECTED_HEAD:", "contract workflow/exact head binding")
+    _require(contract_active, '[[ "$ACTUAL_HEAD" == "$EXPECTED_HEAD" ]]', "contract workflow/exact head binding")
+    for marker in (
+        '"specs/03_architecture/issue-2047-buck2-admission-contract.md"',
+        '"worker/src/grpc_transport_gate.ts"',
+        '"worker/src/index_fetch.ts"',
+        "scripts/verify_i2047_buck2_cache.py --self-test --json",
+        "tests/test_i2047_buck2_cache_contract.py",
+    ):
+        _require(contract_active, marker, "contract workflow/surface")
+    if "secrets." in contract_active:
+        raise ContractError("contract workflow: credentials are forbidden")
+
+    for marker in (
+        "**BLOCKED — static contract only.**",
+        "#2176",
+        "#2183",
+        "| Auth |",
+        "| Cold/warm |",
+        "| Isolation |",
+        "| Negative controls |",
+        "| Exact head |",
+        "No runner-local `actions/cache` outcome can satisfy a CoreLink remote-cache",
+        "claim. No REST, gRPC-Web, endpoint substitution, local fallback, execution",
+    ):
+        _require(admission_contract, marker, "admission contract")
+    _require(worker_fetch, 'import { rejectUnprovenGrpcTransport } from "./grpc_transport_gate.js";', "gRPC transport gate")
+    _require_before(
+        worker_fetch,
+        "if (grpcTransportGate !== null) return grpcTransportGate;",
+        "const requestStart = Date.now();",
+        "gRPC transport gate/order",
+    )
+    for marker in (
+        'const GRPC_MEDIA_TYPE_PREFIX = "application/grpc";',
+        '"GRPC_TRANSPORT_UNAVAILABLE"',
+        "status: 503",
+        '"cache-control": "no-store"',
+    ):
+        _require(grpc_gate, marker, "gRPC transport gate")
 
     for marker in (
         "BUCK2_VERSION: \"2026-08-01\"",
@@ -313,6 +371,39 @@ def mutation_checks(sources: dict[str, str]) -> None:
                 s["benchmark"].replace("buck2-benchmark-receipt-v1", "untyped-receipt", 1),
             ),
         ),
+        (
+            "exact-head contract checkout bypass",
+            lambda s: s.__setitem__(
+                "contract_workflow",
+                s["contract_workflow"].replace(
+                    "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+                    "ref: ${{ github.sha }}",
+                    1,
+                ),
+            ),
+        ),
+        (
+            "unproven gRPC transport bypass",
+            lambda s: s.__setitem__(
+                "worker_fetch",
+                s["worker_fetch"].replace(
+                    "if (grpcTransportGate !== null) return grpcTransportGate;",
+                    "// transport gate bypassed",
+                    1,
+                ),
+            ),
+        ),
+        (
+            "static contract misrepresented as runtime admission",
+            lambda s: s.__setitem__(
+                "admission_contract",
+                s["admission_contract"].replace(
+                    "**BLOCKED — static contract only.**",
+                    "**ADMITTED — runtime proof complete.**",
+                    1,
+                ),
+            ),
+        ),
     )
     for label, mutate in mutations:
         _expect_rejected(label, mutate, sources)
@@ -321,10 +412,14 @@ def mutation_checks(sources: dict[str, str]) -> None:
 def _sources() -> dict[str, str]:
     return {
         "workflow": WORKFLOW.read_text(encoding="utf-8"),
+        "contract_workflow": CONTRACT_WORKFLOW.read_text(encoding="utf-8"),
+        "admission_contract": ADMISSION_CONTRACT.read_text(encoding="utf-8"),
         "config": CONFIG.read_text(encoding="utf-8"),
         "buck": BUCK.read_text(encoding="utf-8"),
         "toolchain": TOOLCHAIN.read_text(encoding="utf-8"),
         "benchmark": BENCHMARK.read_text(encoding="utf-8"),
+        "grpc_gate": GRPC_GATE.read_text(encoding="utf-8"),
+        "worker_fetch": WORKER_FETCH.read_text(encoding="utf-8"),
     }
 
 
@@ -340,6 +435,7 @@ def main() -> int:
     result = {
         "issue": 2047,
         "contract": "buck2-authenticated-warm-cache",
+        "runtime_admission": "blocked_by_unproven_grpc_transport",
         "mutation_checks": bool(args.self_test),
     }
     print(json.dumps(result, sort_keys=True) if args.json else "issue #2047 Buck2 cache contract: PASS")
