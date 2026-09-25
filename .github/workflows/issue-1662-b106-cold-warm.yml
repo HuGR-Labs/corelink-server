@@ -8,10 +8,6 @@ name: issue-1662 B-106 cold-to-warm evidence
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: "HTTPS production origin (no path, query, or credentials)"
-        required: true
-        type: string
       confirm:
         description: 'Type exactly "run-1662-b106-cold-warm" to authorize one bounded probe'
         required: true
@@ -41,7 +37,7 @@ jobs:
       - name: Confirm protected manual dispatch
         env:
           CONFIRM: ${{ inputs.confirm }}
-          TARGET: ${{ inputs.target }}
+          TARGET: https://corelink-api.humangr.com
           TENANT: ${{ secrets.CORELINK_B106_DOGFOOD_TENANT }}
         shell: bash
         run: |
@@ -51,19 +47,12 @@ jobs:
           test "$GITHUB_REF" = refs/heads/main
           test "$CONFIRM" = run-1662-b106-cold-warm
           test -n "${TENANT:-}"
-          python3 - "$TARGET" <<'PY'
+          test "$TARGET" = https://corelink-api.humangr.com
+          python3 - <<'PY'
           import os
           import re
-          import sys
-          from urllib.parse import urlsplit
 
-          target = sys.argv[1]
           tenant = os.environ["TENANT"]
-          parsed = urlsplit(target)
-          if (parsed.scheme != "https" or not parsed.hostname or parsed.username or
-                  parsed.password or parsed.path not in ("", "/") or parsed.query or
-                  parsed.fragment):
-              raise SystemExit("target must be an HTTPS origin without credentials or path")
           if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}", tenant):
               raise SystemExit("tenant must be a canonical v4 UUID")
           PY
@@ -81,7 +70,7 @@ jobs:
 
       - name: Mint one disposable PAT and capture cold-to-warm evidence
         env:
-          TARGET: ${{ inputs.target }}
+          TARGET: https://corelink-api.humangr.com
           B106_DOGFOOD_TENANT: ${{ secrets.CORELINK_B106_DOGFOOD_TENANT }}
           CORELINK_B106_OWNER_SESSION: ${{ secrets.CORELINK_B106_OWNER_SESSION }}
           STATE: ${{ runner.temp }}/issue-1662-b106-state.json
@@ -101,7 +90,7 @@ jobs:
       - name: Revoke disposable PAT (always)
         if: always()
         env:
-          TARGET: ${{ inputs.target }}
+          TARGET: https://corelink-api.humangr.com
           CORELINK_B106_OWNER_SESSION: ${{ secrets.CORELINK_B106_OWNER_SESSION }}
           STATE: ${{ runner.temp }}/issue-1662-b106-state.json
           RECEIPT: artifacts/issue-1662-b106-receipt.json

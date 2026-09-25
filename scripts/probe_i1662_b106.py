@@ -39,10 +39,21 @@ AUTH_TIMING_RE = re.compile(
 COLO_RE = re.compile(r"^[A-Z]{3}$")
 MIN_IDLE_SECONDS = 61
 REQUEST_TIMEOUT_SECONDS = 15
+PRODUCTION_ORIGIN = "https://corelink-api.humangr.com"
 
 
 class ProbeError(RuntimeError):
     """A fail-closed, non-secret probe failure."""
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Do not forward owner or PAT credentials across an HTTP redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        return None
+
+
+HTTP_OPENER = urllib.request.build_opener(NoRedirectHandler)
 
 
 def fail(message: str) -> None:
@@ -50,6 +61,8 @@ def fail(message: str) -> None:
 
 
 def origin(value: str) -> str:
+    if value != PRODUCTION_ORIGIN:
+        fail("target must exactly match the allowlisted production HTTPS origin on default port 443")
     parsed = urlsplit(value)
     if (
         parsed.scheme != "https"
@@ -75,7 +88,7 @@ def read_json_response(
     """Read a bounded response while never exposing its body in diagnostics."""
 
     try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        with HTTP_OPENER.open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             status = int(response.status)
             raw_headers = response.headers
             body = response.read(body_limit + 1)
@@ -183,7 +196,7 @@ def probe_get_allow_404(base: str, tenant: str, token: str, operation: str) -> d
     )
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        with HTTP_OPENER.open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             status = int(response.status)
             headers = {key.lower(): value.strip() for key, value in response.headers.items()}
             body = response.read(4097)
@@ -310,6 +323,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def cleanup(args: argparse.Namespace) -> int:
+    base = origin(args.target)
     state = load_state(args.state)
     pat_id = state.get("pat_id")
     if pat_id is None:
@@ -328,7 +342,7 @@ def cleanup(args: argparse.Namespace) -> int:
         fail("probe state is incomplete; refusing to claim cleanup")
     output: dict[str, Any] = {"schema_version": 1, "issue": 1662, "backlog_id": "B-106", "valid": False}
     try:
-        status = revoke_pat(origin(args.target), owner_session, pat_id)
+        status = revoke_pat(base, owner_session, pat_id)
         # Revoke first.  A missing or damaged receipt must never block cleanup.
         try:
             output = json.loads(args.receipt.read_text(encoding="utf-8"))
