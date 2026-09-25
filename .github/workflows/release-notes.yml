@@ -83,6 +83,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+          persist-credentials: false
           # GITHUB_TOKEN branch pushes suppress push workflows, while the PR
           # opened/synchronize/reopened event can yield approval-required
           # runs. Once provisioned, this token supports unattended CI; only
@@ -198,6 +199,10 @@ jobs:
 
           Signed-off-by: corelink-release-bot <release-bot@humangr.com>
           "
+          # Checkout intentionally leaves no credentials in local git config.
+          # Use the existing short-lived, repository-scoped App token only for
+          # the authorized branch push.
+          gh auth setup-git
           git push -u origin "$BRANCH"
 
       - name: Open editorial PR
