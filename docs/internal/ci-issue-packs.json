@@ -214,6 +214,7 @@
         ".github/workflows/issue-ci-pack.yml",
         "scripts/verify_i1666_mutants_evidence.py",
         "scripts/verify_i1863_mutants_hosted.py",
+        "scripts/verify_i2478_mutants_baseline.py",
         "scripts/verify_i2457_mutants_shards.py",
         "scripts/verify_ci_issue_packs.py",
         "tests/test_verify_i1666_mutants_evidence.py",
