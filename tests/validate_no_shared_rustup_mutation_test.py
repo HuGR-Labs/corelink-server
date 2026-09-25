@@ -261,6 +261,29 @@ def test_candidate_zero_reach_is_loud_in_baseline_mode(tmp_path: pathlib.Path) -
     assert "ZERO self-hosted jobs" in err
 
 
+def test_actionlint_event_baseline_contract_is_immutable_and_strict_on_push() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "actionlint.yml").read_text(encoding="utf-8")
+    assert "expected_sha:" in workflow
+    assert "baseline_sha:" in workflow
+    assert "EXPECTED_SHA: ${{ inputs.expected_sha }}" in workflow
+    assert 'if [[ "$EXPECTED_SHA" != "$GITHUB_SHA" ]]' in workflow
+    assert "github.event.pull_request.head.sha || github.sha" in workflow
+    assert "ref: ${{ github.event.pull_request.base.sha }}" in workflow
+    assert "ref: ${{ inputs.baseline_sha }}" in workflow
+    assert "if: github.event_name == 'pull_request'" in workflow
+    assert "if: github.event_name == 'workflow_dispatch'" in workflow
+    assert "--baseline-workflows baseline/.github/workflows" in workflow
+    assert workflow.count("persist-credentials: false") >= 3
+    assert (
+        'if [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then\n'
+        "            python3 scripts/validate_no_shared_rustup_mutation.py \\\n"
+        "              --baseline-workflows baseline/.github/workflows\n"
+        "          else\n"
+        "            python3 scripts/validate_no_shared_rustup_mutation.py\n"
+        "          fi"
+    ) in workflow
+
+
 # ── structural YAML forms ────────────────────────────────────────────────────
 
 

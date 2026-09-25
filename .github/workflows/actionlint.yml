@@ -39,6 +39,10 @@ on:
         description: 'Full commit SHA that this hosted proof must check'
         required: true
         type: string
+      baseline_sha:
+        description: 'Full immutable baseline SHA for the no-new-rustup-violation comparison'
+        required: true
+        type: string
   push:
     branches: [main]
     paths:
@@ -82,14 +86,24 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      # PR checks compare the candidate against the immutable base revision. This
-      # allows independent cleanup PRs to remove inherited findings while still
-      # rejecting any finding introduced by the candidate.
-      - name: Checkout pull-request baseline
+      # PR checks compare the candidate against the immutable base revision.
+      # This allows independent cleanup PRs to remove inherited findings while
+      # still rejecting an introduced finding.
+      - name: Checkout pull-request rustup-validator baseline
         if: github.event_name == 'pull_request'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
         with:
           ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+          persist-credentials: false
+
+      # An exact-SHA dispatch supplies both immutable revisions explicitly.
+      # An unreachable baseline SHA fails at checkout before validation runs.
+      - name: Checkout dispatched rustup-validator baseline
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.baseline_sha }}
           path: baseline
           persist-credentials: false
 
@@ -135,7 +149,7 @@ jobs:
       - name: Self-hosted jobs must not provision a Rust toolchain
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             python3 scripts/validate_no_shared_rustup_mutation.py \
               --baseline-workflows baseline/.github/workflows
           else
