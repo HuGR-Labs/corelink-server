@@ -1,0 +1,137 @@
+name: issue 2374 hosted policy proof
+
+# This proof runs read-only policy logic on disposable GitHub-hosted Ubuntu.
+# Candidate files are the exact PR tree; no workflow in the bundle is enabled
+# or dispatched. Jobs with write behavior are covered by dry-run intents and
+# write-denial negative controls in the proof script.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/bot-pr-has-checks.yml"
+      - ".github/workflows/coverage.yml"
+      - ".github/workflows/dependabot-auto-merge.yml"
+      - ".github/workflows/dependabot-policy-trust-boundary.yml"
+      - ".github/workflows/dependabot-policy.yml"
+      - ".github/workflows/lockfile-diff.yml"
+      - ".github/workflows/permission-matrix.yml"
+      - ".github/workflows/pr-labels.yml"
+      - ".github/workflows/stale.yml"
+      - ".github/workflows/welcome-first-pr.yml"
+      - ".github/workflows/issue-2374-hosted-policy-proof.yml"
+      - "scripts/verify_hosted_runner_migration_contract.py"
+      - "scripts/verify_issue_2374_hosted_proof.py"
+      - "scripts/test_dependabot_policy_trust_boundary.sh"
+      - "scripts/test_ci_use_host_toolchain.sh"
+      - "scripts/validate_permission_matrix.py"
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Full commit SHA to inspect and execute through the safe proof
+        required: true
+        type: string
+      baseline_sha:
+        description: Full immutable base SHA whose workflow protections must be retained
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2374-hosted-proof-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  proof:
+    name: read-only policy proof and mutation dry-run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require the exact candidate SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SHA" == "$GITHUB_SHA" || "$GITHUB_EVENT_NAME" == "pull_request" ]]
+
+      - name: Checkout candidate without persisting credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout immutable policy baseline without persisting credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || inputs.baseline_sha }}
+          path: _baseline
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          [[ "$actual" == "$EXPECTED_SHA" ]]
+
+      - name: Verify immutable baseline checkout
+        shell: bash
+        env:
+          BASELINE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || inputs.baseline_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$BASELINE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          actual="$(git -C _baseline rev-parse HEAD)"
+          [[ "$actual" == "$BASELINE_SHA" ]]
+
+      - name: Install checksum-pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
+
+      - name: Lint all issue-scoped workflows and proof workflow
+        run: >-
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml
+          .github/workflows/bot-pr-has-checks.yml
+          .github/workflows/coverage.yml
+          .github/workflows/dependabot-auto-merge.yml
+          .github/workflows/dependabot-policy-trust-boundary.yml
+          .github/workflows/dependabot-policy.yml
+          .github/workflows/lockfile-diff.yml
+          .github/workflows/permission-matrix.yml
+          .github/workflows/pr-labels.yml
+          .github/workflows/stale.yml
+          .github/workflows/welcome-first-pr.yml
+          .github/workflows/issue-2374-hosted-policy-proof.yml
+
+      - name: Check the closed hosted inventory and runner regressions
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
+        run: >-
+          python3 -S scripts/verify_hosted_runner_migration_contract.py
+          --root . --inventory bundle-2374 --expected-head "$EXPECTED_SHA"
+
+      - name: Exercise static inventory negative controls
+        run: python3 -S scripts/verify_hosted_runner_migration_contract.py --self-test
+
+      - name: Run read-only policy logic and mutation dry-run controls
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
+        run: >-
+          python3 -S scripts/verify_issue_2374_hosted_proof.py
+          --root . --baseline-root _baseline --expected-head "$EXPECTED_SHA"

@@ -28,6 +28,7 @@ CHECKOUT_SHA = "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
 HOSTED_RUNNERS = {"ubuntu-24.04", "macos-15", "macos-15-intel"}
 METADATA_SHA = "25dd0e34f4fe68f24cc83900b1fe3fe149efef98"
 INSTALL_SHA = "07b4745e0c39a41822af610387492e3e53aa222b"
+TOOLCHAIN_SHA = "29eef336d9b2848a0b548edc03f92a220660cdb8"
 TEETH_TYPES = {"opened", "synchronize", "reopened"}
 MAX_LINES = 900
 
@@ -98,14 +99,14 @@ def check_policy() -> None:
     steps = gate.get("steps")
     if not isinstance(steps, list):
         fail("policy steps missing")
-    required = ["Checkout PR merge ref (SHA-pinned)", "Checkout BASE ref into _base (trusted tree; SHA-pinned)", "Prepare hermetic checker interpreter (BASE tree)", "Assert trust-boundary wiring (BASE checker)", "Verify fetched PR history (fail-closed)", "Fetch Dependabot metadata", "Prepare isolated Cargo policy tree (PR data only)", "Use the workspace-pinned host toolchain (provisions nothing)", "Install cargo-deny (SHA-pinned)", "Run cargo-deny licenses (fail-closed)", "Banned-license signature scan (Cargo.lock)", "npm banned-license scan", "Forbid skip-hook / skip-ci flags", "Forbid governance-file modifications", "Verify required checks are present", "Policy-gate audit log"]
+    required = ["Checkout PR merge ref (SHA-pinned)", "Checkout BASE ref into _base (trusted tree; SHA-pinned)", "Prepare hermetic checker interpreter (BASE tree)", "Assert trust-boundary wiring (BASE checker)", "Verify fetched PR history (fail-closed)", "Fetch Dependabot metadata", "Prepare isolated Cargo policy tree (PR data only)", "Install the workspace-pinned Rust toolchain", "Select the workspace-pinned host toolchain", "Install cargo-deny (SHA-pinned)", "Run cargo-deny licenses (fail-closed)", "Banned-license signature scan (Cargo.lock)", "npm banned-license scan", "Forbid skip-hook / skip-ci flags", "Forbid governance-file modifications", "Verify required checks are present", "Policy-gate audit log"]
     eq([s.get("name") for s in steps], required, "policy step order")
     for step in steps:
         if "uses" in step:
             uses = str(step["uses"])
             if uses.startswith("./") or "@" not in uses:
                 fail(f"untrusted/local action: {uses}")
-            if uses.split("@", 1)[1].strip().split()[0] not in {CHECKOUT_SHA, METADATA_SHA, INSTALL_SHA}:
+            if uses.split("@", 1)[1].strip().split()[0] not in {CHECKOUT_SHA, METADATA_SHA, INSTALL_SHA, TOOLCHAIN_SHA}:
                 fail(f"action is not an approved immutable pin: {uses}")
         if "run" in step:
             eq(step.get("working-directory"), "_base", f"run step {step.get('name')} working-directory")
@@ -132,6 +133,13 @@ def check_policy() -> None:
     for ref in ("HEAD", "HEAD^1", "HEAD^2"):
         if f"git -C \"$UNTRUSTED_TREE\" rev-parse --verify {ref}" not in history_code:
             fail(f"history guard does not verify {ref}")
+    toolchain = next(s for s in steps if s.get("name") == "Install the workspace-pinned Rust toolchain")
+    eq(toolchain.get("uses"), f"dtolnay/rust-toolchain@{TOOLCHAIN_SHA}", "hosted toolchain action pin")
+    eq(toolchain.get("with", {}).get("toolchain"), "1.91.1", "hosted toolchain version")
+    eq(toolchain.get("if"), "hashFiles('_pr-data/Cargo.toml') != ''", "hosted toolchain data-presence guard")
+    select_toolchain = next(s for s in steps if s.get("name") == "Select the workspace-pinned host toolchain")
+    eq(select_toolchain.get("working-directory"), "_base", "host toolchain selector workdir")
+    eq(select_toolchain.get("env", {}).get("HOST_TRIPLE"), "x86_64-unknown-linux-gnu", "hosted toolchain triple")
 
 def check_teeth() -> None:
     workflow = load(TEETH)
@@ -152,7 +160,7 @@ def check_teeth() -> None:
     if not isinstance(steps, list) or len(steps) != 6:
         fail("teeth step count must remain bounded at six")
     for step in steps:
-        if "uses" in step and str(step["uses"]).split("@", 1)[-1].split()[0] != CHECKOUT_SHA:
+        if "uses" in step and str(step["uses"]).split("@", 1)[-1].split()[0] not in {CHECKOUT_SHA, TOOLCHAIN_SHA}:
             fail("teeth action is not pinned")
         if "run" in step and step.get("working-directory") != "_base":
             fail(f"teeth run step {step.get('name')} is not base-owned")
