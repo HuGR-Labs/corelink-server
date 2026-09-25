@@ -23,7 +23,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from typing import Any, Sequence
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlsplit
 
 PAGE_SIZE = 100
 COMMAND_TIMEOUT_SECONDS = 45
@@ -131,7 +131,10 @@ def list_v1(binary: str, flags: Sequence[str]) -> list[Destination]:
             if not isinstance(raw, dict):
                 raise VerificationError("v1 destination page contains a non-object")
             rows.append(normalize_destination(raw, "v1"))
-        if not payload.get("has_more", False):
+        has_more = payload.get("has_more")
+        if not isinstance(has_more, bool):
+            raise VerificationError("v1 page has no boolean has_more")
+        if not has_more:
             return rows
         if not page or not isinstance(page[-1], dict):
             raise VerificationError("v1 page says has_more without a final row")
@@ -160,7 +163,20 @@ def list_v2(binary: str, flags: Sequence[str]) -> list[Destination]:
             return rows
         if not isinstance(next_url, str):
             raise VerificationError("v2 next_page_url is invalid")
-        token = parse_qs(urlparse(next_url).query).get("page", [])
+        parsed = urlsplit(next_url)
+        if (
+            parsed.scheme != "https"
+            or parsed.netloc != "api.stripe.com"
+            or parsed.path != "/v2/core/event_destinations"
+            or parsed.fragment
+            or parsed.username
+            or parsed.password
+        ):
+            raise VerificationError("v2 continuation URL is outside the expected API resource")
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        if query.get("include[0]") != ["webhook_endpoint.url"]:
+            raise VerificationError("v2 continuation URL did not preserve the webhook URL include")
+        token = query.get("page", [])
         if len(token) != 1 or not token[0] or token[0] in seen:
             raise VerificationError("v2 pagination token is missing or repeated")
         seen.add(token[0])
