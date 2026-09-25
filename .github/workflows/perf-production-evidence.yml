@@ -164,7 +164,7 @@ jobs:
           CORELINK_PERF_PAT: ${{ secrets.CORELINK_PERF_PAT }}
         run: |
           set -eu
-          python3 scripts/collect_b105_same_lane.py "${RUNNER_TEMP}/b105-lane.json"
+          python3 scripts/collect_b105_same_lane.py --isolated "${RUNNER_TEMP}/b105-lane.json"
 
       - name: Build exact B-106 attestation subject
         run: |

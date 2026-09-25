@@ -76,10 +76,20 @@ def require(source: str, needle: str, label: str) -> None:
         raise ContractError(f"{label}: missing {needle!r}")
 
 
+def check_pilot_pr_runner(workflow: str) -> None:
+    # Bind to this exact job so another job's runner cannot make a self-hosted
+    # regression appear acceptable.
+    pr_gate = re.search(r"(?ms)^  pr-gate:\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)", workflow)
+    runner = re.search(r"(?m)^    runs-on: ([^\n#]+)", pr_gate.group(1)) if pr_gate else None
+    if runner is None or runner.group(1).strip() != "ubuntu-24.04":
+        raise ContractError("corelink-reapi pr-gate must use ubuntu-24.04")
+
+
 def check_paths(manifest: dict[str, Any]) -> None:
     sources = manifest["sources"]
     if not isinstance(sources, dict) or set(sources) != {
         "pilot_workflow",
+        "production_evidence_workflow",
         "customer_recipe",
         "server_auth_path",
         "server_gate",
@@ -99,7 +109,7 @@ def check_current_path(manifest: dict[str, Any]) -> None:
     path = manifest["current_path"]
     expected = {
         "workload": "corelink-reapi pr-gate",
-        "runner": "corelink",
+        "runner": "ubuntu-24.04",
         "pilot_toggle": "vars.CORELINK_SCCACHE_PILOT == 'on'",
         "wrapper": "RUSTC_WRAPPER=sccache",
         "endpoint": "https://corelink-api.humangr.com/cargo/<tenant>",
@@ -109,15 +119,23 @@ def check_current_path(manifest: dict[str, Any]) -> None:
     }
     if path != expected:
         raise ContractError("current cache path contract drifted")
+    production_workflow = text(".github/workflows/perf-production-evidence.yml")
+    require(
+        production_workflow,
+        'runs-on: ubuntu-24.04',
+        "production evidence runner",
+    )
+    require(
+        production_workflow,
+        'python3 scripts/collect_b105_same_lane.py --isolated "${RUNNER_TEMP}/b105-lane.json"',
+        "production B-105 isolated collector",
+    )
     workflow = text(path=".github/workflows/corelink-reapi.yml")
-    # The retained B-105 observation used the legacy CoreLink fabric.  The
-    # observation itself remains immutable, while the same PR lane is allowed
-    # to move to the campaign's credentialless GitHub-hosted selector.  Do not
-    # accept any other runner: that would make a restored self-hosted selector
-    # look like a harmless migration.
-    runners = re.findall(r"(?m)^    runs-on: ([^\n#]+)", workflow)
-    if not runners or any(runner.strip() not in {"corelink", "ubuntu-24.04"} for runner in runners):
-        raise ContractError("pilot workflow must use only the legacy or approved hosted runner")
+    # The historical observation used the legacy CoreLink fabric, but the
+    # current pilot PR gate is required to stay on the declared hosted runner.
+    # Bind the assertion to this exact job so another job's runner cannot make
+    # a self-hosted regression appear acceptable.
+    check_pilot_pr_runner(workflow)
     require(workflow, "vars.CORELINK_SCCACHE_PILOT == 'on'", "pilot workflow")
     require(workflow, "echo \"RUSTC_WRAPPER=sccache\"", "pilot workflow")
     require(workflow, "SCCACHE_WEBDAV_ENDPOINT=https://corelink-api.humangr.com/cargo/${SCCACHE_TENANT}", "pilot workflow")
@@ -223,6 +241,39 @@ def self_test(manifest: dict[str, Any]) -> None:
         pass
     else:
         raise ContractError("cache-chain mutation did not invalidate the current-path contract")
+    pilot_workflow_path = ROOT / ".github/workflows/corelink-reapi.yml"
+    pilot_workflow_source = pilot_workflow_path.read_text(encoding="utf-8")
+    try:
+        check_pilot_pr_runner(pilot_workflow_source.replace("    runs-on: ubuntu-24.04", "    runs-on: corelink", 1))
+    except ContractError:
+        pass
+    else:
+        raise ContractError("corelink-reapi runner mutation did not invalidate the hosted-runner contract")
+    workflow_path = ROOT / ".github/workflows/perf-production-evidence.yml"
+    workflow_source = workflow_path.read_text(encoding="utf-8")
+    if "collect_b105_same_lane.py --isolated" not in workflow_source:
+        raise ContractError("production lane does not use isolated B-105 collection")
+    try:
+        # Exercise the same source assertion against a legacy non-isolated call.
+        require(
+            workflow_source.replace(" --isolated", ""),
+            'python3 scripts/collect_b105_same_lane.py --isolated "${RUNNER_TEMP}/b105-lane.json"',
+            "production B-105 isolated collector mutation",
+        )
+    except ContractError:
+        pass
+    else:
+        raise ContractError("non-isolated collector mutation did not invalidate the production contract")
+    try:
+        require(
+            workflow_source.replace("runs-on: ubuntu-24.04", "runs-on: corelink", 1),
+            "runs-on: ubuntu-24.04",
+            "production runner mutation",
+        )
+    except ContractError:
+        pass
+    else:
+        raise ContractError("non-hosted runner mutation did not invalidate the production contract")
 
 
 def main() -> int:
