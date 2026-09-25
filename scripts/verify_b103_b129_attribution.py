@@ -396,10 +396,20 @@ def _rust_function_body(source: str, name: str) -> list[tuple[str, str]] | None:
 def b129_inline_issues(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> list[str]:
     """Check B-129's executable residue contract at its current module seams."""
     values = overrides or {}
+    diagnostic_workflow = _read(root, ".github/workflows/issue-1671-b129-diagnostic.yml", values)
     worker_observability = _read(root, "worker/src/index_observability.ts", values)
     worker_finish = _read(root, "worker/src/index_finish_stage.ts", values)
     origin = _read(root, "crates/corelink-container/src/origin_timing.rs", values)
     result: list[str] = []
+    workflow_markers = (
+        "github.repository == 'HuGR-dev/corelink-server'",
+        "github.ref == 'refs/heads/main' && github.ref_protected",
+        "environment: production",
+        "CORELINK_PERF_BASE: ${{ vars.CORELINK_PERF_BASE }}",
+    )
+    for marker in workflow_markers:
+        if marker not in diagnostic_workflow:
+            result.append(f"B-129 diagnostic workflow must retain protected production target binding: {marker}")
     try:
         wdb_body = _typescript_function_body(worker_observability, "wdbControlPhase")
         origin_body = _typescript_function_body(worker_observability, "originSubPhases")

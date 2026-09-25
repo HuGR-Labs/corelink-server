@@ -13,6 +13,10 @@ SPEC = importlib.util.spec_from_file_location("verify", ROOT / "scripts/verify_b
 assert SPEC and SPEC.loader
 verify = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(verify)
+PROBE_SPEC = importlib.util.spec_from_file_location("probe_i1671_b129", ROOT / "scripts/probe_i1671_b129.py")
+assert PROBE_SPEC and PROBE_SPEC.loader
+b129_probe = importlib.util.module_from_spec(PROBE_SPEC)
+PROBE_SPEC.loader.exec_module(b129_probe)
 
 
 def expect_reject(path: str, marker: str) -> None:
@@ -92,6 +96,35 @@ def main() -> int:
     expect_reject("scripts/probe-cargo-cache-latency.sh", "oaccounting;dur=abc")
     expect_reject("scripts/probe-cargo-cache-latency.sh", "oother;dur=Inf")
     expect_reject(verify.PACKET, "status: **open**")
+    diagnostic = (ROOT / ".github/workflows/issue-1671-b129-diagnostic.yml").read_text(encoding="utf-8")
+    for marker, label in (
+        ("github.repository == 'HuGR-dev/corelink-server'", "unrestricted repository dispatch"),
+        ("github.ref == 'refs/heads/main' && github.ref_protected", "unprotected dispatch ref"),
+        ("environment: production", "unbound production environment"),
+        ("CORELINK_PERF_BASE: ${{ vars.CORELINK_PERF_BASE }}", "unbound production origin"),
+    ):
+        expect_b129_reject(
+            ".github/workflows/issue-1671-b129-diagnostic.yml",
+            diagnostic.replace(marker, "MUTATED", 1),
+            label,
+        )
+
+    assert b129_probe.resolve_target_origin(
+        "https://CORELINK-API.HUMANGR.COM/", "https://corelink-api.humangr.com"
+    ) == "https://corelink-api.humangr.com"
+    for requested, configured in (
+        ("https://attacker.example", "https://corelink-api.humangr.com"),
+        ("http://corelink-api.humangr.com", "https://corelink-api.humangr.com"),
+        ("https://user@corelink-api.humangr.com", "https://corelink-api.humangr.com"),
+        ("https://corelink-api.humangr.com/path", "https://corelink-api.humangr.com"),
+        ("https://corelink-api.humangr.com", ""),
+    ):
+        try:
+            b129_probe.resolve_target_origin(requested, configured)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError(f"unsafe B-129 target accepted: {requested}")
 
     probe = subprocess.run(
         ["bash", str(ROOT / "scripts/probe-cargo-cache-latency.sh"), "--self-test"],

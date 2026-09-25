@@ -14,6 +14,21 @@ SPEC.loader.exec_module(PROBE)
 
 
 class ProbeContractTests(unittest.TestCase):
+    def test_probe_target_must_match_configured_production_origin(self):
+        self.assertEqual(
+            PROBE.resolve_target_origin("https://CORELINK-API.HUMANGR.COM/", "https://corelink-api.humangr.com"),
+            "https://corelink-api.humangr.com",
+        )
+        for requested, configured in (
+            ("https://attacker.example", "https://corelink-api.humangr.com"),
+            ("http://corelink-api.humangr.com", "https://corelink-api.humangr.com"),
+            ("https://user@corelink-api.humangr.com", "https://corelink-api.humangr.com"),
+            ("https://corelink-api.humangr.com/path", "https://corelink-api.humangr.com"),
+            ("https://corelink-api.humangr.com", ""),
+        ):
+            with self.subTest(requested=requested), self.assertRaises(RuntimeError):
+                PROBE.resolve_target_origin(requested, configured)
+
     def _row(self):
         values = {name: 1.0 for name in (*PROBE.Q, "ohop", *PROBE.ORIGIN)}
         values.update({"wdb": 5.0, "origin": 11.0, "total": 17.0})
