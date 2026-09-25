@@ -14,6 +14,7 @@ on:
       - "examples/buck2-starter/scripts/benchmark.sh"
       - "scripts/verify_i2047_buck2_cache.py"
       - "tests/test_i2047_buck2_cache_contract.py"
+      - "worker/src/index_fetch.ts"
   workflow_dispatch: {}
 
 permissions:
@@ -32,8 +33,17 @@ jobs:
       - name: Checkout exact revision without write credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
           persist-credentials: false
+      - name: Bind proof to the exact candidate head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_HEAD="$(git rev-parse HEAD)"
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ACTUAL_HEAD" == "$EXPECTED_HEAD" ]]
       - name: Verify authenticated cache contract and mutations
         run: python3 -S scripts/verify_i2047_buck2_cache.py --self-test --json
       - name: Run standard-library focused regression

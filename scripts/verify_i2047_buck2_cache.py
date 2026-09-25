@@ -22,6 +22,7 @@ CONFIG = ROOT / "examples/buck2-starter/.buckconfig"
 BUCK = ROOT / "examples/buck2-starter/BUCK"
 TOOLCHAIN = ROOT / "examples/buck2-starter/toolchains/BUCK"
 BENCHMARK = ROOT / "examples/buck2-starter/scripts/benchmark.sh"
+WORKER_FETCH = ROOT / "worker/src/index_fetch.ts"
 
 EXPECTED_CACHE_KEY = "buck2-build-${{ github.repository }}-${{ github.sha }}"
 EXPECTED_CACHE_PATH = "examples/buck2-starter/buck-out/v2/cache"
@@ -94,6 +95,7 @@ def verify(
     buck: str,
     toolchain: str,
     benchmark: str,
+    worker_fetch: str,
 ) -> None:
     """Verify the complete authenticated warm-cache contract."""
 
@@ -139,6 +141,28 @@ def verify(
         "name: Validate CORELINK_PAT before benchmark",
         "name: Install Buck2",
         "runtime workflow/benchmark/authentication order",
+    )
+
+    fetch_pipeline = _active(worker_fetch)
+    fetch_start = fetch_pipeline.find("async fetch(request")
+    if fetch_start < 0:
+        raise ContractError("gRPC transport gate/order: missing Worker fetch pipeline")
+    fetch_pipeline = fetch_pipeline[fetch_start:]
+    gate_invocation = "const grpcTransportGate = rejectUnprovenGrpcTransport(request);"
+    gate_return = "if (grpcTransportGate !== null) return grpcTransportGate;"
+    _require_once(fetch_pipeline, gate_invocation, "gRPC transport gate/invocation")
+    _require_once(fetch_pipeline, gate_return, "gRPC transport gate/early return")
+    _require_before(
+        fetch_pipeline,
+        gate_invocation,
+        gate_return,
+        "gRPC transport gate/invocation order",
+    )
+    _require_before(
+        fetch_pipeline,
+        gate_return,
+        "const requestStart = Date.now();",
+        "gRPC transport gate/order",
     )
 
     for marker in (
@@ -313,6 +337,25 @@ def mutation_checks(sources: dict[str, str]) -> None:
                 s["benchmark"].replace("buck2-benchmark-receipt-v1", "untyped-receipt", 1),
             ),
         ),
+        (
+            "gRPC transport invocation moved after request start",
+            lambda s: s.__setitem__(
+                "worker_fetch",
+                s["worker_fetch"]
+                .replace(
+                    "    const grpcTransportGate = rejectUnprovenGrpcTransport(request);\n"
+                    "    if (grpcTransportGate !== null) return grpcTransportGate;\n",
+                    "",
+                    1,
+                ).replace(
+                    "    const requestStart = Date.now();",
+                    "    const requestStart = Date.now();\n"
+                    "    const grpcTransportGate = rejectUnprovenGrpcTransport(request);\n"
+                    "    if (grpcTransportGate !== null) return grpcTransportGate;",
+                    1,
+                ),
+            ),
+        ),
     )
     for label, mutate in mutations:
         _expect_rejected(label, mutate, sources)
@@ -325,6 +368,7 @@ def _sources() -> dict[str, str]:
         "buck": BUCK.read_text(encoding="utf-8"),
         "toolchain": TOOLCHAIN.read_text(encoding="utf-8"),
         "benchmark": BENCHMARK.read_text(encoding="utf-8"),
+        "worker_fetch": WORKER_FETCH.read_text(encoding="utf-8"),
     }
 
 
