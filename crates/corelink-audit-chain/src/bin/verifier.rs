@@ -250,6 +250,10 @@ fn main() -> ExitCode {
     let args = match parse_args(&raw_args) {
         Ok(parsed) => parsed,
         Err(error) => {
+            if historic_keyring_error(&raw_args, &error) {
+                emit_indeterminate("historic_link_key_material_unavailable");
+                return ExitCode::FAILURE;
+            }
             eprintln!(
                 "usage: verifier [--chain-keyring PATH] <ndjson_chunk_path>...\nerror: {error}"
             );
@@ -270,10 +274,28 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
+            if e.contains("historical link-key id") {
+                emit_indeterminate("historic_link_key_unavailable");
+                return ExitCode::FAILURE;
+            }
             eprintln!("AUDIT_CHAIN_BREAK_DETECTED: {}", e);
             ExitCode::FAILURE
         }
     }
+}
+
+fn historic_keyring_error(args: &[String], error: &str) -> bool {
+    let supplied_keyring = args
+        .iter()
+        .any(|arg| arg == "--chain-keyring" || arg.starts_with("--chain-keyring="));
+    supplied_keyring && (error.starts_with("read keyring ") || error.starts_with("parse keyring "))
+}
+
+fn emit_indeterminate(reason: &str) {
+    eprintln!(
+        "AUDIT_CHAIN_VERIFY_INDETERMINATE: {{\"outcome\":\"INDETERMINATE\",\"reason\":\"{reason}\"}}"
+    );
+    eprintln!("AUDIT_CHAIN_BREAK_DETECTED: historic link-key verification unavailable");
 }
 
 fn run(args: &CliArgs) -> Result<String, String> {
