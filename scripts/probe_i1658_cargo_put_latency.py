@@ -166,25 +166,53 @@ def observed_put(base: str, tenant: str, token: str, ordinal: str) -> dict[str, 
     body = body[:1024]
     row = request(base, tenant, token, "PUT", key, body)
     row["key_sha256"] = sha(key.encode())
-    if row["status"] != 200:
-        raise ProbeError(f"authenticated PUT returned HTTP {row['status']}", row)
-    if row["request_body_bytes"] != 1024:
-        raise ProbeError("PUT body is not exactly 1 KiB")
-    timing = row["server_timing"]
-    if not isinstance(timing, str) or not timing:
-        raise ProbeError("authenticated PUT did not return Server-Timing")
-    phases, auth_source = parse_timing(timing)
-    row["auth_source"] = auth_source
-    for name, value in phases.items():
-        row[name] = value
-    row["hashing_phase"] = "ohandler"
-    # DELETE removes the map row; the R2 blob remains subject to staging GC.
-    cleanup = request(base, tenant, token, "DELETE", key)
-    row["cleanup"] = cleanup
-    row["cleanup_status"] = cleanup["status"]
-    if cleanup["status"] != 204:
-        raise ProbeError(f"PUT cleanup returned HTTP {cleanup['status']}", row)
+    failure: str | None = None
+    try:
+        if row["status"] != 200:
+            raise ProbeError(f"authenticated PUT returned HTTP {row['status']}")
+        if row["request_body_bytes"] != 1024:
+            raise ProbeError("PUT body is not exactly 1 KiB")
+        timing = row["server_timing"]
+        if not isinstance(timing, str) or not timing:
+            raise ProbeError("authenticated PUT did not return Server-Timing")
+        phases, auth_source = parse_timing(timing)
+        row["auth_source"] = auth_source
+        for name, value in phases.items():
+            row[name] = value
+        row["hashing_phase"] = "ohandler"
+    except ProbeError as exc:
+        failure = str(exc)
+    finally:
+        # A timeout or invalid timing header can happen after the server stored
+        # the map row. Always attempt the exact-key cleanup before rejecting
+        # the observation; never retry the PUT or silently accept the sample.
+        cleanup = request(base, tenant, token, "DELETE", key)
+        row["cleanup"] = cleanup
+        row["cleanup_status"] = cleanup["status"]
+
+    if failure is not None:
+        raise ProbeError(f"{failure}; cleanup status {row['cleanup_status']}", row)
+    if row["cleanup_status"] != 204:
+        raise ProbeError(f"PUT cleanup returned HTTP {row['cleanup_status']}", row)
     return row
+
+
+def unauthenticated_control(base: str, tenant: str, token: str) -> dict[str, object]:
+    """Run the auth refusal control and remove the key if it was accepted."""
+    key = f"i1658-unauth-{uuid.uuid4().hex}"
+    row = request(base, tenant, None, "PUT", key, b"x" * 1024)
+    if row["status"] in {401, 403}:
+        return row
+
+    # An unexpected response may mean the unauthenticated write succeeded or
+    # its outcome is ambiguous. Use the valid staging token only to delete this
+    # probe's unique key, then retain both outcomes in the failure artifact.
+    cleanup = request(base, tenant, token, "DELETE", key)
+    observation = {"unauthenticated_put": row, "cleanup": cleanup}
+    raise ProbeError(
+        f"unauthenticated PUT returned HTTP {row['status']}; cleanup status {cleanup['status']}",
+        observation,
+    )
 
 
 def main() -> int:
@@ -204,9 +232,7 @@ def main() -> int:
         health = request(args.base, args.tenant, None, "GET", "health", path="/health")
         if health["status"] != 200:
             raise ProbeError(f"health control returned HTTP {health['status']}")
-        unauth = request(args.base, args.tenant, None, "PUT", f"i1658-unauth-{uuid.uuid4().hex}", b"x" * 1024)
-        if unauth["status"] not in {401, 403}:
-            raise ProbeError(f"unauthenticated PUT control returned HTTP {unauth['status']}")
+        unauth = unauthenticated_control(args.base, args.tenant, args.token)
         serial = [observed_put(args.base, args.tenant, args.token, f"serial-{i}") for i in range(10)]
         concurrent_rows: dict[str, list[dict[str, object]]] = {}
         for level in (1, 4):
