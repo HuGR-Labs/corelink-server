@@ -40,6 +40,11 @@ export interface Env {
   // `[[durable_objects.bindings]]` (name = "REPLICATION_COORDINATOR_DO").
   // Optional so existing test envs that omit it still typecheck.
   REPLICATION_COORDINATOR_DO?: DurableObjectNamespace;
+  // #2576 staging-admission runtime identity and dedicated admission key.
+  // Optional so missing bindings retain the existing fail-closed empty-string
+  // forwarding behavior in durable_object_start.ts.
+  CORELINK_ENVIRONMENT?: string;
+  CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY?: string;
   // P3 edge-local request-metering DOs (ACCEPTED, docs/design/2026-08-19-adr-edge-
   // local-do-request-metering.md). RequestMeterCoordinatorDO — 1/tenant, the
   // monthly-cap token-lease authority; RequestMeterShardDO — 1/(tenant,region),
