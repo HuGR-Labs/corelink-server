@@ -11,8 +11,10 @@ on:
       - "scripts/verify_i1863_mutants_hosted.py"
       - "scripts/verify_i1666_mutants_evidence.py"
       - "scripts/verify_i2457_mutants_shards.py"
+      - "scripts/verify_i2478_mutants_baseline.py"
       - "tests/test_i1863_mutants_hosted_receipt.py"
       - "tests/test_i2457_mutants_shards.py"
+      - "tests/test_i2478_mutants_baseline.py"
   workflow_dispatch:
 
 permissions:
@@ -32,4 +34,4 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m scripts.verify_i1863_mutants_hosted
-          python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py tests/test_i2457_mutants_shards.py
+          python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py tests/test_i2457_mutants_shards.py tests/test_i2478_mutants_baseline.py

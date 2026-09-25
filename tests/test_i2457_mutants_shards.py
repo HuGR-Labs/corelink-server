@@ -71,6 +71,9 @@ class MutantsShardAggregateTests(unittest.TestCase):
             "config_digest": config_digest(),
             "inventory_digest": self.inventory["inventory_digest"],
             "baseline_digest": digest(["baseline"]),
+            "plan_digest": digest(["complete-test-plan"]),
+            "shard_count": SHARD_COUNT,
+            "covered_entries": 1,
             "status": "success",
             "exit_code": 0,
         }
