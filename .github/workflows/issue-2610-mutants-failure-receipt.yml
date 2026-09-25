@@ -1,0 +1,66 @@
+name: issue 2610 mutant failure receipt contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/issue-1863-mutants-hosted.yml
+      - .github/workflows/issue-2610-mutants-failure-receipt.yml
+      - scripts/verify_i2457_mutants_shards.py
+      - tests/test_i2457_mutants_shards.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2610-receipt-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  receipt-contract:
+    name: issue 2610 receipt contract at exact PR head
+    if: github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact pull request head without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind the run to the exact pull request head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_HEAD_SHA" ]]
+
+      - name: Install pinned actionlint
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -color \
+            .github/workflows/issue-1863-mutants-hosted.yml \
+            .github/workflows/issue-2610-mutants-failure-receipt.yml
+
+      - name: Run focused receipt and fail-closed aggregate checks
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_i2457_mutants_shards.py verify-workflow \
+            --workflow .github/workflows/issue-1863-mutants-hosted.yml
+          python3 -m scripts.verify_i1666_mutants_evidence
+          python3 -m unittest -q \
+            tests/test_i2457_mutants_shards.py \
+            tests/test_i1863_mutants_hosted_receipt.py \
+            tests/test_verify_i1666_mutants_evidence.py

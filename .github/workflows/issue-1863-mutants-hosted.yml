@@ -374,12 +374,29 @@ jobs:
             --out "${RUNNER_TEMP}/mutants-aggregate-receipt.json"
       - name: Upload aggregate receipt
         if: always()
+        id: upload-aggregate-receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mutants-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/mutants-aggregate-receipt.json
           if-no-files-found: error
           retention-days: 30
+      - name: Record retained aggregate artifact digest
+        if: always()
+        env:
+          ARTIFACT_DIGEST: ${{ steps.upload-aggregate-receipt.outputs.artifact-digest }}
+          ARTIFACT_NAME: mutants-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          digest = os.environ["ARTIFACT_DIGEST"]
+          if not re.fullmatch(r"[0-9a-f]{64}", digest):
+              raise SystemExit("aggregate receipt artifact upload did not return a sha256 digest")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"Aggregate receipt artifact: `{os.environ['ARTIFACT_NAME']}`\n\n")
+              summary.write(f"Artifact SHA-256: `{digest}`\n")
+          PY
       - name: Fail closed after retaining a complete terminal mutation result
         if: always()
         run: |

@@ -406,10 +406,61 @@ class MutantsShardAggregateTests(unittest.TestCase):
             aggregate = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(len(aggregate["shard_artifact_digests"]), SHARD_COUNT)
 
-            shutil.rmtree(evidence_paths[8].parent)
-            command_aggregate(
-                Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output)
+            # Reproduce run 36127936753 shard 0: its expected and observed
+            # redacted identities are complete, but cargo-mutants has no
+            # terminal outcomes. Aggregation must retain a deterministic red
+            # receipt that binds the evidence instead of raising before write.
+            shard_zero = root / f"mutants-shard-0-{self.run_id}-1"
+            shard_zero_receipt_path = shard_zero / "shard-receipt.json"
+            shard_zero_receipt = json.loads(shard_zero_receipt_path.read_text(encoding="utf-8"))
+            shard_zero_receipt.update(
+                status="incomplete",
+                cargo_exit_code=1,
+                outcomes_complete=False,
+                outcome_counts=None,
+                incomplete_reason="cargo-mutants outcomes are not terminal",
             )
+            shard_zero_manifest_path = shard_zero / "redacted-evidence/shard-evidence-manifest.json"
+            shard_zero_manifest = json.loads(shard_zero_manifest_path.read_text(encoding="utf-8"))
+            shard_zero_manifest.update(
+                terminal_outcomes=None,
+                outcome_counts=None,
+                incomplete_reason="cargo-mutants outcomes are not terminal",
+            )
+            shard_zero_manifest_path.write_text(json.dumps(shard_zero_manifest), encoding="utf-8")
+            shard_zero_receipt["evidence_digest"] = directory_digest(shard_zero / "redacted-evidence")
+            shard_zero_receipt["artifact_digest"] = shard_artifact_digest(shard_zero / "redacted-evidence")
+            shard_zero_receipt_path.write_text(json.dumps(shard_zero_receipt), encoding="utf-8")
+            with self.assertRaisesRegex(VerificationError, "incomplete terminal outcomes"):
+                command_aggregate(
+                    Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output)
+                )
+            failed = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(failed["status"], "failure")
+            self.assertFalse(failed["outcomes_complete"])
+            self.assertEqual(failed["inventory_digest"], self.inventory["inventory_digest"])
+            self.assertEqual(failed["baseline_digest"], self.baseline["baseline_digest"])
+            self.assertEqual(failed["expected_mutants"], SHARD_COUNT * 2)
+            self.assertEqual(len(failed["expected_shard_coverage"]), SHARD_COUNT)
+            self.assertEqual(len(failed["observed_shard_coverage"]), SHARD_COUNT)
+            self.assertEqual(failed["received_shards"], list(range(SHARD_COUNT)))
+            self.assertEqual(failed["missing_shards"], [])
+            self.assertEqual(failed["terminal_shards"], SHARD_COUNT - 1)
+            self.assertIn("shard 0 has incomplete terminal outcomes", failed["failure_reason"])
+            shard_zero_digest = next(item for item in failed["shard_artifact_digests"] if item["index"] == 0)
+            self.assertEqual(shard_zero_digest["artifact_digest"], shard_zero_receipt["artifact_digest"])
+            first_failure_bytes = output.read_bytes()
+            with self.assertRaisesRegex(VerificationError, "incomplete terminal outcomes"):
+                command_aggregate(
+                    Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output)
+                )
+            self.assertEqual(output.read_bytes(), first_failure_bytes)
+
+            shutil.rmtree(evidence_paths[8].parent)
+            with self.assertRaisesRegex(VerificationError, "missing"):
+                command_aggregate(
+                    Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output)
+                )
             incomplete = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(incomplete["status"], "failure")
             self.assertFalse(incomplete["outcomes_complete"])
