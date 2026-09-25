@@ -60,10 +60,17 @@ write a PAT or response body into the packet.
    `ohop`. New Workers normalize the alias, and its production magnitude still
    requires a wire measurement.
 6. **B-122 — boundary remeasurement:** after deployment, rerun the B-102 and
-   B-107 warm baselines with the deployed commit and retain the version beside
-   the numbers. Confirm the blocking-task phase appears and the phase sum does
-   not exceed the request clock. Local tests cannot close this production
-   remeasurement requirement.
+   B-107 warm baselines with the deployed commit and retain the Cloudflare
+   Worker version UUID and deployment ID beside the numbers. The production
+   deploy lane writes `corelink-source-sha=<GITHUB_SHA>` into the Worker
+   version/deployment annotation. Before sampling, the protected B-122 lane
+   reads the active Cloudflare deployment and exact version back, requires that
+   one version serves 100% of traffic, and checks its source annotation against
+   a successful GitHub production deployment for the same SHA. It repeats the
+   active-version read after sampling; only the redacted binding plus timing
+   receipt is retained. Confirm the blocking-task phase appears and the phase
+   sum does not exceed the request clock. Local tests cannot close this
+   production remeasurement requirement.
 7. **B-129 — attribution contract and production residue budget (open):** the
    repository-side `qcontrol` split and fail-closed guard are ready, but do not
    close the item. On an approved diagnostic window only, arm
