@@ -24,7 +24,7 @@ INVENTORY_SHARD = "0/1"
 TOOL_VERSION = "27.0.0"
 IDENTITY_SCHEMA = "cargo-mutants-v27.full-list-record.sha256.multiset.v1"
 INVENTORY_SCHEMA = "corelink.hosted-mutants-inventory.v5"
-BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v5"
+BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v6"
 SHARD_SCHEMA = "corelink.hosted-mutants-shard-receipt.v5"
 AGGREGATE_SCHEMA = "corelink.hosted-mutants-aggregate-receipt.v5"
 EVIDENCE_SCHEMA = "corelink.hosted-mutants-shard-evidence.v1"
@@ -252,6 +252,12 @@ def validate_baseline(receipt: Mapping[str, Any], inventory: Mapping[str, Any]) 
             raise VerificationError(f"baseline {field} does not bind the inventory")
     require_attempt(receipt.get("run_attempt"), "baseline.run_attempt")
     require_digest(receipt.get("baseline_digest"), "baseline.baseline_digest")
+    require_digest(receipt.get("plan_digest"), "baseline.plan_digest")
+    if receipt.get("shard_count") != SHARD_COUNT:
+        raise VerificationError("baseline does not bind all 27 test shards")
+    covered_entries = receipt.get("covered_entries")
+    if isinstance(covered_entries, bool) or not isinstance(covered_entries, int) or covered_entries <= 0:
+        raise VerificationError("baseline does not prove a nonempty complete test mapping")
     if receipt.get("status") != "success" or receipt.get("exit_code") != 0:
         raise VerificationError("unmutated baseline did not succeed")
 
@@ -461,23 +467,7 @@ def command_build_inventory(args: argparse.Namespace) -> None:
 
 
 def command_write_baseline(args: argparse.Namespace) -> None:
-    inventory = read_json(args.inventory)
-    validate_inventory(inventory)
-    receipt = {
-        "schema": BASELINE_SCHEMA,
-        "run_id": args.run_id,
-        "run_attempt": args.run_attempt,
-        "sha": args.sha,
-        "tool_version": TOOL_VERSION,
-        "config_digest": config_digest(),
-        "inventory_digest": inventory["inventory_digest"],
-        "baseline_digest": digest(
-            {"sha": args.sha, "run_id": args.run_id, "run_attempt": args.run_attempt, "command": "cargo test --workspace --locked"}
-        ),
-        "status": "success" if args.exit_code == 0 else "failure",
-        "exit_code": args.exit_code,
-    }
-    write_json(args.out, receipt)
+    raise VerificationError("#2478 requires the complete mapped baseline aggregate; direct baseline receipts are forbidden")
 
 
 def command_write_shard(args: argparse.Namespace) -> None:
@@ -592,6 +582,7 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "github.ref == 'refs/heads/main'",
         "github.ref_protected",
         "SHARD_COUNT: 27",
+        "TOTAL_RUNNER_MINUTE_CAP: 2550",
         "max-parallel: 9",
         "timeout-minutes: 45",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
@@ -600,6 +591,14 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "--redacted-evidence \"${RUNNER_TEMP}/redacted-evidence\"",
         "${{ runner.temp }}/redacted-evidence/",
         "cargo test --workspace --locked",
+        "cargo test --workspace --locked --no-run --message-format=json",
+        "cargo test --workspace --locked --no-run",
+        "freeze complete unmutated workspace test mapping",
+        "unmutated workspace baseline shard ${{ matrix.shard }}/27",
+        "aggregate complete unmutated workspace baseline",
+        "verify_i2478_mutants_baseline.py build-plan",
+        "verify_i2478_mutants_baseline.py run-shard",
+        "verify_i2478_mutants_baseline.py aggregate",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
         "verify_i2457_mutants_shards.py aggregate",
@@ -609,8 +608,8 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
     missing = [marker for marker in required if marker not in text]
     if missing:
         raise VerificationError("workflow is missing required #2457 controls: " + ", ".join(missing))
-    if text.count("retention-days: 30") != 4 or text.count("retention-days:") != 4:
-        raise VerificationError("workflow must retain each of the four bounded evidence artifacts for exactly 30 days")
+    if text.count("retention-days: 30") != 6 or text.count("retention-days:") != 6:
+        raise VerificationError("workflow must retain each of the six bounded evidence artifacts for exactly 30 days")
     if text.count("--no-config") != 3:
         raise VerificationError("all three cargo-mutants inventory and shard commands must disable repository config")
     forbidden = (
