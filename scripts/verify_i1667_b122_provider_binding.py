@@ -76,6 +76,9 @@ def verify_binding(
     version: Any,
     github_deployments: Any,
     github_statuses: Any,
+    container_application: Any,
+    container_image_commit: Any,
+    container_build_runs: Any,
     worker_name: str,
     source_sha: str,
 ) -> dict[str, Any]:
@@ -83,6 +86,39 @@ def verify_binding(
         raise BindingError("Worker name has unsupported characters")
     if not _SHA.fullmatch(source_sha):
         raise BindingError("source SHA must be 40 lowercase hexadecimal characters")
+
+    app = _provider_result(container_application, "container application")
+    if not isinstance(app, dict):
+        raise BindingError("Cloudflare container application is malformed")
+    app_id, app_version = app.get("id"), app.get("version")
+    if not isinstance(app_id, str) or not _UUID.fullmatch(app_id):
+        raise BindingError("Cloudflare container application ID is not a UUID")
+    if not isinstance(app_version, (int, str)) or str(app_version) in ("", "0"):
+        raise BindingError("Cloudflare container application has no active version")
+    image = (app.get("configuration") or {}).get("image") if isinstance(app.get("configuration"), dict) else None
+    expected_image_prefix = f"registry.cloudflare.com/"
+    if not isinstance(image, str) or not image.startswith(expected_image_prefix):
+        raise BindingError("Cloudflare container application has no registry image reference")
+    match = re.fullmatch(r"registry\.cloudflare\.com/([0-9a-f]{32})/([a-z0-9-]+):([0-9a-f]{7,40})-r1", image)
+    if not match or match.group(2) != f"{worker_name}-corelinkserver-prod":
+        raise BindingError("active container image does not belong to the requested production Worker")
+    image_source_prefix = match.group(3)
+    if not source_sha.startswith(image_source_prefix):
+        raise BindingError("active container image tag does not map to the requested source SHA")
+    resolved_image_commit = container_image_commit.get("sha") if isinstance(container_image_commit, dict) else None
+    if not isinstance(resolved_image_commit, str) or resolved_image_commit != source_sha or not _SHA.fullmatch(resolved_image_commit):
+        raise BindingError("container image tag does not resolve to the requested full source SHA")
+    health = app.get("health")
+    instances = health.get("instances") if isinstance(health, dict) else None
+    if not isinstance(instances, dict) or not isinstance(instances.get("healthy"), int) or instances["healthy"] < 1 or instances.get("failed") != 0:
+        raise BindingError("active container application is not reporting healthy instances")
+    builds = container_build_runs.get("workflow_runs") if isinstance(container_build_runs, dict) else None
+    if not isinstance(builds, list) or not any(
+        isinstance(run, dict) and run.get("head_sha") == source_sha
+        and run.get("conclusion") == "success" and run.get("event") == "workflow_dispatch"
+        for run in builds
+    ):
+        raise BindingError("no successful container image build is bound to the source SHA")
 
     provider_deployment_id, version_id, deployment_created_on = _active_version(deployments)
     version_result = _provider_result(version, "version")
@@ -121,6 +157,11 @@ def verify_binding(
     return {
         "schema": "corelink.b122.provider-binding.v1",
         "worker_name": worker_name,
+        "container_application_id": app_id,
+        "container_application_version": str(app_version),
+        "container_image": image,
+        "container_image_source_sha": source_sha,
+        "container_healthy_instances": instances["healthy"],
         "worker_version_id": version_id,
         "worker_version_created_on": version_created_on,
         "provider_deployment_id": provider_deployment_id,
@@ -142,6 +183,9 @@ def main() -> int:
     parser.add_argument("--version", type=Path, required=True)
     parser.add_argument("--github-deployments", type=Path, required=True)
     parser.add_argument("--github-statuses", type=Path, required=True)
+    parser.add_argument("--container-application", type=Path, required=True)
+    parser.add_argument("--container-image-commit", type=Path, required=True)
+    parser.add_argument("--container-build-runs", type=Path, required=True)
     args = parser.parse_args()
     try:
         receipt = verify_binding(
@@ -149,6 +193,9 @@ def main() -> int:
             version=_load(args.version),
             github_deployments=_load(args.github_deployments),
             github_statuses=_load(args.github_statuses),
+            container_application=_load(args.container_application),
+            container_image_commit=_load(args.container_image_commit),
+            container_build_runs=_load(args.container_build_runs),
             worker_name=args.worker_name,
             source_sha=args.source_sha,
         )

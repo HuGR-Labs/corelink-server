@@ -144,12 +144,33 @@ jobs:
             "${evidence_dir}/github-deployments.json")"
           gh api "repos/${GITHUB_REPOSITORY}/deployments/${github_deployment_id}/statuses" \
             > "${evidence_dir}/github-deployment-statuses.json"
+          app_name="${WORKER_NAME}-corelinkserver-prod"
+          app_list="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/containers/applications"
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \
+            --config "${evidence_dir}/curl.conf" "${app_list}" > "${evidence_dir}/container-applications.json"
+          app_id="$(jq -er --arg name "${app_name}" \
+            '[.result[] | select((.configuration.image // "") | contains("/" + $name + ":"))][0].id' \
+            "${evidence_dir}/container-applications.json")"
+          [[ "${app_id}" =~ ^[0-9a-fA-F-]{36}$ ]]
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \
+            --config "${evidence_dir}/curl.conf" \
+            "${app_list}/${app_id}" > "${evidence_dir}/container-application.json"
+          image_ref="$(jq -er '.result.configuration.image' "${evidence_dir}/container-application.json")"
+          image_tag="${image_ref##*:}"
+          image_prefix="${image_tag%-r1}"
+          [[ "${image_prefix}" =~ ^[0-9a-f]{7,40}$ ]]
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${image_prefix}" > "${evidence_dir}/container-image-commit.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/container-build-push-prod.yml/runs?head_sha=${source_sha}&status=completed&per_page=100" \
+            > "${evidence_dir}/container-build-runs.json"
           python3 scripts/verify_i1667_b122_provider_binding.py \
             --worker-name "${WORKER_NAME}" --source-sha "${source_sha}" \
             --deployments "${evidence_dir}/provider-deployments.json" \
             --version "${evidence_dir}/provider-version.json" \
             --github-deployments "${evidence_dir}/github-deployments.json" \
             --github-statuses "${evidence_dir}/github-deployment-statuses.json" \
+            --container-application "${evidence_dir}/container-application.json" \
+            --container-image-commit "${evidence_dir}/container-image-commit.json" \
+            --container-build-runs "${evidence_dir}/container-build-runs.json" \
             > artifacts/b122-provider-binding.json
       - name: Capture B-102 warm and B-107 separated 1 KiB samples
         env:
@@ -218,6 +239,16 @@ jobs:
              (.result.deployments[0].versions | length == 1) and
              .result.deployments[0].versions[0].version_id == $version and
              .result.deployments[0].versions[0].percentage == 100' "${current}" > /dev/null
+          app_id="$(jq -er '.container_application_id' artifacts/b122-provider-binding.json)"
+          app_now="$(mktemp)"
+          trap 'rm -f "${current}" "${auth_config}" "${app_now}"' EXIT
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \
+            --config "${auth_config}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/containers/applications/${app_id}" > "${app_now}"
+          jq -e --slurpfile receipt artifacts/b122-provider-binding.json \
+            '.success == true and .result.id == $receipt[0].container_application_id and
+             (.result.version | tostring) == $receipt[0].container_application_version and
+             .result.configuration.image == $receipt[0].container_image' "${app_now}" > /dev/null
       - name: Verify and redact the timing receipt
         env:
           SERVING_SHA: ${{ inputs.serving_sha }}
