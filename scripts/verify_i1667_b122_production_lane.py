@@ -34,6 +34,13 @@ def main() -> None:
         "workers/scripts/${WORKER_NAME}/deployments?per_page=100",
         "worker_version_id",
         "provider_deployment_id",
+        "container_build_sha",
+        "worker_serving_sha",
+        "container_application_version",
+        "container_image",
+        "container-build-push-prod.yml/runs?head_sha=${container_build_sha}",
+        "compare/${container_build_sha}...${source_sha}",
+        "a5d56cb4516a2c11f5234eb83a738baa97a41c3d...${container_build_sha}",
         "provider_binding",
         "timeout 25s curl",
         "request_id=%header{x-request-id}",
@@ -64,6 +71,11 @@ def main() -> None:
             "worker_version_id",
             "provider_deployment_id",
             "github_deployment_sha",
+            "container_build_sha",
+            "worker_serving_sha",
+            "B122_CONTAINER_SOURCE_SHA",
+            "build_is_ancestor",
+            "b122_is_ancestor",
         )
         if needle not in binding_text
     )

@@ -22,6 +22,7 @@ class BindingError(ValueError):
 
 
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+B122_CONTAINER_SOURCE_SHA = "a5d56cb4516a2c11f5234eb83a738baa97a41c3d"
 _UUID = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
@@ -83,13 +84,15 @@ def verify_binding(
     container_application: Any,
     container_image_commit: Any,
     container_build_runs: Any,
+    build_is_ancestor: Any,
+    b122_is_ancestor: Any,
     worker_name: str,
-    source_sha: str,
+    worker_serving_sha: str,
 ) -> dict[str, Any]:
     if not re.fullmatch(r"[a-z0-9_-]{1,63}", worker_name):
         raise BindingError("Worker name has unsupported characters")
-    if not _SHA.fullmatch(source_sha):
-        raise BindingError("source SHA must be 40 lowercase hexadecimal characters")
+    if not _SHA.fullmatch(worker_serving_sha):
+        raise BindingError("Worker serving SHA must be 40 lowercase hexadecimal characters")
 
     app = _provider_result(container_application, "container application")
     if not isinstance(app, dict):
@@ -97,7 +100,7 @@ def verify_binding(
     app_id, app_version = app.get("id"), app.get("version")
     if not isinstance(app_id, str) or not _UUID.fullmatch(app_id):
         raise BindingError("Cloudflare container application ID is not a UUID")
-    if not isinstance(app_version, (int, str)) or str(app_version) in ("", "0"):
+    if isinstance(app_version, bool) or not isinstance(app_version, (int, str)) or str(app_version) in ("", "0"):
         raise BindingError("Cloudflare container application has no active version")
     image = (app.get("configuration") or {}).get("image") if isinstance(app.get("configuration"), dict) else None
     expected_image_prefix = f"registry.cloudflare.com/"
@@ -107,28 +110,46 @@ def verify_binding(
     if not match or match.group(2) != f"{worker_name}-corelinkserver-prod":
         raise BindingError("active container image does not belong to the requested production Worker")
     image_source_prefix = match.group(3)
-    if not source_sha.startswith(image_source_prefix):
-        raise BindingError("active container image tag does not map to the requested source SHA")
     resolved_image_commit = container_image_commit.get("sha") if isinstance(container_image_commit, dict) else None
-    if not isinstance(resolved_image_commit, str) or resolved_image_commit != source_sha or not _SHA.fullmatch(resolved_image_commit):
-        raise BindingError("container image tag does not resolve to the requested full source SHA")
+    if (not isinstance(resolved_image_commit, str) or not _SHA.fullmatch(resolved_image_commit)
+            or not resolved_image_commit.startswith(image_source_prefix)):
+        raise BindingError("container image tag does not resolve to its full build SHA")
     health = app.get("health")
     instances = health.get("instances") if isinstance(health, dict) else None
-    if not isinstance(instances, dict) or not isinstance(instances.get("healthy"), int) or instances["healthy"] < 1 or instances.get("failed") != 0:
+    if (not isinstance(instances, dict) or type(instances.get("healthy")) is not int
+            or instances["healthy"] < 1 or type(instances.get("failed")) is not int
+            or instances["failed"] != 0):
         raise BindingError("active container application is not reporting healthy instances")
     builds = container_build_runs.get("workflow_runs") if isinstance(container_build_runs, dict) else None
-    if not isinstance(builds, list) or not any(
-        isinstance(run, dict) and run.get("head_sha") == source_sha
+    successful_builds = [run for run in builds if isinstance(run, dict)
+        and run.get("head_sha") == resolved_image_commit
         and run.get("conclusion") == "success" and run.get("event") == "workflow_dispatch"
-        for run in builds
-    ):
-        raise BindingError("no successful container image build is bound to the source SHA")
+        and isinstance(run.get("id"), int) and run["id"] > 0] if isinstance(builds, list) else []
+    if not successful_builds:
+        raise BindingError("no successful container image build is bound to the tag's build SHA")
+    build_id = successful_builds[0]["id"]
+
+    def require_ancestor(comparison: Any, base: str, head: str, label: str) -> None:
+        base_commit = comparison.get("base_commit") if isinstance(comparison, dict) else None
+        merge_base = comparison.get("merge_base_commit") if isinstance(comparison, dict) else None
+        status = comparison.get("status") if isinstance(comparison, dict) else None
+        commits = comparison.get("commits") if isinstance(comparison, dict) else None
+        head_matches = (base == head if status == "identical" else
+                        isinstance(commits, list) and bool(commits)
+                        and isinstance(commits[-1], dict) and commits[-1].get("sha") == head)
+        if (status not in ("ahead", "identical") or not isinstance(base_commit, dict)
+                or base_commit.get("sha") != base or not isinstance(merge_base, dict)
+                or merge_base.get("sha") != base or not head_matches):
+            raise BindingError(f"GitHub does not prove {label} is an ancestor")
+
+    require_ancestor(b122_is_ancestor, B122_CONTAINER_SOURCE_SHA, resolved_image_commit, "B-122 container source")
+    require_ancestor(build_is_ancestor, resolved_image_commit, worker_serving_sha, "container build SHA")
 
     provider_deployment_id, version_id, deployment_created_on, message = _active_version(deployments)
     version_result = _provider_result(version, "version")
     if not isinstance(version_result, dict) or version_result.get("id") != version_id:
         raise BindingError("Worker version read does not match the active deployment")
-    if message != f"corelink-source-sha={source_sha}":
+    if message != f"corelink-source-sha={worker_serving_sha}":
         raise BindingError("active Worker deployment source annotation does not match source SHA")
 
     if not isinstance(github_deployments, list):
@@ -138,7 +159,7 @@ def verify_binding(
         for deployment in github_deployments
         if isinstance(deployment, dict)
         and deployment.get("environment") == "production"
-        and deployment.get("sha") == source_sha
+        and deployment.get("sha") == worker_serving_sha
         and isinstance(deployment.get("id"), int)
     ]
     if not matches:
@@ -163,13 +184,15 @@ def verify_binding(
         "container_application_id": app_id,
         "container_application_version": str(app_version),
         "container_image": image,
-        "container_image_source_sha": source_sha,
+        "container_build_sha": resolved_image_commit,
+        "container_build_run_id": build_id,
+        "worker_serving_sha": worker_serving_sha,
+        "container_b122_source_sha": B122_CONTAINER_SOURCE_SHA,
         "container_healthy_instances": instances["healthy"],
         "worker_version_id": version_id,
         "worker_version_created_on": version_created_on,
         "provider_deployment_id": provider_deployment_id,
         "provider_deployment_created_on": deployment_created_on,
-        "source_sha": source_sha,
         "github_deployment_id": github_deployment["id"],
         "github_deployment_created_at": github_created_at,
         "github_deployment_sha": github_deployment["sha"],
@@ -189,6 +212,9 @@ def main() -> int:
     parser.add_argument("--container-application", type=Path, required=True)
     parser.add_argument("--container-image-commit", type=Path, required=True)
     parser.add_argument("--container-build-runs", type=Path, required=True)
+    parser.add_argument("--build-is-ancestor", type=Path, required=True)
+    parser.add_argument("--b122-is-ancestor", type=Path, required=True)
+    parser.add_argument("--worker-serving-sha", required=True)
     args = parser.parse_args()
     try:
         receipt = verify_binding(
@@ -199,8 +225,10 @@ def main() -> int:
             container_application=_load(args.container_application),
             container_image_commit=_load(args.container_image_commit),
             container_build_runs=_load(args.container_build_runs),
+            build_is_ancestor=_load(args.build_is_ancestor),
+            b122_is_ancestor=_load(args.b122_is_ancestor),
             worker_name=args.worker_name,
-            source_sha=args.source_sha,
+            worker_serving_sha=args.worker_serving_sha,
         )
     except BindingError as exc:
         parser.error(str(exc))

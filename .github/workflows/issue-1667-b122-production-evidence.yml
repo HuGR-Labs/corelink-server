@@ -160,10 +160,15 @@ jobs:
           image_prefix="${image_tag%-r1}"
           [[ "${image_prefix}" =~ ^[0-9a-f]{7,40}$ ]]
           gh api "repos/${GITHUB_REPOSITORY}/commits/${image_prefix}" > "${evidence_dir}/container-image-commit.json"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/container-build-push-prod.yml/runs?head_sha=${source_sha}&status=completed&per_page=100" \
+          container_build_sha="$(jq -er '.sha' "${evidence_dir}/container-image-commit.json")"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/container-build-push-prod.yml/runs?head_sha=${container_build_sha}&status=completed&per_page=100" \
             > "${evidence_dir}/container-build-runs.json"
+          gh api "repos/${GITHUB_REPOSITORY}/compare/${container_build_sha}...${source_sha}" \
+            > "${evidence_dir}/build-to-serving-compare.json"
+          gh api "repos/${GITHUB_REPOSITORY}/compare/a5d56cb4516a2c11f5234eb83a738baa97a41c3d...${container_build_sha}" \
+            > "${evidence_dir}/b122-to-build-compare.json"
           python3 scripts/verify_i1667_b122_provider_binding.py \
-            --worker-name "${WORKER_NAME}" --source-sha "${source_sha}" \
+            --worker-name "${WORKER_NAME}" --worker-serving-sha "${source_sha}" \
             --deployments "${evidence_dir}/provider-deployments.json" \
             --version "${evidence_dir}/provider-version.json" \
             --github-deployments "${evidence_dir}/github-deployments.json" \
@@ -171,6 +176,8 @@ jobs:
             --container-application "${evidence_dir}/container-application.json" \
             --container-image-commit "${evidence_dir}/container-image-commit.json" \
             --container-build-runs "${evidence_dir}/container-build-runs.json" \
+            --build-is-ancestor "${evidence_dir}/build-to-serving-compare.json" \
+            --b122-is-ancestor "${evidence_dir}/b122-to-build-compare.json" \
             > artifacts/b122-provider-binding.json
       - name: Capture B-102 warm and B-107 separated 1 KiB samples
         env:
@@ -263,7 +270,7 @@ jobs:
           import pathlib
           import sys
           provider_binding = json.loads(pathlib.Path("artifacts/b122-provider-binding.json").read_text(encoding="utf-8"))
-          if provider_binding["source_sha"] != sys.argv[1].lower():
+          if provider_binding["worker_serving_sha"] != sys.argv[1].lower():
               raise SystemExit("provider binding does not match the requested serving SHA")
           b102 = pathlib.Path("artifacts/b122/b102-warm.txt").read_text(encoding="utf-8").splitlines()
           b107 = pathlib.Path("artifacts/b122/b107-separated.txt").read_text(encoding="utf-8").splitlines()
@@ -272,6 +279,8 @@ jobs:
               "issue": "B-122",
               "measurement_mode": "production_dogfood_bounded",
               "serving_sha": sys.argv[1],
+              "worker_serving_sha": provider_binding["worker_serving_sha"],
+              "container_build_sha": provider_binding["container_build_sha"],
               "region": sys.argv[2],
               "provider_binding": provider_binding,
               "sample_started_utc": sample_started_utc,
