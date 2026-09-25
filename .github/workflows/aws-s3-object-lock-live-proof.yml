@@ -55,7 +55,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-          ref: main
+          ref: ${{ github.sha }}
 
       - name: Validate fixed approved target and cost boundary
         run: |
@@ -114,12 +114,15 @@ jobs:
           fi
           aws s3api put-bucket-versioning --bucket "$bucket" \
             --versioning-configuration Status=Enabled
+          aws s3api get-bucket-versioning --bucket "$bucket" > "$RUNNER_TEMP/versioning.json"
+          jq -e '.Status == "Enabled"' "$RUNNER_TEMP/versioning.json" >/dev/null
           aws s3api put-object-lock-configuration --bucket "$bucket" \
             --object-lock-configuration '{"ObjectLockEnabled":"Enabled","Rule":{"DefaultRetention":{"Mode":"COMPLIANCE","Days":1}}}'
           aws s3api get-object-lock-configuration --bucket "$bucket" > "$RUNNER_TEMP/lock.json"
           jq -e '.ObjectLockConfiguration.ObjectLockEnabled == "Enabled" and .ObjectLockConfiguration.Rule.DefaultRetention.Mode == "COMPLIANCE" and .ObjectLockConfiguration.Rule.DefaultRetention.Days == 1' "$RUNNER_TEMP/lock.json" >/dev/null
           actual_region="$(aws s3api get-bucket-location --bucket "$bucket" --query LocationConstraint --output text)"
-          test "$actual_region" = "$AWS_REGION" -o "$actual_region" = None -a "$AWS_REGION" = us-east-1
+          if [ "$actual_region" = None ]; then actual_region=us-east-1; fi
+          test "$actual_region" = "$AWS_REGION"
           retain_until="$(date -u -d '+1 day' '+%Y-%m-%dT%H:%M:%SZ')"
           printf 'synthetic object lock proof: %s\n' "$GITHUB_RUN_ID" > "$RUNNER_TEMP/synthetic.txt"
           put="$(aws s3api put-object --bucket "$bucket" --key "$key" --body "$RUNNER_TEMP/synthetic.txt" --object-lock-mode COMPLIANCE --object-lock-retain-until-date "$retain_until" --object-lock-legal-hold-status ON)"
@@ -144,6 +147,7 @@ jobs:
           # queries the approved Event Data Store for S3 *data* events using
           # the CloudTrail event-record schema, not integration eventData.
           query_window_start="$(date -u -d '-20 minutes' '+%Y-%m-%d %H:%M:%S')"
+          digest_validation_start="$(date -u -d '-20 minutes' '+%Y-%m-%dT%H:%M:%SZ')"
           query="SELECT eventid, eventname, requestid, requestparameters, responseelements, errorcode FROM ${AWS_EVENT_DATA_STORE_ID} WHERE eventcategory = 'Data' AND eventsource = 's3.amazonaws.com' AND eventtime >= timestamp '${query_window_start}'"
           query_id="$(aws cloudtrail start-query --query-statement "$query" --query QueryId --output text)"
           trail_event=''
@@ -172,18 +176,24 @@ jobs:
           request_id="$(jq -r '.requestID' <<<"$trail_event")"
           # Validate the linked approved trail's digest chain separately from
           # the Event Data Store query. A live receipt records both links.
-          aws cloudtrail validate-logs --trail-arn "$AWS_TRAIL_ARN" > "$RUNNER_TEMP/digest-validation.txt"
+          digest_validation_end="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          aws cloudtrail validate-logs --trail-arn "$AWS_TRAIL_ARN" \
+            --start-time "$digest_validation_start" --end-time "$digest_validation_end" --verbose \
+            > "$RUNNER_TEMP/digest-validation.txt"
           mkdir -p "$RUNNER_TEMP/object-lock-receipt"
-          jq -n --arg workflow "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
-            --arg commit "$GITHUB_SHA" --arg version "$version" --arg request_id "$request_id" \
-            --arg retain_until "$retain_until" --arg cleanup_owner "$CLEANUP_OWNER" \
-            --arg approval_ref "$APPROVAL_REFERENCE" --arg run_id "$GITHUB_RUN_ID" \
-            --arg cloudtrail_event_id "$(jq -r '.eventID' <<<"$trail_event")" \
-            --arg delete_denial_event_id "$(jq -r '.eventID' <<<"$delete_event")" \
-            --arg jurisdiction "$JURISDICTION" \
-            '{workflow:$workflow,commit:$commit,run_id:$run_id,approval_reference:$approval_ref,synthetic:true,jurisdiction:$jurisdiction,object_version:$version,put_request_id:$request_id,cloudtrail_put_event_id:$cloudtrail_event_id,cloudtrail_delete_denial_event_id:$delete_denial_event_id,retain_until:$retain_until,compliance_mode:true,legal_hold_on:true,delete_denied:true,digest_validation:"passed",cleanup_owner:$cleanup_owner,cleanup_due_after_retention:true}' \
-            > "$RUNNER_TEMP/object-lock-receipt/redacted-proof.json"
-          echo "bucket_sha256=$(printf '%s' "$bucket" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          B046_ACTUAL_ACCOUNT_ID="$actual_account" \
+          B046_ACTUAL_REGION="$actual_region" \
+          B046_CHECKED_OUT_SHA="$(git rev-parse HEAD)" \
+          B046_BUCKET="$bucket" \
+          B046_KEY="$key" \
+          B046_VERSION="$version" \
+          B046_PUT_REQUEST_ID="$request_id" \
+          B046_RETAIN_UNTIL="$actual_expiry" \
+          B046_CLOUDTRAIL_PUT_EVENT_ID="$(jq -r '.eventID' <<<"$trail_event")" \
+          B046_CLOUDTRAIL_DELETE_EVENT_ID="$(jq -r '.eventID' <<<"$delete_event")" \
+            python3 scripts/build_b046_object_lock_receipt.py \
+              --output "$RUNNER_TEMP/object-lock-receipt/redacted-proof.json" \
+              --digest-validation-output "$RUNNER_TEMP/digest-validation.txt"
 
       - name: Clean up the exact expired synthetic probe
         id: cleanup
@@ -200,11 +210,17 @@ jobs:
           aws s3api list-object-versions --bucket "$bucket" --prefix "$expected_key" > "$RUNNER_TEMP/versions.json"
           jq -e --arg key "$expected_key" '[.Versions[]? | select(.Key == $key)] | length == 1' "$RUNNER_TEMP/versions.json" >/dev/null
           version="$(jq -r --arg key "$expected_key" '.Versions[] | select(.Key == $key) | .VersionId' "$RUNNER_TEMP/versions.json")"
-          aws s3api get-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/legal-hold.json"
-          jq -e '.LegalHold.Status == "OFF"' "$RUNNER_TEMP/legal-hold.json" >/dev/null
           aws s3api get-object-retention --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/retention.json"
           expiry="$(jq -r '.Retention.RetainUntilDate' "$RUNNER_TEMP/retention.json")"
           test "$(date -u -d "$expiry" +%s)" -le "$(date -u +%s)"
+          aws s3api get-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/legal-hold.json"
+          hold_status="$(jq -er '.LegalHold.Status | select(. == "ON" or . == "OFF")' "$RUNNER_TEMP/legal-hold.json")"
+          if [ "$hold_status" = ON ]; then
+            aws s3api put-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version" \
+              --legal-hold '{"Status":"OFF"}'
+          fi
+          aws s3api get-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/legal-hold.json"
+          jq -e '.LegalHold.Status == "OFF"' "$RUNNER_TEMP/legal-hold.json" >/dev/null
           aws s3api delete-object --bucket "$bucket" --key "$expected_key" --version-id "$version" >/dev/null
           remaining="$(aws s3api list-object-versions --bucket "$bucket" --query 'length(Versions[])' --output text)"
           test "$remaining" = 0
