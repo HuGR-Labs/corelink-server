@@ -266,10 +266,14 @@ def test_actionlint_event_baseline_contract_is_immutable_and_strict_on_push() ->
     assert "expected_sha:" in workflow
     assert "baseline_sha:" in workflow
     assert "EXPECTED_SHA: ${{ inputs.expected_sha }}" in workflow
+    assert "EXPECTED_BASELINE_SHA: ${{ inputs.baseline_sha }}" in workflow
     assert 'if [[ "$EXPECTED_SHA" != "$GITHUB_SHA" ]]' in workflow
+    assert 'if [[ ! "$EXPECTED_BASELINE_SHA" =~ ^[0-9a-f]{40}$ ]]' in workflow
     assert "github.event.pull_request.head.sha || github.sha" in workflow
     assert "ref: ${{ github.event.pull_request.base.sha }}" in workflow
-    assert "ref: ${{ inputs.baseline_sha }}" in workflow
+    assert "ref: main" in workflow
+    assert 'ACTUAL_BASELINE_SHA="$(git -C baseline rev-parse HEAD)"' in workflow
+    assert 'if [[ "$EXPECTED_BASELINE_SHA" != "$ACTUAL_BASELINE_SHA" ]]' in workflow
     assert "if: github.event_name == 'pull_request'" in workflow
     assert "if: github.event_name == 'workflow_dispatch'" in workflow
     assert "--baseline-workflows baseline/.github/workflows" in workflow

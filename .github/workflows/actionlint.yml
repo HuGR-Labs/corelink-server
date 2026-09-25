@@ -69,15 +69,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Verify requested exact SHA
+      - name: Verify requested exact SHAs
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
+          EXPECTED_BASELINE_SHA: ${{ inputs.baseline_sha }}
         run: |
           set -euo pipefail
           if [[ "$EXPECTED_SHA" != "$GITHUB_SHA" ]]; then
             echo "Requested SHA does not match dispatched commit" >&2
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_BASELINE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Requested baseline SHA must be exactly 40 lowercase hexadecimal characters" >&2
             exit 1
           fi
 
@@ -97,15 +102,29 @@ jobs:
           path: baseline
           persist-credentials: false
 
-      # An exact-SHA dispatch supplies both immutable revisions explicitly.
-      # An unreachable baseline SHA fails at checkout before validation runs.
+      # Checkout the default branch by name: checkout treats a raw SHA as a
+      # branch-ref prefix. The next step pins this checkout to the requested
+      # immutable baseline, so movement of main fails closed.
       - name: Checkout dispatched rustup-validator baseline
         if: github.event_name == 'workflow_dispatch'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
         with:
-          ref: ${{ inputs.baseline_sha }}
+          ref: main
           path: baseline
           persist-credentials: false
+
+      - name: Verify requested exact baseline SHA
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          EXPECTED_BASELINE_SHA: ${{ inputs.baseline_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_BASELINE_SHA="$(git -C baseline rev-parse HEAD)"
+          if [[ "$EXPECTED_BASELINE_SHA" != "$ACTUAL_BASELINE_SHA" ]]; then
+            echo "Requested baseline SHA does not match main" >&2
+            exit 1
+          fi
 
       # Use the official pinned 1.7.12 release installer when the runner image
       # does not already provide actionlint. Its platform detection selects the
