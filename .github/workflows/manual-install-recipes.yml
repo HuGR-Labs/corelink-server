@@ -22,9 +22,8 @@ name: manual-install-recipes
 # `.sha256` the way the tutorial says (`sha256sum -c`, BEFORE chmod) and runs the
 # binary. Any 404 / checksum mismatch / non-runnable binary FAILS the job.
 #
-# runs-on: corelink — the Cloudflare container fabric is Linux x86_64, the exact
-# platform the linux-x86_64 recipe targets, and a datacenter IP the public would
-# use (the zero-hosted-Actions mandate keeps this off GitHub-hosted minutes).
+# Runs on GitHub-hosted Ubuntu x86_64, matching the documented linux-x86_64
+# recipe and preserving its anonymous-download check.
 
 on:
   schedule:
@@ -51,7 +50,7 @@ concurrency:
 jobs:
   linux-x86_64-tarball-recipe:
     name: manual recipe — linux x86_64 (anonymous, checksum-verified)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Reproduce the documented manual recipe exactly (fail-CLOSED)

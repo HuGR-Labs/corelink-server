@@ -60,10 +60,9 @@ concurrency:
 jobs:
   generate:
     name: Generate release notes draft
-    # Runner: `corelink` (zero-hosted). Pure stdlib python3
-    # (generate-release-notes.py) + `gh` (pr create) + the softprops release
-    # action (node) — all provided by the box image (gh 2.97.0 at increment 3).
-    runs-on: corelink
+    # Hosted Ubuntu supplies Python and GitHub CLI; the existing bot-token
+    # permission boundary and publication commands remain unchanged.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Mint repository-scoped bot token
@@ -81,6 +80,7 @@ jobs:
       - name: Checkout full history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.sha }}
           # GITHUB_TOKEN branch pushes suppress push workflows, while the PR

@@ -27,14 +27,9 @@ name: Reproducible Build (2-leg byte diff)
 #
 # WHAT THE RESULT PROVES, AND WHAT IT DOES NOT
 #
-# Both legs run on ONE self-hosted host, into two separate target directories.
-# That measures determinism of the compiler and inputs given an identical
-# environment. It does NOT prove cross-environment reproducibility — a second
-# machine, a different OS image, or a different `$HOME` could still diverge.
-# The previous version claimed the stronger property by running two hosted
-# `ubuntu-latest` legs; it never once executed, so it proved neither. Hosted
-# runners are also forbidden in this repo (zero GitHub-Actions spend), which is
-# why the honest weaker claim on self-hosted is what we make.
+# Both legs run on ONE GitHub-hosted macOS Intel VM, into separate target
+# directories. This measures determinism given an identical environment; it does
+# NOT prove cross-environment reproducibility across another machine or OS image.
 
 on:
   # Dispatch-only, deliberately. Two full release builds of a 207-dependency
@@ -54,14 +49,14 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"   # deterministic: no incremental state
   RUST_BACKTRACE: "1"
-  # The host target of the self-hosted fleet. release-cli.yml builds this same
-  # triple natively (no zig), so this leg needs no cross toolchain.
+  # release-cli.yml builds this triple natively (no zig); the hosted Intel Mac
+  # matches that platform, so this leg needs no cross toolchain.
   TARGET: x86_64-apple-darwin
 
 jobs:
   two-leg-diff:
     name: Build corelink-cli twice, diff the bytes
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: macos-15-intel
     # Two single-job release builds of a 207-dep crate, cold. Generous, because
     # a timeout here reads as "reproducibility failed" when it means "the box
     # was busy".
@@ -71,12 +66,15 @@ jobs:
       - name: Checkout (full history for SOURCE_DATE_EPOCH)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
 
-      # Do NOT provision a toolchain on this fleet: 5 runners share one $HOME,
-      # so `rustup default` moves every concurrent job off the pinned toolchain
-      # and a concurrent install can make rustc unexecutable mid-build. Full
-      # reasoning in the script header.
+      # The hosted VM is isolated; provision the exact workspace pin before the
+      # helper verifies its target and places its toolchain on PATH.
+      - name: Install workspace-pinned Rust toolchain on hosted VM
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: 1.91.1
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         run: bash scripts/ci-use-host-toolchain.sh "${TARGET}"
 

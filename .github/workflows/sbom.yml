@@ -215,7 +215,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-tsa-attest:
     name: "RFC 3161 TSA timestamp (Sigstore)"
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     needs: sbom-ntia-validate
     outputs:
       tsr_present: ${{ steps.tsa.outputs.tsr_present }}
@@ -223,19 +223,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
 
       - name: Download SBOM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: sbom-cdx-json
 
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      # The hosted VM is isolated; install the exact workspace pin before the
+      # helper verifies it and makes its binaries available on PATH.
+      - name: Install workspace-pinned Rust toolchain on hosted VM
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: 1.91.1
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         run: bash scripts/ci-use-host-toolchain.sh
 
@@ -269,7 +270,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-dt-ingest:
     name: "Dependency-Track ingestion"
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     needs: [sbom-generate, sbom-ntia-validate]
     # DT ingestion is non-blocking: continue even if DT is down
     continue-on-error: true
@@ -281,6 +282,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
 
       - name: Download SBOM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -294,6 +297,10 @@ jobs:
       # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
       # default, silently moving every concurrent job off the ADR-0015 reproducibility
       # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      - name: Install workspace-pinned Rust toolchain on hosted VM
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: 1.91.1
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         run: bash scripts/ci-use-host-toolchain.sh
 
@@ -334,7 +341,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-release-upload:
     name: "Upload release assets"
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     # `sbom-dt-ingest` was dropped from `needs` on 2026-08-31 (WP-E). Now that it
     # is conditional on `vars.DT_ENDPOINT`, keeping it here would SKIP the
     # release upload whenever Dependency-Track is unconfigured — a skipped
@@ -351,6 +358,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
 
       - name: Download SBOM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
