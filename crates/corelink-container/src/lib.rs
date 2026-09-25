@@ -191,6 +191,8 @@ pub mod reapi_action_cache;
 pub mod reapi_bytestream;
 /// Unmounted REAPI CAS unary service over the authenticated ingress kernel.
 pub mod reapi_cas;
+/// Unmounted composition of the authenticated cache-only REAPI services.
+pub mod reapi_composition;
 /// Authenticated, tenant-scoped ingress kernel for future REAPI gRPC services.
 pub mod reapi_ingress;
 pub mod request_count;
