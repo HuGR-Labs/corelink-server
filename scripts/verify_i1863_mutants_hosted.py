@@ -42,7 +42,7 @@ def validate_successful_receipt(
     if head_branch != "main":
         raise ValueError("hosted mutants aggregate is not from protected main")
     if receipt.get("shard_count") != SHARD_COUNT or receipt.get("covered_mutants", 0) <= 0:
-        raise ValueError("aggregate receipt does not prove all 27 nonempty shards")
+        raise ValueError("aggregate receipt does not prove all 120 nonempty shards")
     if receipt.get("tool_version") != TOOL_VERSION:
         raise ValueError("aggregate receipt tool version is not pinned cargo-mutants 27.0.0")
     if receipt.get("config_digest") != config_digest():
@@ -155,7 +155,7 @@ def main() -> int:
         raise SystemExit("legacy nightly mutants-workspace must remain disabled")
     for document in (BACKLOG, OWNER_PACKET):
         text = document.read_text(encoding="utf-8")
-        if "issue-1863-mutants-hosted.yml" not in text or "27" not in text:
+        if "issue-1863-mutants-hosted.yml" not in text or str(SHARD_COUNT) not in text:
             raise SystemExit(f"{document} does not retain the bounded #2457 ownership mapping")
     print("issue #1863 / #1948 bounded hosted mutants contract: PASS")
     return 0
