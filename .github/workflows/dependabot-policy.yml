@@ -189,13 +189,10 @@ jobs:
       # so an unparseable SPDX (e.g., `SEE LICENSE IN <file>`) fails the
       # gate and forces human review.
       # ---------------------------------------------------------------------
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      # This job now runs on a fresh GitHub-hosted runner, so install the pinned
+      # toolchain before selecting it. The old self-hosted fleet shared ~/.rustup;
+      # provisioning there could disrupt concurrent jobs. Full reasoning:
+      # scripts/ci-use-host-toolchain.sh header.
       #
       # ⚠️ `HOST_TRIPLE` is set EXPLICITLY, and that is what keeps this PR
       # independent of merge order. The script on `main` today resolves the
@@ -207,7 +204,13 @@ jobs:
       # supply-chain gate. #1501 teaches the script to detect the triple from
       # `uname`, but naming it here costs two lines and removes the coupling
       # entirely — correct whether #1501 lands first, later, or never.
-      - name: Use the workspace-pinned host toolchain (provisions nothing)
+      - name: Install the workspace-pinned Rust toolchain
+        if: hashFiles('_pr-data/Cargo.toml') != ''
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned toolchain setup
+        with:
+          toolchain: 1.91.1
+
+      - name: Select the workspace-pinned host toolchain
         working-directory: _base
         if: hashFiles('_pr-data/Cargo.toml') != ''
         env:
