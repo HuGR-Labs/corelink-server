@@ -57,6 +57,36 @@ class Issue2161AttributionTests(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute("INSERT INTO staging_load_test_resources VALUES (?, ?, ?, ?, ?, ?, ?, ?)", RESOURCE)
 
+    def test_exact_registration_replay_returns_original_receipt_and_cross_run_handle_fails_closed(self) -> None:
+        self.add_run()
+        self.db.execute(
+            "INSERT INTO staging_load_test_runs VALUES (?, ?, ?, ?, ?, ?)",
+            ("123457", "cas", "staging", "c" * 40, "open", 1),
+        )
+        self.db.execute("INSERT INTO staging_load_test_resources VALUES (?, ?, ?, ?, ?, ?, ?, ?)", RESOURCE)
+
+        # The D1 writer's INSERT hits the append-only identity constraint on
+        # replay, then recovers only through an exact identity lookup. ?3 is
+        # intentionally skipped while its positional value remains present.
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("INSERT INTO staging_load_test_resources VALUES (?, ?, ?, ?, ?, ?, ?, ?)", RESOURCE)
+        lookup = (
+            "SELECT receipt_ref FROM staging_load_test_resources "
+            "WHERE run_id = ?1 AND scenario = ?2 AND resource_class = ?4 "
+            "AND receipt_ref = ?5 AND opaque_handle = ?6 AND disposition = ?7 LIMIT 1"
+        )
+        receipt = self.db.execute(lookup, ("123456", "cas", "a" * 40, "cas_reference", "b" * 64, "ref-1", "disposable")).fetchone()
+        self.assertEqual(receipt, ("b" * 64,))
+
+        cross_run = ("123457", *RESOURCE[1:])
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("INSERT INTO staging_load_test_resources VALUES (?, ?, ?, ?, ?, ?, ?, ?)", cross_run)
+        conflicting_receipt = self.db.execute(
+            lookup,
+            ("123457", "cas", "c" * 40, "cas_reference", "c" * 64, "ref-1", "disposable"),
+        ).fetchone()
+        self.assertIsNone(conflicting_receipt)
+
     def test_retained_or_shared_reference_cannot_be_deleted_or_reassigned(self) -> None:
         self.add_run()
         for resource_class in ("dsr_obligation", "audit_evidence", "billing_audit"):
