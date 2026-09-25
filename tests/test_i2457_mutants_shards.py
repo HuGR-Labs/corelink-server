@@ -11,16 +11,19 @@ import unittest
 
 from scripts.verify_i2457_mutants_shards import (
     BASELINE_SCHEMA,
+    EVIDENCE_SCHEMA,
     SHARD_COUNT,
     SHARD_SCHEMA,
     VerificationError,
     aggregate_receipts,
     command_aggregate,
+    command_write_shard,
     config_digest,
     directory_digest,
     digest,
     make_inventory,
     membership,
+    mutant_counts,
     shard_artifact_digest,
     validate_inventory,
 )
@@ -56,6 +59,8 @@ class MutantsShardAggregateTests(unittest.TestCase):
         self.sha = "a" * 40
         self.run_id = "777"
         raw = [self.raw_mutant(index) for index in range(SHARD_COUNT * 2)]
+        raw[1] = copy.deepcopy(raw[0])
+        self.raw = raw
         self.inventory = make_inventory(raw, self.sha, self.run_id, 1)
         self.baseline = {
             "schema": BASELINE_SCHEMA,
@@ -81,6 +86,7 @@ class MutantsShardAggregateTests(unittest.TestCase):
                 "baseline_digest": self.baseline["baseline_digest"],
                 "shard": {"index": index, "total": SHARD_COUNT, "sharding": "round-robin"},
                 "mutant_ids": membership(self.inventory["mutant_ids"], index),
+                "mutant_counts": mutant_counts(membership(self.inventory["mutant_ids"], index)),
                 "membership_digest": digest(membership(self.inventory["mutant_ids"], index)),
                 "evidence_digest": digest([f"shard-{index}"]),
                 "artifact_digest": digest([f"artifact-{index}"]),
@@ -115,6 +121,8 @@ class MutantsShardAggregateTests(unittest.TestCase):
     def test_accepts_exact_complete_disjoint_union(self) -> None:
         receipt = self.aggregate(downloaded=self.downloaded())
         self.assertEqual(receipt["covered_mutants"], SHARD_COUNT * 2)
+        self.assertEqual(sum(item["occurrences"] for item in receipt["per_shard_occurrence_counts"]), SHARD_COUNT * 2)
+        self.assertEqual(receipt["covered_mutant_counts"], self.inventory["mutant_counts"])
         self.assertEqual(receipt["attempt_lineage"], [1])
         self.assertEqual(len(receipt["shard_artifact_digests"]), SHARD_COUNT)
 
@@ -123,6 +131,10 @@ class MutantsShardAggregateTests(unittest.TestCase):
         invalid = copy.deepcopy(self.inventory)
         invalid["mutant_ids"][0] = {"name": "mutant-0"}
         with self.assertRaisesRegex(VerificationError, "string identities"):
+            validate_inventory(invalid)
+        invalid = copy.deepcopy(self.inventory)
+        invalid["mutant_counts"][0]["count"] = 3
+        with self.assertRaisesRegex(VerificationError, "multiplicity"):
             validate_inventory(invalid)
         invalid = copy.deepcopy(self.inventory)
         invalid["inventory_shard"] = "0/27"
@@ -146,10 +158,19 @@ class MutantsShardAggregateTests(unittest.TestCase):
         self.assertEqual(len(first["mutant_ids"]), len(set(first["mutant_ids"])))
         self.assertTrue(all(identity.startswith("sha256:") for identity in first["mutant_ids"]))
 
-    def test_canonical_identity_rejects_an_identical_duplicate(self) -> None:
+    def test_canonical_identity_retains_an_identical_duplicate_as_two_occurrences(self) -> None:
         raw = self.raw_mutant(0, name="same display name", file="crates/one/src/lib.rs", line=10)
-        with self.assertRaisesRegex(VerificationError, "duplicate identities"):
-            make_inventory([raw, copy.deepcopy(raw)], self.sha, self.run_id, 1)
+        inventory = make_inventory([raw, copy.deepcopy(raw)], self.sha, self.run_id, 1)
+        self.assertEqual(len(inventory["mutant_ids"]), 2)
+        self.assertEqual(inventory["mutant_counts"], [{"identity": inventory["mutant_ids"][0], "count": 2}])
+
+    def test_equal_records_in_separate_shards_have_no_identity_collision(self) -> None:
+        shared = self.inventory["mutant_ids"][0]
+        self.assertEqual(self.inventory["mutant_ids"][1], shared)
+        self.assertEqual(membership(self.inventory["mutant_ids"], 0), [shared, self.inventory["mutant_ids"][27]])
+        self.assertEqual(membership(self.inventory["mutant_ids"], 1), [shared, self.inventory["mutant_ids"][28]])
+        self.assertIn({"identity": shared, "count": 1}, self.shards[0]["mutant_counts"])
+        self.assertIn({"identity": shared, "count": 1}, self.shards[1]["mutant_counts"])
 
     def test_canonical_identity_rejects_a_truncated_or_drifted_list_record(self) -> None:
         raw = self.raw_mutant(0)
@@ -169,15 +190,65 @@ class MutantsShardAggregateTests(unittest.TestCase):
         with self.assertRaisesRegex(VerificationError, "unexpected"):
             self.aggregate(shards=unexpected)
 
-    def test_rejects_missing_duplicate_or_unexpected_mutant_coverage(self) -> None:
+    def test_rejects_missing_or_extra_equal_record_occurrence(self) -> None:
         missing = copy.deepcopy(self.shards)
         missing[0]["mutant_ids"] = missing[0]["mutant_ids"][1:]
         with self.assertRaisesRegex(VerificationError, "deterministic membership"):
             self.aggregate(shards=missing)
-        duplicate = copy.deepcopy(self.shards)
-        duplicate[1]["mutant_ids"][0] = duplicate[0]["mutant_ids"][0]
+        extra = copy.deepcopy(self.shards)
+        extra[1]["mutant_ids"].append(extra[1]["mutant_ids"][0])
         with self.assertRaisesRegex(VerificationError, "deterministic membership"):
-            self.aggregate(shards=duplicate)
+            self.aggregate(shards=extra)
+
+    def test_rejects_unexpected_mutant_coverage(self) -> None:
+        unexpected = copy.deepcopy(self.shards)
+        unexpected[1]["mutant_ids"][0] = unexpected[2]["mutant_ids"][0]
+        with self.assertRaisesRegex(VerificationError, "deterministic membership"):
+            self.aggregate(shards=unexpected)
+
+    def test_write_shard_rejects_missing_or_extra_observed_equal_occurrence(self) -> None:
+        expected_raw = self.raw[0::SHARD_COUNT]
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory = root / "inventory.json"
+            baseline = root / "baseline.json"
+            expected = root / "expected.json"
+            observed = root / "observed.json"
+            evidence = root / "raw-evidence"
+            redacted = root / "redacted-evidence"
+            output = root / "receipt.json"
+            inventory.write_text(json.dumps(self.inventory), encoding="utf-8")
+            baseline.write_text(json.dumps(self.baseline), encoding="utf-8")
+            expected.write_text(json.dumps(expected_raw), encoding="utf-8")
+            evidence.mkdir()
+            (evidence / "outcomes.json").write_text("{}", encoding="utf-8")
+
+            def write(observed_raw: list[dict]) -> None:
+                observed.write_text(json.dumps(observed_raw), encoding="utf-8")
+                command_write_shard(
+                    Namespace(
+                        inventory=inventory,
+                        baseline=baseline,
+                        expected=expected,
+                        observed=observed,
+                        evidence=evidence,
+                        redacted_evidence=redacted,
+                        sha=self.sha,
+                        run_id=self.run_id,
+                        run_attempt=1,
+                        shard=0,
+                        exit_code=0,
+                        out=output,
+                    )
+                )
+
+            write(expected_raw)
+            redacted_text = (redacted / "shard-evidence-manifest.json").read_text(encoding="utf-8")
+            self.assertNotIn(expected_raw[0]["file"], redacted_text)
+            with self.assertRaisesRegex(VerificationError, "list/output disagrees"):
+                write(expected_raw[1:])
+            with self.assertRaisesRegex(VerificationError, "list/output disagrees"):
+                write(expected_raw + [copy.deepcopy(expected_raw[0])])
 
     def test_rejects_mixed_sha_tool_configuration_or_run(self) -> None:
         for field, value, expected in (
@@ -264,16 +335,24 @@ class MutantsShardAggregateTests(unittest.TestCase):
             for shard in self.shards:
                 index = shard["shard"]["index"]
                 artifact_root = root / f"mutants-shard-{index}-{self.run_id}-1"
-                evidence = artifact_root / f"mutants-shard-{index}" / "mutants.out"
+                evidence = artifact_root / "redacted-evidence"
                 evidence.mkdir(parents=True)
-                expected = artifact_root / "expected-shard.json"
-                raw = [{"name": name} for name in shard["mutant_ids"]]
-                expected.write_text(json.dumps(raw), encoding="utf-8")
-                (evidence / "mutants.json").write_text(json.dumps(raw), encoding="utf-8")
-                (evidence / "outcomes.json").write_text("{}", encoding="utf-8")
+                (evidence / "shard-evidence-manifest.json").write_text(
+                    json.dumps(
+                        {
+                            "schema": EVIDENCE_SCHEMA,
+                            "expected_mutant_ids": shard["mutant_ids"],
+                            "expected_mutant_counts": shard["mutant_counts"],
+                            "observed_mutant_ids": shard["mutant_ids"],
+                            "observed_mutant_counts": shard["mutant_counts"],
+                            "raw_outcomes_present": True,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
                 receipt = copy.deepcopy(shard)
                 receipt["evidence_digest"] = directory_digest(evidence)
-                receipt["artifact_digest"] = shard_artifact_digest(expected, evidence)
+                receipt["artifact_digest"] = shard_artifact_digest(evidence)
                 (artifact_root / "shard-receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
                 evidence_paths.append(evidence)
 
@@ -284,7 +363,7 @@ class MutantsShardAggregateTests(unittest.TestCase):
             aggregate = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(len(aggregate["shard_artifact_digests"]), SHARD_COUNT)
 
-            (evidence_paths[8] / "outcomes.json").unlink()
+            (evidence_paths[8] / "shard-evidence-manifest.json").unlink()
             with self.assertRaisesRegex(VerificationError, "downloaded evidence bytes"):
                 command_aggregate(
                     Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, out=output)

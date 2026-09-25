@@ -38,13 +38,14 @@ CHECK_IDS = {
     "rust-worker-three-arm",
     "python-mutants-receipt",
     "python-mutants-shards",
+    "cargo-mutants-v27-inventory",
     "python-b170-owner-actions",
 }
 REQUIRED_PACK_CHECKS = {
     "issue-2440-ci-scoping": {"actionlint", "ci-pack-contract"},
     "issue-2437-worker-three-arm": {"ci-pack-contract", "rust-worker-three-arm"},
     "issue-1948-mutants-receipt": {"ci-pack-contract", "python-mutants-receipt"},
-    "issue-2457-mutants-shards": {"actionlint", "ci-pack-contract", "python-mutants-shards"},
+    "issue-2457-mutants-shards": {"actionlint", "ci-pack-contract", "python-mutants-shards", "cargo-mutants-v27-inventory"},
     "issue-1677-b170-owner-actions": {"ci-pack-contract", "python-b170-owner-actions"},
 }
 REQUIRED_PACK_JOBS = {pack_id: {"issue-pack"} for pack_id in REQUIRED_PACK_CHECKS}
@@ -66,6 +67,7 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "id: rust-worker-three-arm",
         "id: python-mutants-receipt",
         "id: python-mutants-shards",
+        "id: cargo-mutants-v27-inventory",
         "id: python-b170-owner-actions",
         "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards'",
         "if: inputs.pack_id == 'issue-2437-worker-three-arm'",
@@ -79,6 +81,9 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "python3 -m scripts.verify_i1863_mutants_hosted",
         "python3 -m scripts.verify_i1666_mutants_evidence",
         "tests/test_i2457_mutants_shards.py",
+        "cargo mutants --version | grep -Fx 'cargo-mutants 27.0.0'",
+        "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > \"${RUNNER_TEMP}/full-inventory.json\"",
+        "python3 scripts/verify_i2457_mutants_shards.py build-inventory",
         "python3 -S scripts/verify_b170_owner_actions.py",
         "grep -Fq 'docs/customer/dpa-onboarding.md'",
         "grep -Fq 'lighthouse enterprise customer'",
@@ -90,6 +95,11 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         '[[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]',
     )
     errors = [f"central workflow is missing required contract: {item}" for item in required if item not in workflow_text]
+    inventory_command = "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json"
+    if workflow_text.count(inventory_command) != 1:
+        errors.append("central workflow must run exactly one real denominator-one v27 inventory command")
+    if "cargo mutants --workspace" in workflow_text.replace(inventory_command, ""):
+        errors.append("central workflow may not run mutations in the issue 2457 inventory pack")
     triggers = mapping_child_keys(workflow_text, "on")
     if triggers != ["workflow_dispatch"]:
         errors.append(f"central issue pack workflow must have only workflow_dispatch triggers; found {triggers}")

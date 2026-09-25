@@ -223,7 +223,7 @@
         ".github/workflows/issue-ci-pack.yml"
       ],
       "required_focused_jobs": ["issue-pack"],
-      "focused_checks": ["actionlint", "ci-pack-contract", "python-mutants-shards"],
+      "focused_checks": ["actionlint", "ci-pack-contract", "python-mutants-shards", "cargo-mutants-v27-inventory"],
       "admission_checks": [
         "DCO check on the exact pull request head",
         "credentialless checkout",
@@ -233,7 +233,8 @@
         "reject missing, duplicate, unexpected, failed, cancelled, timed-out, and nonterminal shards",
         "reject mixed SHA, tool, configuration, baseline, or run identity",
         "reject artifact absence, corrupt digest, baseline failure, and invalid attempt lineage",
-        "no cargo-mutants dispatch or workspace-wide test dispatch in the focused pack"
+        "retain equal full-record hashes as counted occurrences and reject missing or extra occurrences",
+        "run only the denominator-one cargo-mutants v27 --list inventory path; do not mutate or upload raw source payload"
       ],
       "exact_sha": {
         "source": "required workflow_dispatch input candidate_sha",
@@ -263,7 +264,7 @@
       ],
       "merge_evidence": [
         "exact pack run URL/ID, candidate SHA, target base SHA, and conclusion",
-        "actionlint plus static workflow, receipt, and adversarial aggregate checks on ubuntu-24.04",
+        "actionlint plus static workflow, receipt, adversarial aggregate checks, and the real cargo-mutants v27 --list inventory on ubuntu-24.04",
         "admission DCO on the exact pull request head",
         "cold-review verdict and disposition of findings",
         "the expensive 27-shard cargo-mutants campaign remains undispatched until central approval"
