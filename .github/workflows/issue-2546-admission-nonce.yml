@@ -1,0 +1,66 @@
+name: Issue 2546 staging admission nonce (scoped, credentialless)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/issue-2546-admission-nonce.yml
+      - crates/corelink-container/src/storage.rs
+      - crates/corelink-container/src/storage/staging_load_test_admission.rs
+      - migrations/d1/0148_staging_load_test_admission_nonce.sql
+      - tests/test_issue_2546_staging_admission_nonce.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2546-admission-nonce-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  admission-nonce:
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.repository_id == '1232040291' && github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact pull request head as data
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind check to exact pull request head and base
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGET_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_SHA" == "$(git rev-parse HEAD)" ]]
+          [[ "$TARGET_BASE_SHA" == "$(git merge-base "$TARGET_BASE_SHA" "$CANDIDATE_SHA")" ]]
+
+      - name: Install repository Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Install pinned Protobuf compiler required by corelink-reapi
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+
+      - name: Run SQLite migration and transaction contract
+        run: python3 -m unittest -q tests.test_issue_2546_staging_admission_nonce
+
+      - name: Check formatting for changed Rust files
+        run: rustfmt --check --edition 2021 crates/corelink-container/src/storage.rs crates/corelink-container/src/storage/staging_load_test_admission.rs
+
+      - name: Run focused credentialless admission tests
+        timeout-minutes: 10
+        run: "timeout 600s cargo test --locked --package corelink-server --lib staging_load_test_admission::tests:: -- --nocapture"
