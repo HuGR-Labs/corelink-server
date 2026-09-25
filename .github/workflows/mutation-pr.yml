@@ -69,13 +69,9 @@ env:
 jobs:
   mutants-diff:
     name: cargo-mutants (changed lines only)
-    # Runner: `corelink` ephemeral Linux (zero hosted spend). The three reasons
-    # this was hosted are all resolved by the ephemeral runner: the heavy compile
-    # is off the founder's Mac AND off paid hosted minutes; the shared-~/.rustup
-    # ROOT FIX hazard is Mac-fleet-specific (each corelink lease is an isolated
-    # Firecracker microVM with its own $HOME, so there is nothing shared to race);
-    # and it no longer saturates the Mac merge-gate fleet.
-    runs-on: corelink
+    # GitHub-hosted Linux runner. The exact Rust pin is provisioned on this
+    # disposable worker; the static migration pack does not claim runtime timing.
+    runs-on: ubuntu-24.04
     # Bound the job (CI cost diet 2026-08-01): it had NO timeout, so the GitHub
     # default of 360 min applied — a wedged cargo-mutants run could burn 6h of
     # paid minutes. `--in-diff` runs are minutes; 20 is generous headroom.
@@ -88,12 +84,17 @@ jobs:
       - name: Checkout (full history — needed for the base diff)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
 
+      - name: Install the workspace-pinned toolchain on this isolated hosted runner
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.91.1
+          components: clippy,rustfmt
       - name: Use host toolchain (baked, workspace-pinned)
-        # NOT dtolnay — validate_no_shared_rustup_mutation.py forbids provisioning
-        # a toolchain on a self-hosted job (`corelink` counts as self-hosted). The
-        # image bakes the rust-toolchain.toml pin (1.91.1) with clippy/rustfmt.
+        # The pinned toolchain was installed above on this disposable hosted job;
+        # this helper verifies the host triple and exports its bin directory.
         env:
           HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh
@@ -105,9 +106,7 @@ jobs:
           workspaces: ". -> target"
           key: mutants-pr
 
-      # Prebuilt binaries via taiki-e (SHA-pinned) — avoids the from-source
-      # `cargo install` compile race (os error 2 / aws-lc-sys) that flakes on
-      # the contended self-hosted Mac, and is faster than compiling.
+      # Prebuilt binaries via taiki-e (SHA-pinned) avoid a from-source compile.
       - name: Install cargo-mutants (prebuilt)
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
