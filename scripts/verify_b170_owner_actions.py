@@ -20,7 +20,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKET = Path("docs/internal/b087-questionnaire-owner-actions.md")
+RECIPIENT_TEMPLATE = Path(
+    "docs/internal/b170-owner-artifact-templates/recipient-notification-decision.md"
+)
 RESIDENCY_TEMPLATE = Path("legal/dpa-residency-amendment.md")
+QUESTIONNAIRE_SOURCES = {
+    "CAIQ-V4-pre-filled.md": Path(
+        "marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md"
+    ),
+    "SIG-LITE-2026-pre-filled.md": Path(
+        "marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md"
+    ),
+}
 EVIDENCE = (
     Path("reports/owner-actions/b170-legal-contract-review.md"),
     Path("reports/owner-actions/b170-pagerduty-export.json"),
@@ -34,7 +45,19 @@ PACKET_MARKERS = (
     "executed DPA/SLA claims and the pending residency template",
     "docs/customer/dpa-onboarding.md",
     "has executed its DPA with a lighthouse enterprise customer",
+    "(`1.0.0`, `DRAFT`) and [`SIG-LITE-2026-pre-filled.md`](../../marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md) (`1.1.0`, `DRAFT`)",
+    "These source versions do not establish which copies circulated or whether either superseded a sent copy.",
     *tuple(path.as_posix() for path in EVIDENCE),
+)
+RECIPIENT_TEMPLATE_MARKERS = (
+    "The current CAIQ file is a bounded `1.0.0` draft answer bank and SIG-LITE is a",
+    "bounded `1.1.0` draft answer bank.",
+    "Their repository versions and null",
+    "supersession fields do not establish which copies circulated, whether a copy",
+    "was superseded after delivery, or who received one; the repository has no",
+    "recipient or supersession ledger.",
+    "This template does not choose a decision, identify recipients, send a notice, or",
+    "prove delivery or receipt.",
 )
 
 
@@ -90,6 +113,45 @@ def _packet_text(root: Path) -> str:
             "B-170 owner packet lost or duplicated canonical action markers: "
             + ", ".join(missing)
         )
+    recipient_template = _regular_text(
+        root, RECIPIENT_TEMPLATE, "B-170 recipient decision template"
+    )
+    missing = [marker for marker in RECIPIENT_TEMPLATE_MARKERS if recipient_template.count(marker) != 1]
+    if missing:
+        raise PacketError(
+            "B-170 recipient decision template lost or duplicated canonical markers: "
+            + ", ".join(missing)
+        )
+    for filename, relative in QUESTIONNAIRE_SOURCES.items():
+        source = _regular_text(root, relative, f"B-170 questionnaire source {filename}")
+        front_matter = source.split("---", 2)
+        if len(front_matter) < 3:
+            raise PacketError(f"B-170 questionnaire source has no front matter: {filename}")
+        version_lines = [
+            line.split(":", 1)[1].strip().strip('"')
+            for line in front_matter[1].splitlines()
+            if line.startswith("version:")
+        ]
+        if len(version_lines) != 1 or not version_lines[0]:
+            raise PacketError(f"B-170 questionnaire source has invalid version metadata: {filename}")
+        questionnaire_row = next(
+            (line for line in text.splitlines() if f"[`{filename}`]" in line), None
+        )
+        if questionnaire_row is None or (
+            f"[`{filename}`](../../marketing/sales/legal-questionnaires/{filename})"
+            not in questionnaire_row
+        ):
+            raise PacketError(f"B-170 owner packet does not reference questionnaire source: {filename}")
+        expected = f"(`{version_lines[0]}`, `DRAFT`)"
+        if questionnaire_row.count(expected) != 1:
+            raise PacketError(
+                f"B-170 owner packet version for {filename} does not match its source front matter"
+            )
+        template_version = f"bounded `{version_lines[0]}` draft answer bank"
+        if recipient_template.count(template_version) != 1:
+            raise PacketError(
+                f"B-170 recipient template version for {filename} does not match its source front matter"
+            )
     template = _regular_text(root, RESIDENCY_TEMPLATE, "B-170 residency template")
     front_matter = template.split("---", 2)
     if (
