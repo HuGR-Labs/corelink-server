@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -22,11 +22,12 @@ SHARD_COUNT = 27
 SHARDING = "round-robin"
 INVENTORY_SHARD = "0/1"
 TOOL_VERSION = "27.0.0"
-IDENTITY_SCHEMA = "cargo-mutants-v27.full-list-record.sha256"
-INVENTORY_SCHEMA = "corelink.hosted-mutants-inventory.v4"
-BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v4"
-SHARD_SCHEMA = "corelink.hosted-mutants-shard-receipt.v4"
-AGGREGATE_SCHEMA = "corelink.hosted-mutants-aggregate-receipt.v4"
+IDENTITY_SCHEMA = "cargo-mutants-v27.full-list-record.sha256.multiset.v1"
+INVENTORY_SCHEMA = "corelink.hosted-mutants-inventory.v5"
+BASELINE_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v5"
+SHARD_SCHEMA = "corelink.hosted-mutants-shard-receipt.v5"
+AGGREGATE_SCHEMA = "corelink.hosted-mutants-aggregate-receipt.v5"
+EVIDENCE_SCHEMA = "corelink.hosted-mutants-shard-evidence.v1"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 CANONICAL_ARGUMENTS = (
@@ -167,20 +168,34 @@ def mutant_ids(raw: Any) -> list[str]:
         ids.append(mutant_identity(item, index))
     if not ids:
         raise VerificationError("full workspace mutant inventory must not be empty")
-    if len(ids) != len(set(ids)):
-        raise VerificationError("full workspace mutant inventory has duplicate identities")
     return ids
 
 
+def mutant_counts(ids: list[str]) -> list[dict[str, Any]]:
+    """Return the canonical multiplicity of every redacted full-record hash."""
+    return [
+        {"identity": identity, "count": count}
+        for identity, count in sorted(Counter(ids).items())
+    ]
+
+
 def inventory_mutant_ids(value: Any) -> list[str]:
-    """Validate the redacted identity list stored in an inventory receipt."""
+    """Validate the ordered, occurrence-preserving redacted identity list."""
     if not isinstance(value, list):
         raise VerificationError("inventory mutant_ids must be a JSON array")
     if not value or any(not isinstance(name, str) or not name for name in value):
         raise VerificationError("inventory mutant_ids must contain non-empty string identities")
-    if len(value) != len(set(value)):
-        raise VerificationError("inventory mutant_ids has duplicate identities")
     return value
+
+
+def inventory_mutant_counts(value: Any, ids: list[str], field: str = "inventory mutant_counts") -> list[dict[str, Any]]:
+    """Validate the canonical count projection that binds duplicate occurrences."""
+    if not isinstance(value, list):
+        raise VerificationError(f"{field} must be a JSON array")
+    expected = mutant_counts(ids)
+    if value != expected:
+        raise VerificationError(f"{field} does not exactly bind identity multiplicity")
+    return expected
 
 
 def membership(ids: list[str], shard: int) -> list[str]:
@@ -191,6 +206,7 @@ def membership(ids: list[str], shard: int) -> list[str]:
 
 def make_inventory(raw: Any, sha: str, run_id: str, attempt: int) -> dict[str, Any]:
     ids = mutant_ids(raw)
+    counts = mutant_counts(ids)
     return {
         "schema": INVENTORY_SCHEMA,
         "run_id": require_string(run_id, "run_id"),
@@ -202,7 +218,8 @@ def make_inventory(raw: Any, sha: str, run_id: str, attempt: int) -> dict[str, A
         "sharding": SHARDING,
         "inventory_shard": INVENTORY_SHARD,
         "mutant_ids": ids,
-        "inventory_digest": digest(ids),
+        "mutant_counts": counts,
+        "inventory_digest": digest({"mutant_ids": ids, "mutant_counts": counts}),
     }
 
 
@@ -221,7 +238,8 @@ def validate_inventory(document: Mapping[str, Any]) -> list[str]:
     if document.get("inventory_shard") != INVENTORY_SHARD:
         raise VerificationError("inventory must use the complete denominator-one shard 0/1")
     ids = inventory_mutant_ids(document.get("mutant_ids"))
-    if document.get("inventory_digest") != digest(ids):
+    counts = inventory_mutant_counts(document.get("mutant_counts"), ids)
+    if document.get("inventory_digest") != digest({"mutant_ids": ids, "mutant_counts": counts}):
         raise VerificationError("inventory digest does not bind its identities")
     return ids
 
@@ -259,6 +277,7 @@ def validate_shard_receipt(receipt: Mapping[str, Any], inventory: Mapping[str, A
     observed = receipt.get("mutant_ids")
     if observed != expected:
         raise VerificationError(f"shard {index} identities are not the expected deterministic membership")
+    inventory_mutant_counts(receipt.get("mutant_counts"), expected, f"shard {index} mutant_counts")
     if receipt.get("membership_digest") != digest(expected):
         raise VerificationError(f"shard {index} membership digest is invalid")
     require_digest(receipt.get("baseline_digest"), "shard.baseline_digest")
@@ -351,10 +370,18 @@ def aggregate_receipts(
         selected.append(receipt)
 
     union = [mutant for receipt in selected for mutant in receipt["mutant_ids"]]
-    if len(union) != len(set(union)):
-        raise VerificationError("shard union contains duplicate mutant identities")
-    if set(union) != set(ids) or len(union) != len(ids):
-        raise VerificationError("shard union is not the complete unsharded inventory")
+    inventory_counts = inventory_mutant_counts(inventory.get("mutant_counts"), ids)
+    union_counts = mutant_counts(union)
+    shard_counts = [
+        {
+            "index": receipt["shard"]["index"],
+            "occurrences": len(receipt["mutant_ids"]),
+            "multiset_digest": digest(receipt["mutant_counts"]),
+        }
+        for receipt in selected
+    ]
+    if sum(item["occurrences"] for item in shard_counts) != len(ids) or union_counts != inventory_counts:
+        raise VerificationError("shard occurrence counts are not the complete unsharded inventory")
     lineage = sorted({inventory["run_attempt"], baseline["run_attempt"], *(item["run_attempt"] for item in selected)})
     return {
         "schema": AGGREGATE_SCHEMA,
@@ -368,7 +395,10 @@ def aggregate_receipts(
         "shard_count": SHARD_COUNT,
         "sharding": SHARDING,
         "covered_mutants": len(union),
-        "coverage_digest": digest(sorted(union)),
+        "inventory_mutant_counts": inventory_counts,
+        "covered_mutant_counts": union_counts,
+        "per_shard_occurrence_counts": shard_counts,
+        "coverage_digest": digest({"mutant_counts": union_counts, "per_shard_occurrence_counts": shard_counts}),
         "shard_artifact_digests": aggregate_artifacts,
         "attempt_lineage": lineage,
         "status": "success",
@@ -394,20 +424,34 @@ def directory_digest(root: Path) -> str:
     return digest(records)
 
 
-def shard_artifact_digest(expected: Path, evidence: Path) -> str:
-    """Digest each uploaded shard payload byte, excluding the self-referential receipt."""
+def shard_artifact_digest(evidence: Path) -> str:
+    """Digest retained redacted evidence, excluding the self-referential receipt."""
     records: list[dict[str, str]] = []
-    if expected.is_file():
-        records.append({"path": "expected-shard.json", "sha256": hashlib.sha256(expected.read_bytes()).hexdigest()})
     if evidence.is_dir():
         for path in sorted(item for item in evidence.rglob("*") if item.is_file()):
             records.append(
                 {
-                    "path": f"mutants.out/{path.relative_to(evidence).as_posix()}",
+                    "path": f"redacted-evidence/{path.relative_to(evidence).as_posix()}",
                     "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 }
             )
     return digest(records)
+
+
+def validate_redacted_evidence(evidence: Path, receipt: Mapping[str, Any]) -> None:
+    """Require retained redacted list evidence to prove observed occurrence equality."""
+    manifest = read_json(evidence / "shard-evidence-manifest.json")
+    if manifest.get("schema") != EVIDENCE_SCHEMA:
+        raise VerificationError("redacted shard evidence has an unsupported schema")
+    expected_ids = receipt.get("mutant_ids")
+    expected_counts = receipt.get("mutant_counts")
+    if manifest.get("expected_mutant_ids") != expected_ids or manifest.get("expected_mutant_counts") != expected_counts:
+        raise VerificationError("redacted shard evidence expected list does not bind the receipt")
+    if receipt.get("status") == "success":
+        if manifest.get("observed_mutant_ids") != expected_ids or manifest.get("observed_mutant_counts") != expected_counts:
+            raise VerificationError("redacted shard evidence observed list does not equal expected multiplicity")
+        if manifest.get("raw_outcomes_present") is not True:
+            raise VerificationError("redacted shard evidence does not prove observed outcomes")
 
 
 def command_build_inventory(args: argparse.Namespace) -> None:
@@ -442,17 +486,31 @@ def command_write_shard(args: argparse.Namespace) -> None:
     ids = validate_inventory(inventory)
     validate_baseline(baseline, inventory)
     expected_ids = membership(ids, args.shard)
+    expected_counts = mutant_counts(expected_ids)
     if args.exit_code == 0:
         if not args.expected.is_file() or not args.observed.is_file():
             raise VerificationError("successful shard lacks list/output inventory")
         expected = mutant_ids(read_json(args.expected))
         observed = mutant_ids(read_json(args.observed))
-        if expected != expected_ids or observed != expected_ids:
+        if expected != expected_ids or observed != expected_ids or mutant_counts(expected) != expected_counts or mutant_counts(observed) != expected_counts:
             raise VerificationError("cargo-mutants shard list/output disagrees with frozen inventory")
-    evidence = Path(args.evidence)
-    outcomes = evidence / "outcomes.json"
-    evidence_present = evidence.is_dir()
-    evidence_digest = directory_digest(evidence) if evidence_present else digest([])
+    raw_evidence = Path(args.evidence)
+    outcomes = raw_evidence / "outcomes.json"
+    redacted_evidence = Path(args.redacted_evidence)
+    redacted_evidence.mkdir(parents=True, exist_ok=True)
+    write_json(
+        redacted_evidence / "shard-evidence-manifest.json",
+        {
+            "schema": EVIDENCE_SCHEMA,
+            "expected_mutant_ids": expected_ids,
+            "expected_mutant_counts": expected_counts,
+            "observed_mutant_ids": observed if args.exit_code == 0 else None,
+            "observed_mutant_counts": mutant_counts(observed) if args.exit_code == 0 else None,
+            "raw_outcomes_present": outcomes.is_file(),
+        },
+    )
+    evidence_present = True
+    evidence_digest = directory_digest(redacted_evidence)
     receipt = {
         "schema": SHARD_SCHEMA,
         "run_id": args.run_id,
@@ -464,9 +522,10 @@ def command_write_shard(args: argparse.Namespace) -> None:
         "baseline_digest": baseline["baseline_digest"],
         "shard": {"index": args.shard, "total": SHARD_COUNT, "sharding": SHARDING},
         "mutant_ids": expected_ids,
+        "mutant_counts": expected_counts,
         "membership_digest": digest(expected_ids),
         "evidence_digest": evidence_digest,
-        "artifact_digest": shard_artifact_digest(args.expected, evidence),
+        "artifact_digest": shard_artifact_digest(redacted_evidence),
         "evidence_present": evidence_present,
         "status": "success" if args.exit_code == 0 else "failure",
         "cargo_exit_code": args.exit_code,
@@ -495,13 +554,15 @@ def command_aggregate(args: argparse.Namespace) -> None:
             raise VerificationError(f"duplicate downloaded shard artifact for shard {index} attempt {attempt}")
         artifact_root = receipt_path.parent
         # upload-artifact preserves the least-common-ancestor relative path.
-        # The two receipt files are direct children, while the raw payload was
-        # uploaded from `${RUNNER_TEMP}/mutants-shard-N/mutants.out`.
-        evidence = artifact_root / f"mutants-shard-{index}" / "mutants.out"
-        expected = artifact_root / "expected-shard.json"
+        # Each artifact contains a direct receipt plus only its redacted list
+        # evidence, never the raw cargo-mutants source payload.
+        evidence = artifact_root / "redacted-evidence"
+        if not (evidence / "shard-evidence-manifest.json").is_file():
+            raise VerificationError(f"downloaded evidence bytes are missing for shard {index} attempt {attempt}")
+        validate_redacted_evidence(evidence, shard)
         downloaded[key] = {
             "evidence_digest": directory_digest(evidence) if evidence.is_dir() else digest([]),
-            "artifact_digest": shard_artifact_digest(expected, evidence),
+            "artifact_digest": shard_artifact_digest(evidence),
         }
     receipt = aggregate_receipts(
         inventories,
@@ -536,6 +597,8 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json",
         "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output \"$output\"",
+        "--redacted-evidence \"${RUNNER_TEMP}/redacted-evidence\"",
+        "${{ runner.temp }}/redacted-evidence/",
         "cargo test --workspace --locked",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
@@ -562,6 +625,8 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "push:",
         "--baseline=run",
         "--sharding=slice",
+        "${{ runner.temp }}/expected-shard.json",
+        "${{ runner.temp }}/mutants-shard-",
     )
     found = [token for token in forbidden if token in text.lower()]
     if found:
@@ -592,6 +657,7 @@ def parser() -> argparse.ArgumentParser:
     shard.add_argument("--expected", type=Path, required=True)
     shard.add_argument("--observed", type=Path, required=True)
     shard.add_argument("--evidence", type=Path, required=True)
+    shard.add_argument("--redacted-evidence", type=Path, required=True)
     shard.add_argument("--sha", required=True)
     shard.add_argument("--run-id", required=True)
     shard.add_argument("--run-attempt", type=int, required=True)
