@@ -468,7 +468,7 @@ jobs:
     # This lane is isolated from the shared Mac fleet. GitHub-hosted Linux
     # provides a disposable workspace and a native runner for the pinned
     # cargo-mutants binary.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

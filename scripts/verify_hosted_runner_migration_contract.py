@@ -177,7 +177,7 @@ def exact_job_block(root: Path, relative: str, job_name: str) -> bytes:
 
 
 def expected_exempt_block(base_block: bytes, relative: str, job_name: str) -> bytes:
-    """Allow only the credentialless-checkout hardening on the exempt job."""
+    """Allow the supported hosted runner pin and credentialless checkout hardening."""
     checkout_lines = [
         line for line in base_block.splitlines(keepends=True)
         if line.startswith(b"      - uses: actions/checkout@")
@@ -186,6 +186,10 @@ def expected_exempt_block(base_block: bytes, relative: str, job_name: str) -> by
         fail(f"{relative}:{job_name}: target-base job must have exactly one checkout step")
     if b"persist-credentials:" in base_block:
         fail(f"{relative}:{job_name}: target-base checkout already has credential persistence policy")
+    runner_lines = [line for line in base_block.splitlines(keepends=True) if line.startswith(b"    runs-on:")]
+    if len(runner_lines) != 1 or runner_lines[0].strip() != b"runs-on: ubuntu-latest":
+        fail(f"{relative}:{job_name}: target-base runner must be ubuntu-latest")
+    base_block = base_block.replace(runner_lines[0], b"    runs-on: ubuntu-24.04\n", 1)
     checkout_line = checkout_lines[0]
     hardening = b"        with:\n          persist-credentials: false\n"
     return base_block.replace(checkout_line, checkout_line + hardening, 1)
@@ -300,7 +304,13 @@ def self_test() -> None:
                 if base_block.count(hardening) != 1:
                     fail("fixture lost target-base exempt-job credentialless checkout")
                 base_path.write_bytes(
-                    base_path.read_bytes().replace(base_block, base_block.replace(hardening, b"", 1), 1)
+                    base_path.read_bytes().replace(
+                        base_block,
+                        base_block.replace(hardening, b"", 1).replace(
+                            b"    runs-on: ubuntu-24.04\n", b"    runs-on: ubuntu-latest\n", 1
+                        ),
+                        1,
+                    )
                 )
             validate(root, inventory, base_root if inventory in BASE_IDENTICAL_JOBS else None)
             expect_rejected(root, inventory, "runs-on: ubuntu-24.04", "runs-on: corelink", base_root if inventory in BASE_IDENTICAL_JOBS else None)
