@@ -195,6 +195,7 @@ impl StagingLoadTestAdmissionVerifier {
     /// The same staging-only key is reused under a distinct domain. The
     /// envelope contains only the already-redacted admitted identity and a
     /// caller-generated 128-bit request identifier.
+    #[allow(dead_code)] // Frozen seam consumed by the signup writer child after this anchor lands.
     pub(crate) fn mint_ownership_envelope(
         &self,
         context: &StagingLoadTestAdmissionContext,
@@ -484,6 +485,7 @@ fn decode_nonce(nonce: &str) -> Result<[u8; 32], StagingLoadTestAdmissionError> 
     decode_hex_32(nonce).ok_or(StagingLoadTestAdmissionError::InvalidNonce)
 }
 
+#[allow(dead_code)] // Validation helper for the frozen child-facing envelope seam above.
 fn is_lower_hex(value: &str, expected_len: usize) -> bool {
     value.len() == expected_len
         && value
