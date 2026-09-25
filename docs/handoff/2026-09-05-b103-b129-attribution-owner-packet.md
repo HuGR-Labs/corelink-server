@@ -60,10 +60,19 @@ write a PAT or response body into the packet.
    `ohop`. New Workers normalize the alias, and its production magnitude still
    requires a wire measurement.
 6. **B-122 — boundary remeasurement:** after deployment, rerun the B-102 and
-   B-107 warm baselines with the deployed commit and retain the version beside
-   the numbers. Confirm the blocking-task phase appears and the phase sum does
-   not exceed the request clock. Local tests cannot close this production
-   remeasurement requirement.
+   B-107 warm baselines with the deployed commit and retain both the Worker
+   serving SHA/version and container build SHA/application version beside the
+   numbers. The production deploy lane writes
+   `corelink-source-sha=<GITHUB_SHA>` into the Worker deployment annotation.
+   The protected B-122 lane reads the active Worker and container application
+   back before sampling: one Worker version must serve 100% of traffic; the
+   container image tag must resolve to a full build SHA with a successful image
+   build, the B-122 container change must be in that source, and GitHub compare
+   must prove the build SHA is an ancestor of the Worker serving SHA. It repeats
+   both provider identity reads after sampling; only the redacted binding plus
+   timing receipt is retained. Confirm the blocking-task phase appears and the
+   phase sum does not exceed the request clock. Local tests cannot close this
+   production remeasurement requirement.
 7. **B-129 — attribution contract and production residue budget (open):** the
    repository-side `qcontrol` split and fail-closed guard are ready, but do not
    close the item. On an approved diagnostic window only, arm
