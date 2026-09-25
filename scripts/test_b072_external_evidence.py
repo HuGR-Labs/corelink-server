@@ -36,6 +36,11 @@ def main() -> int:
         "unredacted reference": {**valid, "d1_row": "row-123"},
         "unknown terminal outcome": {**valid, "terminal_outcome": "unacked"},
         "terminal event after capture": {**valid, "terminal_at": "2026-09-22T12:11:00Z"},
+        "fractional event after capture": {
+            **valid,
+            "captured_at": "2026-09-22T12:10:00Z",
+            "terminal_at": "2026-09-22T12:10:00.1Z",
+        },
     }
     for name, mutation in mutations.items():
         if run_case(mutation) == 0:

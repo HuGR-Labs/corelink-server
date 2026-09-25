@@ -82,7 +82,9 @@ def verify(path: Path) -> int:
         error = utc_timestamp(artifact[field], field)
         if error:
             return fail(error)
-    if artifact["terminal_at"] > artifact["captured_at"]:
+    terminal_at = datetime.fromisoformat(artifact["terminal_at"][:-1] + "+00:00")
+    captured_at = datetime.fromisoformat(artifact["captured_at"][:-1] + "+00:00")
+    if terminal_at > captured_at:
         return fail("terminal_at must not be later than captured_at")
 
     for field in ("receiver_run", "pagerduty_incident", "d1_row"):
