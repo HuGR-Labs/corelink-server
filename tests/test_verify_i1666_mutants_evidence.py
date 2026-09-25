@@ -19,7 +19,7 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
     def test_evidence_contract_rejects_boundary_mutations(self) -> None:
         mutations = (
             ("SHARD_COUNT: 27", "SHARD_COUNT: 26"),
-            ("TOTAL_RUNNER_MINUTE_CAP: 8155", "TOTAL_RUNNER_MINUTE_CAP: 2550"),
+            ("TOTAL_RUNNER_MINUTE_CAP: 8200", "TOTAL_RUNNER_MINUTE_CAP: 2550"),
             ("max-parallel: 9", "max-parallel: 27"),
             ("timeout-minutes: 255", "timeout-minutes: 45"),
             ("--jobs=8", "--jobs=1"),
