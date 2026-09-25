@@ -293,15 +293,54 @@ def _attest_verifier_checkout_mutation_self_test(text: str) -> None:
         fail("persisted-credential checkout mutation survived")
 
 
-def contract() -> None:
-    text = WORKFLOW.read_text(encoding="utf-8")
-    changed = subprocess.run(
-        ["git", "diff", "--name-only", "origin/main...HEAD"],
+def _changed_files(event_name: str, base_sha: str | None) -> list[str]:
+    if event_name == "pull_request":
+        diff_range = "origin/main...HEAD"
+    elif event_name == "workflow_dispatch":
+        if base_sha is None or not re.fullmatch(r"[0-9a-f]{40}", base_sha):
+            fail("manual contract validation requires an explicit lowercase 40-character base SHA")
+        base_exists = subprocess.run(
+            ["git", "cat-file", "-e", f"{base_sha}^{{commit}}"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if base_exists.returncode != 0:
+            fail("the explicit base SHA is not present in the checked-out Git history")
+        base_is_ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base_sha, "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if base_is_ancestor.returncode != 0:
+            fail("the explicit base SHA must be an ancestor of the candidate HEAD")
+        diff_range = f"{base_sha}...HEAD"
+    else:
+        fail(f"unsupported event for contract validation: {event_name}")
+    return subprocess.run(
+        ["git", "diff", "--name-only", diff_range],
         check=True,
         capture_output=True,
         text=True,
     ).stdout.splitlines()
+
+
+def _manual_base_mutation_self_test(base_sha: str) -> None:
+    for mutant, label in ((None, "missing"), ("0" * 40, "wrong")):
+        try:
+            _changed_files("workflow_dispatch", mutant)
+        except SystemExit:
+            continue
+        raise SystemExit(f"contract failure: {label} manual base SHA mutation survived")
+    if not re.fullmatch(r"[0-9a-f]{40}", base_sha):
+        fail("the pack base SHA must be lowercase and exactly 40 characters")
+
+
+def contract(base_sha: str | None = None) -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
     event_name = os.environ.get("GITHUB_EVENT_NAME", "pull_request")
+    changed = _changed_files(event_name, base_sha)
     if event_name == "pull_request":
         _slice_routing_mutation_self_test()
         if _verify_i2050_pr_slice(set(changed)):
@@ -309,22 +348,27 @@ def contract() -> None:
         else:
             print("SKIP: CLI dry-run slice isolation (neither slice file changed)")
     elif event_name == "workflow_dispatch":
+        assert base_sha is not None
+        _manual_base_mutation_self_test(base_sha)
         print("PASS: manual dispatch validates contracts without PR slice routing")
-    else:
-        fail(f"unsupported event for contract validation: {event_name}")
     hosted_contract = Path(".github/workflows/issue-1724-cli-provenance.yml").read_text(
         encoding="utf-8"
     )
     for token in (
         'ref: ${{ inputs.candidate_sha }}',
+        'base_sha:',
+        'BASE_SHA: ${{ inputs.base_sha }}',
         "persist-credentials: false",
         "workflow_dispatch:",
         "python3 -m pip install --requirement requirements-ci.txt",
         "python3 scripts/verify_b112_release_root_cause.py --root .",
-        "python3 scripts/verify_i2050_release_dryrun_contract.py contract",
+        'python3 scripts/verify_i2050_release_dryrun_contract.py contract --base-sha "${CORELINK_BASE_SHA}"',
+        "fetch-depth: 4",
+        'git merge-base --is-ancestor "${BASE_SHA}" HEAD',
         "Validate the CLI release workflow schemas",
         ".github/workflows/issue-2050-cli-release-dry-run.yml",
         ".github/workflows/release-cli.yml",
+        ".github/workflows/issue-1724-cli-provenance.yml",
     ):
         if token not in hosted_contract:
             fail(f"the exact-head credentialless CLI pack is missing: {token}")
@@ -503,7 +547,8 @@ def summary(directory: Path, run_url: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("contract")
+    contract_cmd = sub.add_parser("contract")
+    contract_cmd.add_argument("--base-sha")
     manifest_cmd = sub.add_parser("manifest")
     manifest_cmd.add_argument("--directory", type=Path, required=True)
     manifest_cmd.add_argument("--source-sha", required=True)
@@ -515,7 +560,7 @@ def main() -> None:
     summary_cmd.add_argument("--run-url", required=True)
     args = parser.parse_args()
     if args.command == "contract":
-        contract()
+        contract(args.base_sha)
     elif args.command == "manifest":
         _manifest(args.directory, args.source_sha)
     elif args.command == "provenance":
