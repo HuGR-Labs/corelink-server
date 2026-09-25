@@ -31,9 +31,40 @@
 # pre-installed host toolchain, and FAILS LOUDLY if it or a requested target is
 # absent — a missing toolchain must stop one job, never silently reshape the fleet.
 #
-# Usage:  bash scripts/ci-use-host-toolchain.sh [target-triple …]
+# Usage:  bash scripts/ci-use-host-toolchain.sh [--component component …] [target-triple …]
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+
+COMPONENTS=()
+TARGETS=()
+while (($#)); do
+    case "$1" in
+        --component)
+            if (($# < 2)) || [ -z "$2" ]; then
+                echo "::error::ci-use-host-toolchain: --component requires a component name." >&2
+                exit 2
+            fi
+            COMPONENTS+=("$2")
+            shift 2
+            ;;
+        --component=*)
+            if [ -z "${1#--component=}" ]; then
+                echo "::error::ci-use-host-toolchain: --component requires a component name." >&2
+                exit 2
+            fi
+            COMPONENTS+=("${1#--component=}")
+            shift
+            ;;
+        --*)
+            echo "::error::ci-use-host-toolchain: unsupported option '$1'." >&2
+            exit 2
+            ;;
+        *)
+            TARGETS+=("$1")
+            shift
+            ;;
+    esac
+done
 
 CHANNEL="$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust-toolchain.toml)"
 CHANNEL=${CHANNEL%%$'\n'*}
@@ -88,7 +119,7 @@ if [ ! -x "$TC/bin/cargo" ] || [ ! -x "$TC/bin/rustc" ]; then
 fi
 
 MISSING=""
-for t in "$@"; do
+for t in "${TARGETS[@]}"; do
     [ -d "$TC/lib/rustlib/$t" ] || MISSING="${MISSING} $t"
 done
 if [ -n "${MISSING# }" ]; then
@@ -97,7 +128,37 @@ if [ -n "${MISSING# }" ]; then
     exit 1
 fi
 
+if ((${#COMPONENTS[@]})); then
+    if ! command -v rustup >/dev/null 2>&1; then
+        echo "::error::ci-use-host-toolchain: rustup is required for read-only component verification." >&2
+        exit 1
+    fi
+    INSTALLED_COMPONENTS="$(rustup component list --toolchain "$CHANNEL" --installed)" || {
+        echo "::error::ci-use-host-toolchain: could not inspect installed components for ${CHANNEL}-${HOST_TRIPLE}." >&2
+        exit 1
+    }
+    for component in "${COMPONENTS[@]}"; do
+        case "$component" in
+            llvm-tools-preview) installed_component="llvm-tools-${HOST_TRIPLE}" ;;
+            clippy|rustfmt) installed_component="${component}-${HOST_TRIPLE}" ;;
+            rust-src) installed_component="rust-src" ;;
+            *)
+                echo "::error::ci-use-host-toolchain: unsupported required component '$component'." >&2
+                exit 2
+                ;;
+        esac
+        if ! grep -Fqx "$installed_component" <<<"$INSTALLED_COMPONENTS"; then
+            echo "::error::ci-use-host-toolchain: ${component} is not installed for ${CHANNEL}-${HOST_TRIPLE}." >&2
+            echo "::error::Install it ONCE on the host, while no CI is running; this job must not provision the shared toolchain." >&2
+            exit 1
+        fi
+    done
+fi
+
 echo "$TC/bin" >> "$GITHUB_PATH"
 echo "ci-use-host-toolchain: PATH -> $TC/bin (channel ${CHANNEL} from rust-toolchain.toml)"
-[ $# -gt 0 ] && echo "ci-use-host-toolchain: verified target(s): $*"
+[ "${#TARGETS[@]}" -gt 0 ] && echo "ci-use-host-toolchain: verified target(s): ${TARGETS[*]}"
+for component in "${COMPONENTS[@]}"; do
+    echo "ci-use-host-toolchain: verified component: ${component}"
+done
 "$TC/bin/rustc" --version

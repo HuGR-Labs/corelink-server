@@ -1,0 +1,78 @@
+name: Issue 2418 shared-rustup contract
+
+# Focused hosted proof for the exact self-hosted Rust toolchain boundary.
+# This never schedules a CoreLink runner or provisions a toolchain.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/cas_foundation.yml'
+      - '.github/workflows/coverage.yml'
+      - '.github/workflows/mutation-nightly.yml'
+      - '.github/workflows/issue-2418-rustup-contract.yml'
+      - 'scripts/ci-use-host-toolchain.sh'
+      - 'scripts/test_ci_use_host_toolchain.sh'
+      - 'scripts/validate_no_shared_rustup_mutation.py'
+      - 'tests/validate_no_shared_rustup_mutation_test.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cas_foundation.yml'
+      - '.github/workflows/coverage.yml'
+      - '.github/workflows/mutation-nightly.yml'
+      - '.github/workflows/issue-2418-rustup-contract.yml'
+      - 'scripts/ci-use-host-toolchain.sh'
+      - 'scripts/test_ci_use_host_toolchain.sh'
+      - 'scripts/validate_no_shared_rustup_mutation.py'
+      - 'tests/validate_no_shared_rustup_mutation_test.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2418-rustup-contract-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  rustup-contract:
+    name: exact-head rustup and host-toolchain contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$EXPECTED_SHA" ]]; then
+            echo "Checked out $actual; expected $EXPECTED_SHA" >&2
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install focused validator dependencies
+        shell: bash
+        run: python3 -m pip install --quiet --disable-pip-version-check --no-input -r requirements-ci.txt
+
+      - name: Require zero shared-rustup findings on exact tree
+        shell: bash
+        run: python3 -S scripts/validate_no_shared_rustup_mutation.py
+
+      - name: Verify host-toolchain setup fails closed without provisioning
+        shell: bash
+        run: bash scripts/test_ci_use_host_toolchain.sh
+
+      - name: Preserve validator mutation coverage
+        shell: bash
+        run: python3 -m pytest tests/validate_no_shared_rustup_mutation_test.py -q

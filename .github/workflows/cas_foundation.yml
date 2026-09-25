@@ -138,10 +138,8 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
-        with:
-          components: clippy, rustfmt
+      - name: Select workspace-pinned host Rust toolchain
+        run: bash scripts/ci-use-host-toolchain.sh --component clippy --component rustfmt
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
@@ -181,8 +179,8 @@ jobs:
       # EmbarkStudios/cargo-deny-action is a Docker container action (Linux-only)
       # and hard-fails on the macOS self-hosted fleet. Run cargo-deny NATIVELY,
       # mirroring dependabot-policy.yml. cargo-deny@0.19.8 pinned via taiki-e.
-      - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+      - name: Select workspace-pinned host Rust toolchain
+        run: bash scripts/ci-use-host-toolchain.sh
       - name: Install cargo-deny (native — taiki-e/install-action, SHA-pinned)
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
@@ -205,8 +203,8 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+      - name: Select workspace-pinned host Rust toolchain
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
@@ -374,8 +372,8 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+      - name: Select workspace-pinned host Rust toolchain
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Cargo cache (build A)
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
