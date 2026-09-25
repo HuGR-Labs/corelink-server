@@ -64,7 +64,7 @@ env:
 jobs:
   gitleaks:
     name: gitleaks detect
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
@@ -78,6 +78,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha }}
           # Cheapest possible seed clone. The REAL depth is `commits + 1` and it
           # is applied by the next step, because GitHub's expression syntax has
@@ -170,8 +171,8 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
-          persist-credentials: false  # scan-only job never pushes — don't keep the token
 
       - name: Install gitleaks (pinned binary + checksum verify)
         # Download the version-pinned release tarball and fail closed unless its

@@ -1,0 +1,88 @@
+name: issue-2370 hosted migration proof
+
+# Static admission only. It lints and compares workflow source; it never invokes
+# the migrated jobs or performs signing, release, publication, or provider work.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/cargo-audit.yml"
+      - ".github/workflows/cas_foundation.yml"
+      - ".github/workflows/gitleaks.yml"
+      - ".github/workflows/license-policy.yml"
+      - ".github/workflows/manual-install-recipes.yml"
+      - ".github/workflows/pnpm-audit.yml"
+      - ".github/workflows/release-notes.yml"
+      - ".github/workflows/reproducible-build.yml"
+      - ".github/workflows/sbom-consolidated.yml"
+      - ".github/workflows/sbom.yml"
+      - ".github/workflows/issue-2370-hosted-migration.yml"
+      - "scripts/verify_i2370_hosted_migration.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2370-hosted-migration-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  static-contract:
+    name: 17-job census, immutable semantics, actionlint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: candidate
+          persist-credentials: false
+
+      - name: Checkout immutable PR base
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+          persist-credentials: false
+
+      - name: Install actionlint if runner image does not provide it
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v actionlint >/dev/null 2>&1; then
+            bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+            printf '%s\n' "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+            ./actionlint -version
+          else
+            actionlint -version
+          fi
+
+      - name: Lint only the scoped candidate workflows
+        working-directory: candidate
+        run: >-
+          actionlint -color
+          .github/workflows/cargo-audit.yml
+          .github/workflows/cas_foundation.yml
+          .github/workflows/gitleaks.yml
+          .github/workflows/license-policy.yml
+          .github/workflows/manual-install-recipes.yml
+          .github/workflows/pnpm-audit.yml
+          .github/workflows/release-notes.yml
+          .github/workflows/reproducible-build.yml
+          .github/workflows/sbom-consolidated.yml
+          .github/workflows/sbom.yml
+          .github/workflows/issue-2370-hosted-migration.yml
+
+      - name: Verify exact head, 17-job inventory, and immutable semantics
+        working-directory: candidate
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 -S scripts/verify_i2370_hosted_migration.py
+          --root "$GITHUB_WORKSPACE/candidate"
+          --base-root "$GITHUB_WORKSPACE/baseline"
+          --base-sha "$BASE_SHA"
+          --head-sha "$HEAD_SHA"
+          --self-test
