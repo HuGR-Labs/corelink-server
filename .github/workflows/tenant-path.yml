@@ -53,47 +53,22 @@ jobs:
   # per CI-OPT-004 (removes floating rustsec/audit-check@v1 ref).
   pr-gate:
     name: PR gate (crate-scoped clippy + tests + canonical vectors)
-    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 4,
-    # 2026-08-03). This job burned 49 billed minutes of ubuntu-latest (~$0.29) in
-    # the 3 days to 2026-08-03; it is the whole hosted footprint of this
-    # workflow, so the move takes all of it.
-    #
-    # The box is 4 vCPU / 12.5 GB (probe run 30825772599) against ubuntu-latest's
-    # 2 vCPU / 7 GB on a private repo — twice the cores, and that headroom is what
-    # pays for the cache loss described next.
-    #
-    # ⚠️ Ephemeral-runner reality — the box carries NO cache between runs, and the
-    # `Swatinem/rust-cache` step below is gated `runner.environment ==
-    # 'github-hosted'` (the shared-$HOME guard), so on a corelink box it SKIPS and
-    # the crate compiles COLD every run. Measured, that costs far less than it
-    # sounds: the image ships a pre-seeded ~/.cargo (415 MB, 362 registry
-    # entries), so `cargo fetch --locked` took 12 s and a full cold
-    # clippy + debug-test + release-test cycle for a crate lane ran in ~105 s on
-    # 4 cores — comparable to the warm-cache hosted runs. Do NOT "fix" this by
-    # re-enabling the cache step on self-hosted: that guard exists because the MAC
-    # fleet shares one $HOME and rust-cache's prune step deletes a sibling job's
-    # registry mid-compile (#979/#980).
-    #
-    # ⚠️ A refused or dropped spawn leaves the job QUEUED, and `timeout-minutes`
-    # does not bound queued time — it starts once a job is RUNNING. That is a
-    # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
-    # check as ⛔ DO NOT MERGE, so a stranded box blocks the PR rather than
-    # waving it through.
-    runs-on: corelink
-    # Sized from the measurement, not from a guess: the heaviest crate lane
-    # already on this fabric (corelink-reapi::pr-gate) runs cold in ~409-423 s,
-    # and this lane is lighter. 30 min is ~4x headroom over the heavier
-    # neighbour, which also covers the release step's AC-6 perf assertion.
+    # Hosted Linux is structurally configured here; #2368 static proof covers
+    # runner routing and preserved semantics, not runtime duration or capacity.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
-      # `dtolnay/rust-toolchain` removed. It asked for `stable` + clippy/rustfmt;
-      # `rust-toolchain.toml` pins 1.91.1 and lists both components, and rustup
-      # honours that file over any `rustup default` — so 1.91.1's clippy is what
-      # has always run here, hosted included. The assertion makes that provable
-      # per run, so an image drift fails loudly instead of silently changing the
-      # compiler.
+      # Assert the rust-toolchain.toml pin after setup so image or action drift
+      # cannot silently change the compiler used by this gate.
+      - name: Install the workspace-pinned toolchain on this isolated hosted runner
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.91.1
+          components: clippy,rustfmt
       - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
         run: bash scripts/ci-assert-pinned-toolchain.sh
 
@@ -127,31 +102,22 @@ jobs:
 
   fuzz-smoke:
     name: cargo-fuzz smoke (60s)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: macos-15-intel
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-      # Self-hosted Macs already ship rustup+cargo; re-provisioning via
-      # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
-      # host nightly toolchain (cargo-fuzz requires nightly) on PATH instead —
-      # see CLAUDE.md "the rustup proxy is broken" note.
+        with:
+          persist-credentials: false
+      # This fresh hosted Mac has an isolated rustup tree; provision the
+      # Darwin nightly above and keep the existing cargo-fuzz PATH setup.
+      - name: Install the Darwin nightly toolchain on this isolated hosted runner
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: nightly-x86_64-apple-darwin
       - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
         run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
-      # `cargo install` compiles cargo-fuzz's OWN dependency tree (aws-lc-sys, syn,
-      # tokio, ctutils, parking_lot …) into whatever CARGO_HOME points at. Pointed at
-      # the SHARED `~/.cargo`, it mutates the registry that every other concurrent
-      # Rust job on this 5-runner Mac is compiling from — and those are exactly the
-      # crate names in the `os error 2` failures. cargo-fuzz is NOT pre-installed on
-      # the host, so this ran on EVERY fuzz job, not just after a version bump.
-      #
-      # Same class as the 2026-06-15 rustup incident documented in fuzz-nightly.yml
-      # (shared `~/.rustup` mutated mid-run), one level down: shared `~/.cargo`.
-      # There is no prebuilt binary to switch to — cargo-fuzz has no manifest in
-      # taiki-e/install-action at the SHA this repo pins, so it would silently fall
-      # back to this same from-source install.
-      #
-      # Fix: build it into a PER-RUNNER CARGO_HOME. Isolated, so the shared registry
-      # is never written; persistent, so each runner pays the compile at most once.
+      # Keep the cargo-fuzz installation in a job-local CARGO_HOME, separate
+      # from the workspace cache and writable only by this hosted job.
       - name: Install cargo-fuzz (isolated CARGO_HOME — never the shared one)
         run: |
           set -euo pipefail
@@ -175,31 +141,22 @@ jobs:
 
   fuzz-nightly:
     name: cargo-fuzz nightly (1h)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: macos-15-intel
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-      # Self-hosted Macs already ship rustup+cargo; re-provisioning via
-      # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
-      # host nightly toolchain (cargo-fuzz requires nightly) on PATH instead —
-      # see CLAUDE.md "the rustup proxy is broken" note.
+        with:
+          persist-credentials: false
+      # This fresh hosted Mac has an isolated rustup tree; provision the
+      # Darwin nightly above and keep the existing cargo-fuzz PATH setup.
+      - name: Install the Darwin nightly toolchain on this isolated hosted runner
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: nightly-x86_64-apple-darwin
       - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
         run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
-      # `cargo install` compiles cargo-fuzz's OWN dependency tree (aws-lc-sys, syn,
-      # tokio, ctutils, parking_lot …) into whatever CARGO_HOME points at. Pointed at
-      # the SHARED `~/.cargo`, it mutates the registry that every other concurrent
-      # Rust job on this 5-runner Mac is compiling from — and those are exactly the
-      # crate names in the `os error 2` failures. cargo-fuzz is NOT pre-installed on
-      # the host, so this ran on EVERY fuzz job, not just after a version bump.
-      #
-      # Same class as the 2026-06-15 rustup incident documented in fuzz-nightly.yml
-      # (shared `~/.rustup` mutated mid-run), one level down: shared `~/.cargo`.
-      # There is no prebuilt binary to switch to — cargo-fuzz has no manifest in
-      # taiki-e/install-action at the SHA this repo pins, so it would silently fall
-      # back to this same from-source install.
-      #
-      # Fix: build it into a PER-RUNNER CARGO_HOME. Isolated, so the shared registry
-      # is never written; persistent, so each runner pays the compile at most once.
+      # Keep the cargo-fuzz installation in a job-local CARGO_HOME, separate
+      # from the workspace cache and writable only by this hosted job.
       - name: Install cargo-fuzz (isolated CARGO_HOME — never the shared one)
         run: |
           set -euo pipefail
@@ -222,14 +179,21 @@ jobs:
 
   mutants-nightly:
     name: cargo-mutants kill-rate ≥ 80%
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: macos-15-intel
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
       # Self-hosted Macs already ship rustup+cargo; re-provisioning via
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
       # instead — see CLAUDE.md "the rustup proxy is broken" note.
+      - name: Install the workspace-pinned toolchain on this isolated hosted runner
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.91.1
+          components: clippy,rustfmt
       - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
         run: bash scripts/ci-use-host-toolchain.sh
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
