@@ -291,7 +291,13 @@ fn nonce_digest(nonce: &str) -> Result<String, StagingLoadTestAdmissionError> {
     let mut digest = Sha256::new();
     digest.update(NONCE_DOMAIN);
     digest.update(bytes);
-    Ok(format!("{:x}", digest.finalize()))
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(64);
+    for byte in digest.finalize() {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(encoded)
 }
 
 fn hex_nibble(byte: u8) -> Option<u8> {
@@ -345,6 +351,9 @@ mod tests {
         assert_eq!(validate_claim(&expectation(), &admission, 1_500), Ok(()));
         let digest = nonce_digest(&admission.nonce).expect("valid nonce");
         assert_eq!(digest.len(), 64);
+        assert!(digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
         assert_ne!(digest, admission.nonce);
     }
 
