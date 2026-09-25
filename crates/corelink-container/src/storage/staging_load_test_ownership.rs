@@ -8,7 +8,10 @@
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use super::d1_http::D1HttpClient;
+use super::{
+    d1_http::{D1BatchStatement, D1HttpClient},
+    staging_load_test_admission::StagingLoadTestAdmissionContext,
+};
 
 const SQL_REGISTER_RESOURCE: &str = "INSERT INTO staging_load_test_resources \
      (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) \
@@ -25,6 +28,46 @@ const SQL_FIND_REGISTERED_RESOURCE: &str = "SELECT receipt_ref FROM staging_load
      WHERE run_id = ?1 AND scenario = ?2 AND resource_class = ?4 \
        AND receipt_ref = ?5 AND opaque_handle = ?6 AND disposition = ?7 \
      LIMIT 1";
+
+const SQL_REGISTER_RESOURCE_IN_BATCH: &str = "INSERT INTO staging_load_test_resources \
+     (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'registered', ?7) \
+     ON CONFLICT (run_id, scenario, resource_class, receipt_ref) DO NOTHING";
+
+const SQL_PREPARE_R2_INTENT: &str = "INSERT INTO staging_load_test_r2_intents \
+     (operation_id, run_id, scenario, target_deployment_sha, resource_class, receipt_ref, opaque_handle, disposition, state, prepared_at_ms) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'prepared', ?9)";
+
+const SQL_COMMIT_R2_INTENT: &str = "UPDATE staging_load_test_r2_intents \
+     SET state = 'committed', committed_at_ms = ?2 \
+     WHERE operation_id = ?1 AND state IN ('prepared', 'committed')";
+
+/// Optional request-scoped provenance. `None` is ordinary non-synthetic traffic.
+pub type StagingLoadTestWriteContext<'a> = Option<&'a StagingLoadTestAdmissionContext>;
+
+/// Fixed, redacted failures shared by every writer family.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StagingLoadTestOwnershipError {
+    /// The context is valid but belongs to another scenario.
+    ScenarioMismatch,
+    /// A bounded public identifier is malformed.
+    InvalidIdentifier,
+    /// The resource class cannot use the requested disposition.
+    InvalidDisposition,
+}
+
+impl core::fmt::Display for StagingLoadTestOwnershipError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let message = match self {
+            Self::ScenarioMismatch => "staging ownership scenario mismatch",
+            Self::InvalidIdentifier => "staging ownership identifier is invalid",
+            Self::InvalidDisposition => "staging ownership disposition is invalid",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl std::error::Error for StagingLoadTestOwnershipError {}
 
 /// One of the scenarios admitted by migration 0147.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,7 +89,7 @@ pub enum StagingLoadTestScenario {
 }
 
 impl StagingLoadTestScenario {
-    const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Signup => "signup",
             Self::Webhook => "webhook",
@@ -132,20 +175,20 @@ impl StagingLoadTestDisposition {
 /// no credentials or personal data.
 pub struct StagingLoadTestResourceRegistration<'a> {
     /// Canonical positive decimal GitHub Actions run ID.
-    pub run_id: &'a str,
+    run_id: &'a str,
     /// Allowlisted scenario associated with this run.
-    pub scenario: StagingLoadTestScenario,
+    scenario: StagingLoadTestScenario,
     /// Lowercase 40-hex deployment commit identity stored on the staging run.
-    pub target_deployment_sha: &'a str,
+    target_deployment_sha: &'a str,
     /// Resource class defined by migration 0147.
-    pub resource_class: StagingLoadTestResourceClass,
+    resource_class: StagingLoadTestResourceClass,
     /// Caller classification is required even for classes with flexible
     /// treatment. DSR obligations, audit/billing evidence, and CAS references
     /// are retained here; a CAS reference is never a deletion claim about its
     /// potentially shared physical object.
-    pub disposition: StagingLoadTestDisposition,
+    disposition: StagingLoadTestDisposition,
     /// Nonsecret opaque handle for the persistent resource.
-    pub opaque_handle: &'a str,
+    opaque_handle: &'a str,
 }
 
 impl core::fmt::Debug for StagingLoadTestResourceRegistration<'_> {
@@ -159,6 +202,172 @@ impl core::fmt::Debug for StagingLoadTestResourceRegistration<'_> {
             .field("opaque_handle", &"[REDACTED]")
             .finish()
     }
+}
+
+impl StagingLoadTestAdmissionContext {
+    /// Require a writer family's fixed scenario before it can mutate state.
+    pub(crate) fn require_ownership_scenario(
+        &self,
+        expected: StagingLoadTestScenario,
+    ) -> Result<(), StagingLoadTestOwnershipError> {
+        if self.scenario() == expected {
+            Ok(())
+        } else {
+            Err(StagingLoadTestOwnershipError::ScenarioMismatch)
+        }
+    }
+
+    /// Derive a registration whose run identity cannot be supplied by a caller.
+    pub(crate) fn ownership_registration<'a>(
+        &'a self,
+        resource_class: StagingLoadTestResourceClass,
+        disposition: StagingLoadTestDisposition,
+        opaque_handle: &'a str,
+    ) -> Result<StagingLoadTestResourceRegistration<'a>, StagingLoadTestOwnershipError> {
+        let registration = StagingLoadTestResourceRegistration {
+            run_id: self.run_id(),
+            scenario: self.scenario(),
+            target_deployment_sha: self.target_deployment_sha(),
+            resource_class,
+            disposition,
+            opaque_handle,
+        };
+        validate_registration(&registration).map_err(|message| {
+            if message.contains("disposition") {
+                StagingLoadTestOwnershipError::InvalidDisposition
+            } else {
+                StagingLoadTestOwnershipError::InvalidIdentifier
+            }
+        })?;
+        Ok(registration)
+    }
+}
+
+impl StagingLoadTestResourceRegistration<'_> {
+    /// Build the ledger statement that a writer appends to its domain batch.
+    pub(crate) fn d1_statement(
+        &self,
+        registered_at_ms: i64,
+    ) -> Result<D1BatchStatement, StagingLoadTestOwnershipError> {
+        if registered_at_ms < 0 {
+            return Err(StagingLoadTestOwnershipError::InvalidIdentifier);
+        }
+        validate_registration(self).map_err(|message| {
+            if message.contains("disposition") {
+                StagingLoadTestOwnershipError::InvalidDisposition
+            } else {
+                StagingLoadTestOwnershipError::InvalidIdentifier
+            }
+        })?;
+        Ok(D1BatchStatement::new(
+            SQL_REGISTER_RESOURCE_IN_BATCH,
+            vec![
+                json!(self.run_id),
+                json!(self.scenario.as_str()),
+                json!(self.resource_class.as_str()),
+                json!(receipt_ref(self)),
+                json!(self.opaque_handle),
+                json!(self.disposition.as_str()),
+                json!(registered_at_ms),
+            ],
+        ))
+    }
+
+    /// Bind an R2 operation to the same immutable admitted identity.
+    pub(crate) fn r2_intent(
+        &self,
+        operation_id: &str,
+    ) -> Result<StagingLoadTestR2Intent, StagingLoadTestOwnershipError> {
+        if !is_lower_hex(operation_id, 64) {
+            return Err(StagingLoadTestOwnershipError::InvalidIdentifier);
+        }
+        Ok(StagingLoadTestR2Intent {
+            operation_id: operation_id.to_owned(),
+            run_id: self.run_id.to_owned(),
+            scenario: self.scenario,
+            target_deployment_sha: self.target_deployment_sha.to_owned(),
+            resource_class: self.resource_class,
+            receipt_ref: receipt_ref(self),
+            opaque_handle: self.opaque_handle.to_owned(),
+            disposition: self.disposition,
+        })
+    }
+}
+
+/// Durable prepare/commit identity for mutations outside D1's transaction.
+pub(crate) struct StagingLoadTestR2Intent {
+    operation_id: String,
+    run_id: String,
+    scenario: StagingLoadTestScenario,
+    target_deployment_sha: String,
+    resource_class: StagingLoadTestResourceClass,
+    receipt_ref: String,
+    opaque_handle: String,
+    disposition: StagingLoadTestDisposition,
+}
+
+impl core::fmt::Debug for StagingLoadTestR2Intent {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("StagingLoadTestR2Intent")
+            .field("operation_id", &self.operation_id)
+            .field("run_id", &self.run_id)
+            .field("scenario", &self.scenario)
+            .field("target_deployment_sha", &self.target_deployment_sha)
+            .field("resource_class", &self.resource_class)
+            .field("receipt_ref", &self.receipt_ref)
+            .field("opaque_handle", &"[REDACTED]")
+            .field("disposition", &self.disposition)
+            .finish()
+    }
+}
+
+impl StagingLoadTestR2Intent {
+    /// Persist before the external R2 mutation is attempted.
+    pub(crate) fn prepare_statement(&self, prepared_at_ms: i64) -> D1BatchStatement {
+        D1BatchStatement::new(
+            SQL_PREPARE_R2_INTENT,
+            vec![
+                json!(self.operation_id),
+                json!(self.run_id),
+                json!(self.scenario.as_str()),
+                json!(self.target_deployment_sha),
+                json!(self.resource_class.as_str()),
+                json!(self.receipt_ref),
+                json!(self.opaque_handle),
+                json!(self.disposition.as_str()),
+                json!(prepared_at_ms),
+            ],
+        )
+    }
+
+    /// Atomically register the resource and close its durable intent.
+    pub(crate) fn commit_statements(&self, committed_at_ms: i64) -> [D1BatchStatement; 2] {
+        let registration = D1BatchStatement::new(
+            SQL_REGISTER_RESOURCE_IN_BATCH,
+            vec![
+                json!(self.run_id),
+                json!(self.scenario.as_str()),
+                json!(self.resource_class.as_str()),
+                json!(self.receipt_ref),
+                json!(self.opaque_handle),
+                json!(self.disposition.as_str()),
+                json!(committed_at_ms),
+            ],
+        );
+        let close_intent = D1BatchStatement::new(
+            SQL_COMMIT_R2_INTENT,
+            vec![json!(self.operation_id), json!(committed_at_ms)],
+        );
+        [registration, close_intent]
+    }
+}
+
+fn is_lower_hex(value: &str, expected_len: usize) -> bool {
+    value.len() == expected_len
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// Outcome of an attempted exact-run registration.
@@ -342,6 +551,7 @@ fn receipt_ref(registration: &StagingLoadTestResourceRegistration<'_>) -> String
         registration.target_deployment_sha.as_bytes(),
         registration.resource_class.as_str().as_bytes(),
         registration.opaque_handle.as_bytes(),
+        registration.disposition.as_str().as_bytes(),
     ] {
         hasher.update(&(part.len() as u64).to_be_bytes());
         hasher.update(part);
@@ -485,6 +695,29 @@ mod tests {
             StagingLoadTestDisposition::Disposable,
         );
         let rendered = format!("{value:?}");
+        assert!(!rendered.contains("must-not-appear"));
+        assert!(rendered.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn d1_and_r2_contracts_accept_only_bounded_canonical_inputs() {
+        let sha = "a".repeat(40);
+        let value = registration(
+            "123",
+            &sha,
+            "must-not-appear",
+            StagingLoadTestResourceClass::CasReference,
+            StagingLoadTestDisposition::Retained,
+        );
+        assert!(value.d1_statement(1).is_ok());
+        assert!(value.d1_statement(-1).is_err());
+        assert!(value.r2_intent(&"b".repeat(64)).is_ok());
+        assert!(value.r2_intent(&"B".repeat(64)).is_err());
+        assert!(value.r2_intent("short").is_err());
+        let intent = value.r2_intent(&"c".repeat(64)).expect("valid intent");
+        let _prepare = intent.prepare_statement(1);
+        let _commit = intent.commit_statements(2);
+        let rendered = format!("{intent:?}");
         assert!(!rendered.contains("must-not-appear"));
         assert!(rendered.contains("[REDACTED]"));
     }

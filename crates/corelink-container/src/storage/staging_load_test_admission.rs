@@ -190,6 +190,42 @@ impl StagingLoadTestAdmissionVerifier {
         })
     }
 
+    /// Mint a short-lived, request-bound envelope for the signup Worker.
+    ///
+    /// The same staging-only key is reused under a distinct domain. The
+    /// envelope contains only the already-redacted admitted identity and a
+    /// caller-generated 128-bit request identifier.
+    pub(crate) fn mint_ownership_envelope(
+        &self,
+        context: &StagingLoadTestAdmissionContext,
+        request_id: &str,
+        issued_at_ms: i64,
+        expires_at_ms: i64,
+    ) -> Result<String, StagingLoadTestAdmissionError> {
+        if !is_lower_hex(request_id, 32) {
+            return Err(StagingLoadTestAdmissionError::InvalidIdentity);
+        }
+        validate_lifetime(issued_at_ms, expires_at_ms)?;
+        if issued_at_ms < 0 {
+            return Err(StagingLoadTestAdmissionError::InvalidLifetime);
+        }
+        let payload = format!(
+            "v1.{}.{}.staging.{}.{}.{}.{}",
+            context.run_id(),
+            context.scenario().as_str(),
+            context.target_deployment_sha(),
+            issued_at_ms,
+            expires_at_ms,
+            request_id,
+        );
+        let mut mac = HmacSha256::new_from_slice(&self.key)
+            .map_err(|_| StagingLoadTestAdmissionError::InvalidCredential)?;
+        mac.update(b"corelink/staging-ownership-envelope/v1\0");
+        mac.update(payload.as_bytes());
+        let tag = lower_hex(mac.finalize().into_bytes())?;
+        Ok(format!("{payload}.{tag}"))
+    }
+
     #[cfg(test)]
     fn sign_for_test(
         &self,
@@ -448,6 +484,13 @@ fn decode_nonce(nonce: &str) -> Result<[u8; 32], StagingLoadTestAdmissionError> 
     decode_hex_32(nonce).ok_or(StagingLoadTestAdmissionError::InvalidNonce)
 }
 
+fn is_lower_hex(value: &str, expected_len: usize) -> bool {
+    value.len() == expected_len
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn decode_hex_32(value: &str) -> Option<[u8; 32]> {
     if value.len() != 64 {
         return None;
@@ -546,6 +589,37 @@ mod tests {
     fn verifier() -> StagingLoadTestAdmissionVerifier {
         StagingLoadTestAdmissionVerifier::new("staging", b"01234567890123456789012345678901")
             .expect("test key")
+    }
+
+    #[test]
+    fn worker_ownership_envelope_is_domain_separated_bounded_and_request_bound() {
+        let verifier = verifier();
+        let context = StagingLoadTestAdmissionContext {
+            run_id: "123".to_owned(),
+            scenario: StagingLoadTestScenario::Signup,
+            target_environment: "staging".to_owned(),
+            target_deployment_sha: "a".repeat(40),
+            admitted_at_ms: 999,
+        };
+        let request_id = "b".repeat(32);
+        let envelope = verifier
+            .mint_ownership_envelope(&context, &request_id, 1_000, 61_000)
+            .expect("canonical envelope");
+        assert!(envelope.starts_with(&format!(
+            "v1.123.signup.staging.{}.1000.61000.{request_id}.",
+            "a".repeat(40)
+        )));
+        assert!(envelope.len() <= 512);
+        assert_eq!(envelope.split('.').count(), 9);
+        assert_eq!(envelope.rsplit('.').next().map(str::len), Some(64));
+        assert_eq!(
+            verifier.mint_ownership_envelope(&context, "not-hex", 1_000, 61_000),
+            Err(StagingLoadTestAdmissionError::InvalidIdentity)
+        );
+        assert_eq!(
+            verifier.mint_ownership_envelope(&context, &request_id, 1_000, 1_000),
+            Err(StagingLoadTestAdmissionError::InvalidLifetime)
+        );
     }
     #[test]
     fn verifies_exact_authenticated_claim_and_redacts_secrets() {
