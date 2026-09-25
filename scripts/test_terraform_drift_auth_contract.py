@@ -188,7 +188,7 @@ class TerraformDriftAuthContractTests(unittest.TestCase):
         self.assertIn("plan provider step only", drift_token)
         self.assertIn("read-only", drift_token.lower())
         self.assertIn("`CF_ZONE_ID` repository variable", drift_token)
-        self.assertIn("`api.humangr.com`", drift_token)
+        self.assertIn("`humangr.com`", drift_token)
         self.assertIn("account scope restricted to the one `CF_ACCOUNT_ID`", drift_token)
         self.assertIn("zone scope restricted to `CF_ZONE_ID`", drift_token)
         exact_scopes = (
@@ -208,7 +208,7 @@ class TerraformDriftAuthContractTests(unittest.TestCase):
                 flags=re.IGNORECASE,
             )
             zone_match = re.search(
-                r"zone scope restricted to `CF_ZONE_ID` `?\(`api\.humangr\.com`\)`? with "
+                r"zone scope restricted to `CF_ZONE_ID` `?\(`humangr\.com`\)`? with "
                 r"(.*?)\.\s*(?:grant )?no edit/write",
                 normalized,
                 flags=re.IGNORECASE,
