@@ -1,11 +1,12 @@
 # B-134 — Docker-compatible backend observability
 
-**Status:** open — candidate routed, runtime evidence not yet observed
+**Status:** open — hosted observation contract present; fleet runtime evidence not yet observed
 
 **Base:** `b91ec17c8d559ae0323ba00a80eb309c900d599e`
 
-The two release/canary surfaces are now candidate-routed to the `corelink`
-fleet. The runner image documents a Docker-compatible `docker` drop-in backed by
+The manual `smoke-install` workflow runs on GitHub-hosted Ubuntu and records only
+that hosted backend boundary. It is not routed to the `corelink` fleet and does
+not establish fleet behavior. The runner image documents a Docker-compatible `docker` drop-in backed by
 nerdctl/containerd/buildkitd; that is not a Docker daemon. This record makes
 the experiment explicit and prevents a skipped job, an unrelated direct
 `buildctl` run, or a successful log-only placeholder from being counted as a
@@ -38,8 +39,8 @@ python3 scripts/check_b134_observability.py
 bash scripts/test_b134_observability.sh
 ```
 
-The mutation suite turns red when the smoke workflow leaves `corelink`, loses
-runner provenance, backend observation, helper wiring, fail-closed execution,
+The mutation suite turns red when the smoke workflow leaves `ubuntu-24.04`, loses
+hosted runner provenance, backend observation, helper wiring, fail-closed execution,
 or receipt upload, or when this ledger is changed to `PASS` without runtime
 evidence. If the former cosign workflow is recreated, the checker rejects it
 because B-118 retired that lane. It is entirely local and does not assert that

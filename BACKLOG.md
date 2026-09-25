@@ -14274,8 +14274,8 @@ A imagem da frota ganhou um **drop-in** `docker` em corelink-runners#459 (2026-0
 `docker-shim.sh` fazendo `exec nerdctl` sobre containerd + BuildKit. **Nao e um daemon
 Docker.**
 
-O único workflow candidato restante depende de Docker e é roteado para a fila
-`corelink` como experimento controlado:
+O único workflow candidato restante depende de Docker e é uma observação manual da
+fronteira GitHub-hosted; não mede a frota `corelink`:
 
 - `smoke-install.yml` — preflight `docker info`, runner provenance, and a
   credential-free local fixture receipt; the image build, install/version,
@@ -14285,15 +14285,16 @@ O único workflow candidato restante depende de Docker e é roteado para a fila
 
 **O que se sabe:** build de imagem funciona na frota — `container-build-push-prod.yml`
 esta verde (2026-08-31T00:39). **Mas ele chama `buildctl` DIRETO**, nao passa pelo shim.
-Isso nao prova nada sobre os dois acima.
+Isso nao prova nada sobre o smoke-install.
 
-**O experimento e barato e mede apenas a fronteira do smoke:** a proxima execucao deve
-despacha-lo com `runs-on: corelink` e ler o resultado. Ate que exista essa execucao,
+**O contrato hosted mede apenas a própria fronteira do smoke:** ele não deve ser
+apresentado como evidência de frota. Uma observação autorizada separada com `runs-on: corelink`
+é necessária. Até que exista essa execução,
 a afirmacao "ele funciona na frota" segue **nao medida** — o comentario em `cargo-deny.yml:102`
 ("the `corelink` box image ships no docker at all") ja esta desatualizado pelo mesmo
 motivo.
 
-**A branch deixa o gate fail-closed e registra a fronteira de verdade em
+**O repositório deixa o gate fail-closed e registra a fronteira de verdade em
 `docs/campaigns/remediation/B-134-docker-shim-experiment.md`:** o roteamento e a presenca
 de comandos sao verificaveis estaticamente; nenhum PASS de frota e inferido antes de um run
 real com logs e evidencias de assinatura/deploy. Recusar trocar um bloqueio falso por uma
@@ -14314,9 +14315,10 @@ verify: |
   python3 scripts/check_b134_observability.py
   bash scripts/test_b134_observability.sh
 verify-means: |
-  parked — o workflow `smoke-install` está roteado para `corelink`, mas a ledger permanece
-  `UNMEASURED` até haver um run real. O checker confirma preflight e passos observáveis;
-  a suite de mutações prova que rota, verificação, placeholders e ledger falsa falham.
+  parked — o workflow `smoke-install` roda em GitHub-hosted e só comprova essa fronteira;
+  a ledger permanece `UNMEASURED` até haver evidência real da frota e dos limites restantes.
+  O checker confirma a rota hosted e passos observáveis; a suite prova que rota, verificação,
+  placeholders e ledger falsa falham.
 
   Vira PASS somente com GitHub run IDs, conclusões, logs do backend, evidência de imagem
   publicada/verificada e webhook aceito. Vira DRIFTED se a rota, verificação ou contrato

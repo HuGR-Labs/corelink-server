@@ -36,11 +36,11 @@ expect_red() {
 expect_green baseline "${ROOT}"
 
 copy_fixture "${TMP}/route"
-sed -i.bak 's/runs-on: corelink/runs-on: ubuntu-latest/' "${TMP}/route/.github/workflows/smoke-install.yml"
+sed -i.bak 's/runs-on: ubuntu-24.04/runs-on: corelink/' "${TMP}/route/.github/workflows/smoke-install.yml"
 expect_red route "${TMP}/route"
 
 copy_fixture "${TMP}/provenance"
-sed -i.bak 's/I1672_FLEET_LABEL: corelink/I1672_FLEET_LABEL: hosted/' "${TMP}/provenance/.github/workflows/smoke-install.yml"
+sed -i.bak 's/I1672_FLEET_LABEL: github-hosted/I1672_FLEET_LABEL: corelink/' "${TMP}/provenance/.github/workflows/smoke-install.yml"
 expect_red provenance "${TMP}/provenance"
 
 copy_fixture "${TMP}/trigger"
@@ -58,6 +58,44 @@ expect_red fail-closed "${TMP}/fail-closed"
 copy_fixture "${TMP}/helper"
 sed -i.bak 's#python3 scripts/smoke_install_observe.py#python3 scripts/missing_observer.py#' "${TMP}/helper/.github/workflows/smoke-install.yml"
 expect_red helper "${TMP}/helper"
+
+copy_fixture "${TMP}/helper-always"
+sed -i.bak '/      - name: Observe process/{n;s/if: \${{ always() }}/if: \${{ success() }}/;}' "${TMP}/helper-always/.github/workflows/smoke-install.yml"
+expect_red helper-always "${TMP}/helper-always"
+
+copy_fixture "${TMP}/upload-always"
+sed -i.bak '/      - name: Upload structured observation/{n;s/if: \${{ always() }}/if: \${{ success() }}/;}' "${TMP}/upload-always/.github/workflows/smoke-install.yml"
+expect_red upload-always "${TMP}/upload-always"
+
+copy_fixture "${TMP}/upload-action"
+sed -i.bak 's#uses: actions/upload-artifact@#uses: actions/download-artifact@#' "${TMP}/upload-action/.github/workflows/smoke-install.yml"
+expect_red upload-action "${TMP}/upload-action"
+
+copy_fixture "${TMP}/upload-unpinned"
+sed -i.bak 's#uses: actions/upload-artifact@[a-f0-9]\{40\}#uses: actions/upload-artifact@v4#' "${TMP}/upload-unpinned/.github/workflows/smoke-install.yml"
+expect_red upload-unpinned "${TMP}/upload-unpinned"
+
+copy_fixture "${TMP}/upload-invalid-comment"
+python3 - "${TMP}/upload-invalid-comment/.github/workflows/smoke-install.yml" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+mutated, count = re.subn(
+    r"(uses: actions/upload-artifact@[a-f0-9]{40}) #",
+    r"\1#invalid",
+    text,
+)
+assert count == 1, f"expected one pinned upload action, found {count}"
+path.write_text(mutated, encoding="utf-8")
+PY
+expect_red upload-invalid-comment "${TMP}/upload-invalid-comment"
+
+copy_fixture "${TMP}/upload-path"
+sed -i.bak 's#path: artifacts/i1672/#path: artifacts/missing/#' "${TMP}/upload-path/.github/workflows/smoke-install.yml"
+expect_red upload-path "${TMP}/upload-path"
 
 copy_fixture "${TMP}/receipt"
 sed -i.bak 's#--receipt artifacts/i1672/smoke-install-receipt.json#--receipt artifacts/i1672/receipt.json#' "${TMP}/receipt/.github/workflows/smoke-install.yml"
