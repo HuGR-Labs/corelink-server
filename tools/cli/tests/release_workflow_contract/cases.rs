@@ -1,8 +1,8 @@
 use super::*;
 
 #[test]
-fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_mutations(
-) -> Result<(), String> {
+fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_mutations()
+-> Result<(), String> {
     let workflow = release_workflow()?;
     assert_release_contract(&workflow);
     assert_release_tag_shell_boundary(&workflow);
@@ -30,7 +30,10 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
             &format!("          - triple: {apple_target}\n{windows_target}"),
             1,
         );
-        assert_ne!(reintroduced_apple, workflow, "Apple mutation must take effect");
+        assert_ne!(
+            reintroduced_apple, workflow,
+            "Apple mutation must take effect"
+        );
         assert!(
             std::panic::catch_unwind(|| assert_release_contract(&reintroduced_apple)).is_err(),
             "release contract accepted reintroduced Apple target {apple_target}"
