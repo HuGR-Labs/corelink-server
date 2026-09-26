@@ -30,6 +30,8 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
             ("--baseline=skip", "--baseline=run"),
             ("--sharding=round-robin", "--sharding=slice"),
             ("--shard 0/1", "--shard 0/27"),
+            ("default: baseline", "default: campaign"),
+            ("inputs.execution_mode == 'campaign'", "inputs.execution_mode == 'baseline'"),
             ("actions: read", "actions: write"),
             ("runs-on: ubuntu-24.04", "runs-on: self-hosted"),
             ("retention-days: 30", "retention-days: 0"),

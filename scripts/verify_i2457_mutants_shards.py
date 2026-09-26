@@ -764,6 +764,13 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
     text = args.workflow.read_text(encoding="utf-8")
     required = (
         "workflow_dispatch:",
+        "execution_mode:",
+        "default: baseline",
+        "type: choice",
+        "  - baseline",
+        "  - campaign",
+        "inputs.execution_mode == 'campaign'",
+        "inputs.execution_mode == 'baseline' || inputs.execution_mode == 'campaign'",
         "contents: read",
         "actions: read",
         "github.repository == 'HuGR-dev/corelink-server'",
@@ -809,6 +816,10 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         raise VerificationError("workflow is missing required #2457 controls: " + ", ".join(missing))
     if text.count("retention-days: 30") != 6 or text.count("retention-days:") != 6:
         raise VerificationError("workflow must retain each of the six bounded evidence artifacts for exactly 30 days")
+    if text.count("inputs.execution_mode == 'baseline' || inputs.execution_mode == 'campaign'") != 4:
+        raise VerificationError("baseline-only mode must gate every inventory and baseline job")
+    if text.count("inputs.execution_mode == 'campaign'") != 2:
+        raise VerificationError("only the mutation matrix and aggregate may require explicit campaign mode")
     matrices = re.findall(r"(?ms)^      matrix:\n        shard: \[([^]]+)\]", text)
     expected_matrix = ", ".join(map(str, range(SHARD_COUNT)))
     if len(matrices) != 2 or any(matrix != expected_matrix for matrix in matrices):
