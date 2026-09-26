@@ -62,6 +62,19 @@ def main() -> int:
     )
     if len(request.args) > 2 or not body_is_empty or not method_is_get or not positional_body_is_empty:
         raise SystemExit("provider requests must be GET-only and carry no body")
+    urlopen = urlopens[0]
+    urlopen_keywords = {keyword.arg: keyword.value for keyword in urlopen.keywords}
+    urlopen_data = urlopen_keywords.get("data")
+    urlopen_has_no_body = urlopen_data is None or (
+        isinstance(urlopen_data, ast.Constant) and urlopen_data.value is None
+    )
+    if (
+        len(urlopen.args) != 1
+        or not isinstance(urlopen.args[0], ast.Name)
+        or urlopen.args[0].id != "request"
+        or not urlopen_has_no_body
+    ):
+        raise SystemExit("urlopen must send only the GET request object with no body")
     get_function = next(
         (node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "get"),
         None,
