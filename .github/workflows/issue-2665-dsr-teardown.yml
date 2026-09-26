@@ -7,6 +7,8 @@ on:
       - .github/workflows/issue-2665-dsr-teardown.yml
       - crates/corelink-container/src/routes/dsr/access.rs
       - scripts/verify_issue_2665_dsr_teardown.py
+      - scripts/verify_issue_2581_dsr_audit.py
+      - tests/test_issue_2581_dsr_audit.py
 
 permissions:
   contents: read
