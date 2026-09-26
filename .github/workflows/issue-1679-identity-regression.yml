@@ -1,0 +1,30 @@
+name: Issue 1679 identity regression
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/issue-1679-identity-regression.yml'
+      - 'scripts/b152_actions_diagnostic.py'
+      - 'scripts/test_b152_actions_diagnostic.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1679-identity-regression-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  b250-identity-regression:
+    name: B-250 startup identity regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact pull request head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Run B-250 identity controls
+        run: python3 scripts/test_b152_actions_diagnostic.py
