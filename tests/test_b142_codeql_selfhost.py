@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -15,6 +17,7 @@ SEMGREP = ROOT / ".github" / "workflows" / "semgrep.yml"
 WATCHDOG = ROOT / ".github" / "workflows" / "codeql-evidence-watchdog.yml"
 EVIDENCE = ROOT / "scripts" / "check_codeql_evidence.py"
 RUNBOOK = ROOT / "specs" / "_runbooks" / "RB-STATIC-ANALYSIS-TRIAGE.md"
+I2374_VERIFIER = ROOT / "scripts" / "verify_issue_2374_hosted_proof.py"
 CODEQL_ACTION_SHA = "7188fc363630916deb702c7fdcf4e481b751f97a"
 CODEQL_ACTION_VERSION = "v4.37.1"
 
@@ -61,12 +64,25 @@ def _load_module():
     return module
 
 
+def _load_i2374_verifier():
+    sys.path.insert(0, str(I2374_VERIFIER.parent))
+    spec = importlib.util.spec_from_file_location("verify_issue_2374_hosted_proof", I2374_VERIFIER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class B142WorkflowContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.scanner = SCANNER.read_text(encoding="utf-8")
         self.semgrep = SEMGREP.read_text(encoding="utf-8")
         self.watchdog = WATCHDOG.read_text(encoding="utf-8")
         self.runbook = RUNBOOK.read_text(encoding="utf-8")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for the socket egress controls")
+    def test_i2374_socket_guard_allows_only_the_local_mock(self) -> None:
+        _load_i2374_verifier().verify_socket_guard_controls()
 
     def test_scanner_is_hosted_with_bounded_matrix(self) -> None:
         self.assertIn("runs-on: ubuntu-latest", self.scanner)
