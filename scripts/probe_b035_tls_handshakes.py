@@ -240,6 +240,29 @@ def main() -> int:
     if args.live and args.inventory_only:
         parser.error("--live and --inventory-only are mutually exclusive")
     report = build_report(live=args.live, revision=args.revision)
+    if args.inventory_only:
+        summary = {
+            "instrument_count": len(report["legal_claims"]),
+            "instrument_claims_match": all(
+                claim["claim_count"] == 1 and claim["claim_matches_expected"]
+                for claim in report["legal_claims"]
+            ),
+            "source_bound_ingress_rows": report["handshake_summary"]["source_bound_ingress_rows"],
+            "concrete_hostnames": report["handshake_summary"]["unique_concrete_ingress_hostnames"],
+            "templated_ingress_not_probeable": report["handshake_summary"]["templated_ingress_not_probeable"],
+            "network_attempts": report["handshake_summary"]["python_handshake_attempts"]
+            + report["handshake_summary"]["securetransport_probe_rows"],
+            "mutation": report["mutation"],
+        }
+        print(json.dumps(summary, sort_keys=True))
+        return 0 if (
+            summary["instrument_count"] == 8
+            and summary["instrument_claims_match"]
+            and summary["source_bound_ingress_rows"] == 15
+            and summary["concrete_hostnames"] == 13
+            and summary["templated_ingress_not_probeable"] == 1
+            and summary["network_attempts"] == 0
+        ) else 1
     print(json.dumps(report, indent=2, sort_keys=True))
     if not args.live:
         return 0
