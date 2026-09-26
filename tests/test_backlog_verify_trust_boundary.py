@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import os
 import shutil
@@ -21,6 +22,125 @@ VERIFIER = ROOT / "scripts" / "backlog_verify.py"
 
 
 class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
+    @staticmethod
+    def _write(root: Path, relative: str, contents: bytes) -> None:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(contents)
+
+    def _c0_fixture(self) -> tuple[Path, Path, dict[str, str], dict[str, str]]:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        trusted = Path(directory.name) / "trusted"
+        candidate = Path(directory.name) / "candidate"
+        trusted.mkdir()
+        candidate.mkdir()
+        preimages = {
+            "scripts/verify_b057_sli.py": b"def trusted_verifier_preimage():\n    return True\n",
+            "tests/test_b057_sli_contract.py": b"trusted contract preimage\n",
+        }
+        targets = {
+            "scripts/verify_b057_sli.py": b"candidate verifier target\n",
+            "tests/test_b057_sli_contract.py": b"candidate contract target\n",
+            ".github/workflows/issue-2414-b057-sli.yml": b"candidate workflow target\n",
+        }
+        for relative, contents in preimages.items():
+            self._write(trusted, relative, contents)
+            self._write(candidate, relative, targets[relative])
+        self._write(candidate, ".github/workflows/issue-2414-b057-sli.yml", targets[
+            ".github/workflows/issue-2414-b057-sli.yml"
+        ])
+        return (
+            trusted,
+            candidate,
+            {relative: hashlib.sha256(contents).hexdigest() for relative, contents in preimages.items()},
+            {relative: hashlib.sha256(contents).hexdigest() for relative, contents in targets.items()},
+        )
+
+    def test_b057_c0_pins_the_fresh_preimage_and_target_bytes(self) -> None:
+        self.assertEqual(
+            backlog_verify.B057_C0_PREIMAGES,
+            {
+                "scripts/verify_b057_sli.py": "5db63c2981c9f8278e1df9141f1eb5514712d964210c42cd9e4f451cfb78a82b",
+                "tests/test_b057_sli_contract.py": "e50ffb0b8a78d9050656d79527fbb575be646530538a44b4315f4e334aead90c",
+            },
+        )
+        self.assertEqual(
+            backlog_verify.B057_C0_TARGETS,
+            {
+                "scripts/verify_b057_sli.py": "cc19cdd2501c8eddbb99feffcdf7eb6466a5f9fe31bf3fb71d7d7b887918de2e",
+                "tests/test_b057_sli_contract.py": "77c2ebfb5842e007ca096e2bcbbccb9fb4e1a8c51a13aa58ecfd2c0622fc7421",
+                ".github/workflows/issue-2414-b057-sli.yml": "cc16cd4698380c7ea0300c673e5765702d488082b53dba838f85f5418a735e1c",
+            },
+        )
+
+    def test_b057_c0_admission_is_byte_pinned_and_never_executes_candidate_code(self) -> None:
+        trusted, candidate, preimages, targets = self._c0_fixture()
+        marker = candidate.parent / "candidate-code-executed"
+        payload = (
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('executed')\n"
+        ).encode()
+        self._write(candidate, "scripts/verify_b057_sli.py", payload)
+        targets["scripts/verify_b057_sli.py"] = hashlib.sha256(payload).hexdigest()
+        with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
+            backlog_verify, "B057_C0_TARGETS", targets
+        ):
+            self.assertTrue(backlog_verify._preauthorized_b057_c0(candidate, trusted))
+        self.assertFalse(marker.exists(), "candidate verifier code was executed")
+
+    def test_b057_c0_admission_rejects_nearby_mutations_and_policy_mutation(self) -> None:
+        trusted, candidate, preimages, targets = self._c0_fixture()
+        with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
+            backlog_verify, "B057_C0_TARGETS", targets
+        ):
+            self.assertTrue(backlog_verify._preauthorized_b057_c0(candidate, trusted))
+            for relative in (*targets, "unapproved.txt"):
+                with self.subTest(mutation=relative):
+                    mutated = Path(tempfile.mkdtemp())
+                    self.addCleanup(shutil.rmtree, mutated)
+                    mutated_candidate = mutated / "candidate"
+                    shutil.copytree(candidate, mutated_candidate)
+                    self._write(mutated_candidate, relative, b"unauthorized mutation\n")
+                    self.assertFalse(backlog_verify._preauthorized_b057_c0(mutated_candidate, trusted))
+
+            mutated = Path(tempfile.mkdtemp())
+            self.addCleanup(shutil.rmtree, mutated)
+            mutated_trusted = mutated / "trusted"
+            shutil.copytree(trusted, mutated_trusted)
+            self._write(mutated_trusted, "scripts/verify_b057_sli.py", b"wrong preimage\n")
+            self.assertFalse(backlog_verify._preauthorized_b057_c0(candidate, mutated_trusted))
+
+            self._write(trusted, "base-only.txt", b"candidate has stale base\n")
+            self.assertFalse(backlog_verify._preauthorized_b057_c0(candidate, trusted))
+            (trusted / "base-only.txt").unlink()
+
+            missing = candidate / ".github/workflows/issue-2414-b057-sli.yml"
+            missing.unlink()
+            self.assertFalse(backlog_verify._preauthorized_b057_c0(candidate, trusted))
+            self._write(candidate, ".github/workflows/issue-2414-b057-sli.yml", b"candidate workflow target\n")
+            verifier = candidate / "scripts/verify_b057_sli.py"
+            verifier.unlink()
+            verifier.symlink_to("../missing.py")
+            self.assertFalse(backlog_verify._preauthorized_b057_c0(candidate, trusted))
+
+        trusted, candidate, preimages, targets = self._c0_fixture()
+        for relative in (
+            "scripts/backlog_verify.py",
+            "scripts/verify_backlog_wp_ledger.py",
+            "scripts/backlog_ledger_successor.py",
+            "scripts/backlog_ledger_contracts.py",
+        ):
+            self._write(trusted, relative, b"trusted control\n")
+            self._write(candidate, relative, b"trusted control\n")
+        self._write(candidate, "scripts/backlog_verify.py", b"candidate policy mutation\n")
+        items = [self.item("B-057", verify="python3 scripts/verify_b057_sli.py")]
+        with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
+            backlog_verify, "B057_C0_TARGETS", targets
+        ):
+            with self.assertRaisesRegex(RuntimeError, "scripts/backlog_verify.py"):
+                backlog_verify.check_candidate_controls(candidate, trusted, items)
+
     def test_workflow_uses_base_control_and_credentialless_data_checkouts(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "backlog-verify.yml").read_text(encoding="utf-8")
         self.assertIn("pull_request_target:", workflow)

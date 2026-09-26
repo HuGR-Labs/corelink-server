@@ -103,6 +103,19 @@ B154_LEGACY_VERIFY_SHA256 = "39b0307a1a4451c90fb22fe9a37cfbd858485d38e6361e6c3d1
 B154_SPRINT3_VERIFY_SHA256 = "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e"
 ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified", "verify-means"})
 
+# C0 is a one-time, separately admitted repair to the B-057 verifier.  The
+# pull_request_target lane reads this policy from the immutable BASE checkout;
+# it inspects candidate bytes but never imports, parses, or executes them.
+B057_C0_PREIMAGES = {
+    "scripts/verify_b057_sli.py": "5db63c2981c9f8278e1df9141f1eb5514712d964210c42cd9e4f451cfb78a82b",
+    "tests/test_b057_sli_contract.py": "e50ffb0b8a78d9050656d79527fbb575be646530538a44b4315f4e334aead90c",
+}
+B057_C0_TARGETS = {
+    "scripts/verify_b057_sli.py": "cc19cdd2501c8eddbb99feffcdf7eb6466a5f9fe31bf3fb71d7d7b887918de2e",
+    "tests/test_b057_sli_contract.py": "77c2ebfb5842e007ca096e2bcbbccb9fb4e1a8c51a13aa58ecfd2c0622fc7421",
+    ".github/workflows/issue-2414-b057-sli.yml": "cc16cd4698380c7ea0300c673e5765702d488082b53dba838f85f5418a735e1c",
+}
+
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
 # reject the known dangerous declaration: a `done` item whose human explanation
 # explicitly says the check remains `open`.  Unmarked legacy entries remain
@@ -506,12 +519,72 @@ def _regular_control(root: Path, relative: str) -> bytes:
     return path.read_bytes()
 
 
+def _candidate_tree_files(root: Path) -> dict[str, Path]:
+    """Return regular candidate files while refusing symlink traversal."""
+    files: dict[str, Path] = {}
+    for current, directories, filenames in os.walk(root, topdown=True, followlinks=False):
+        current_path = Path(current)
+        directories[:] = [name for name in directories if name != ".git"]
+        for name in directories:
+            path = current_path / name
+            if path.is_symlink():
+                raise RuntimeError(f"candidate tree contains symlink directory: {path.relative_to(root)}")
+        for name in filenames:
+            path = current_path / name
+            relative = path.relative_to(root).as_posix()
+            if path.is_symlink() or not path.is_file():
+                raise RuntimeError(f"candidate tree contains non-regular file: {relative}")
+            files[relative] = path
+    return files
+
+
+def _sha256_path(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _preauthorized_b057_c0(candidate_root: Path, trusted_root: Path) -> bool:
+    """Recognize the sole byte-pinned B-057 trusted-control migration."""
+    try:
+        candidate_files = _candidate_tree_files(candidate_root)
+        trusted_files = _candidate_tree_files(trusted_root)
+    except (OSError, RuntimeError):
+        return False
+
+    workflow = ".github/workflows/issue-2414-b057-sli.yml"
+    if workflow in trusted_files:
+        return False
+    if set(candidate_files) != set(trusted_files) | {workflow}:
+        return False
+    changed = {
+        relative
+        for relative in candidate_files
+        if relative not in trusted_files
+        or _sha256_path(candidate_files[relative]) != _sha256_path(trusted_files[relative])
+    }
+    if changed != set(B057_C0_TARGETS):
+        return False
+    return (
+        all(
+            _sha256_path(trusted_files[relative]) == expected
+            for relative, expected in B057_C0_PREIMAGES.items()
+        )
+        and all(
+            _sha256_path(candidate_files[relative]) == expected
+            for relative, expected in B057_C0_TARGETS.items()
+        )
+    )
+
+
 def check_candidate_controls(candidate_root: Path, trusted_root: Path, trusted_items: list[Item]) -> None:
     """Fail closed when PR data changes a trusted control in the closure."""
     for relative in sorted(_candidate_control_paths(trusted_root, trusted_items)):
         trusted = _regular_control(trusted_root, relative)
         candidate = _regular_control(candidate_root, relative)
         if candidate != trusted:
+            if relative == "scripts/verify_b057_sli.py" and _preauthorized_b057_c0(
+                candidate_root, trusted_root
+            ):
+                continue
             raise RuntimeError(
                 f"candidate mutated trusted backlog control {relative}; "
                 "candidate verifier code is data-only and was not executed"
