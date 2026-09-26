@@ -10,6 +10,7 @@ import { handleRunnerAdopt } from "./lib/runner_credential_routes.js";
 import { handleRunnerCloseGeneration } from "./lib/runner_credential_generation_routes.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
+import { handleStagingSyntheticTenant } from "./lib/staging_synthetic_tenant.js";
 
 export async function handleSpecialMiscRoute(
   request: Request,
@@ -38,6 +39,11 @@ export async function handleSpecialMiscRoute(
     if (route.routeKind === "tenant_lookup") {
       const lookupResp = await handleTenantLookup(request, env, requestId);
       return applyCors(lookupResp, request);
+    }
+
+    if (route.routeKind === "staging_synthetic_tenant") {
+      const provisionResp = await handleStagingSyntheticTenant(request, env);
+      return applyCors(provisionResp, request);
     }
 
     // githugr authz #1 — token exchange (POST /internal/v1/auth/token-exchange).
