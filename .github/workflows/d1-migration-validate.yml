@@ -30,7 +30,7 @@ on:
       - 'tests/test_issue_2366_dsr_redrive_prereq.py'
       - 'apps/signup-worker/wrangler.toml'
       - '.github/workflows/signup-worker-deploy.yml'
-      - '.github/workflows/staging-bootstrap.yml'
+      - '.github/workflows/staging-quarantine-apply.yml'
       - 'scripts/verify_staging_topology_contract.py'
       - 'infra/staging/topology.json'
       - 'docs/internal/secrets-checklist.md'
