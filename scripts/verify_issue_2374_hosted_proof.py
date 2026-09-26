@@ -882,6 +882,18 @@ try {
   if (error.code !== "I2374_ACTION_EGRESS_BLOCKED" || lookedUp) process.exitCode = 1;
 }
 '''
+            wrapped_null_negative = r'''const net = require("node:net");
+let lookedUp = false;
+try {
+  new net.Socket().connect([{
+    host: "api.github.com.evil.invalid", port: 443,
+    lookup(_host, _options, callback) { lookedUp = true; callback(new Error("lookup must not run")); },
+  }, null]);
+  process.exitCode = 1;
+} catch (error) {
+  if (error.code !== "I2374_ACTION_EGRESS_BLOCKED" || lookedUp) process.exitCode = 1;
+}
+'''
             missing_port = r'''const net = require("node:net");
 try {
   new net.Socket().connect({ host: "127.0.0.1", port: Number(process.env.I2374_PROBE_PORT) });
@@ -903,6 +915,7 @@ try {
 
             probe(positive, allowed_port=port)
             probe(negative, allowed_port=port)
+            probe(wrapped_null_negative, allowed_port=port)
             probe(missing_port, allowed_port=None)
             if not any(str(request.get("path", "")).endswith("/guard-positive") for request in LocalGitHubHandler.requests):
                 fail("local positive socket control did not reach the mock handler")
