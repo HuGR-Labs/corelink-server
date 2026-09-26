@@ -36,12 +36,13 @@ use std::sync::{Arc, Mutex};
 // `corelink-billing-stripe-traits` crate (no `corelink-stripe-real`
 // dep in production sources of the materializer).
 use corelink_billing_stripe_traits::{
-    CanonicalWebhookEventType, MaterializerError, StateMaterializer, StripeWebhookEnvelope,
+    CanonicalWebhookEventType, DurableWebhookRequestContext, MaterializerError, StateMaterializer,
+    StripeWebhookEnvelope,
 };
 use corelink_tier_selection::tier::TierKind;
 
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
-use crate::clock::{default_mat_clock, MatClock};
+use crate::clock::{MatClock, default_mat_clock};
 use crate::current_subscription::CurrentSubscriptionAuthority;
 use crate::d1::{
     BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow,
@@ -318,13 +319,13 @@ impl D1SubscriptionStateHandler {
         env: &StripeWebhookEnvelope,
     ) -> Result<(), MaterializerError> {
         match event_type {
-            CanonicalWebhookEventType::CustomerCreated => self.do_customer_created(env),
+            CanonicalWebhookEventType::CustomerCreated => self.do_customer_created(env, None),
             CanonicalWebhookEventType::SubscriptionCreated => {
-                self.do_subscription_upsert(env, false /* not canceled */)
+                self.do_subscription_upsert(env, false /* not canceled */, None)
             }
-            CanonicalWebhookEventType::ChargeRefunded => self.do_refund(env),
+            CanonicalWebhookEventType::ChargeRefunded => self.do_refund(env, None),
             CanonicalWebhookEventType::SubscriptionTrialWillEnd
-            | CanonicalWebhookEventType::InvoiceCreated => self.do_pure_echo(event_type, env),
+            | CanonicalWebhookEventType::InvoiceCreated => self.do_pure_echo(event_type, env, None),
             // The five state mutators have dedicated trait methods —
             // drive the typed materializer methods directly so the
             // dispatcher-level routing stays the only seam.
@@ -371,6 +372,7 @@ impl D1SubscriptionStateHandler {
         &self,
         env: &StripeWebhookEnvelope,
         canceled: bool,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
     ) -> Result<(), MaterializerError> {
         let tenant_id = self.tenant_id_from(env)?;
         let sub_id = self.stripe_object_id(env).ok_or_else(|| {
@@ -465,16 +467,19 @@ impl D1SubscriptionStateHandler {
             "provider_current": current,
         });
         self.audit
-            .emit_billing(&BillingAuditRecord {
-                event_name: audit_name,
-                stripe_event_id: env.id.clone(),
-                stripe_event_type: env.event_type.clone(),
-                tenant_id: tenant_id.clone(),
-                stripe_object_id: Some(sub_id.clone()),
-                severity: AuditSeverity::Notice,
-                ts_ms: now_ms,
-                payload: payload.clone(),
-            })
+            .emit_billing_with_context(
+                &BillingAuditRecord {
+                    event_name: audit_name,
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id: tenant_id.clone(),
+                    stripe_object_id: Some(sub_id.clone()),
+                    severity: AuditSeverity::Notice,
+                    ts_ms: now_ms,
+                    payload: payload.clone(),
+                },
+                request_context,
+            )
             .map_err(audit_to_mat)?;
 
         // 2) D1 write.
@@ -620,7 +625,7 @@ impl D1SubscriptionStateHandler {
                 return Err(MaterializerError::Transient(format!(
                     "Runners entitlement authority returned {} for event subscription {subscription_id}",
                     current.subscription_id
-                )))
+                )));
             }
             [] => {
                 let Some(current) = snapshots.iter().find(|snapshot| {
@@ -639,7 +644,7 @@ impl D1SubscriptionStateHandler {
             _ => {
                 return Err(MaterializerError::Transient(format!(
                     "Runners entitlement authority is ambiguous for {subscription_id}"
-                )))
+                )));
             }
         };
         let ent = resolver.resolve(&current.price_id).ok_or_else(|| {
@@ -657,19 +662,22 @@ impl D1SubscriptionStateHandler {
             // container materializer never leaves a stale grant. Audit BEFORE the
             // state mutation (fail-CLOSED ordering), mirroring the seed emit.
             self.audit
-                .emit_billing(&BillingAuditRecord {
-                    event_name: "corelink.tenant.runners_entitlement_revoked.v1",
-                    stripe_event_id: env.id.clone(),
-                    stripe_event_type: env.event_type.clone(),
-                    tenant_id: tenant_id.to_string(),
-                    stripe_object_id: None,
-                    severity: AuditSeverity::Notice,
-                    ts_ms: now_ms,
-                    payload: serde_json::json!({
-                        "status": current.status,
-                        "stripe_subscription_id": current.subscription_id,
-                    }),
-                })
+                .emit_billing_with_context(
+                    &BillingAuditRecord {
+                        event_name: "corelink.tenant.runners_entitlement_revoked.v1",
+                        stripe_event_id: env.id.clone(),
+                        stripe_event_type: env.event_type.clone(),
+                        tenant_id: tenant_id.to_string(),
+                        stripe_object_id: None,
+                        severity: AuditSeverity::Notice,
+                        ts_ms: now_ms,
+                        payload: serde_json::json!({
+                            "status": current.status,
+                            "stripe_subscription_id": current.subscription_id,
+                        }),
+                    },
+                    request_context,
+                )
                 .map_err(audit_to_mat)?;
             self.apply_runner_cas(
                 tenant_id,
@@ -687,20 +695,23 @@ impl D1SubscriptionStateHandler {
         }
         // Granting status: SEED. Audit BEFORE the state mutation (fail-CLOSED).
         self.audit
-            .emit_billing(&BillingAuditRecord {
-                event_name: "corelink.tenant.runners_entitlement_seeded.v1",
-                stripe_event_id: env.id.clone(),
-                stripe_event_type: env.event_type.clone(),
-                tenant_id: tenant_id.to_string(),
-                stripe_object_id: None,
-                severity: AuditSeverity::Notice,
-                ts_ms: now_ms,
-                payload: serde_json::json!({
-                    "max_concurrency": ent.max_concurrency,
-                    "max_vcpu_h": ent.max_vcpu_h,
-                    "stripe_subscription_id": current.subscription_id,
-                }),
-            })
+            .emit_billing_with_context(
+                &BillingAuditRecord {
+                    event_name: "corelink.tenant.runners_entitlement_seeded.v1",
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id: tenant_id.to_string(),
+                    stripe_object_id: None,
+                    severity: AuditSeverity::Notice,
+                    ts_ms: now_ms,
+                    payload: serde_json::json!({
+                        "max_concurrency": ent.max_concurrency,
+                        "max_vcpu_h": ent.max_vcpu_h,
+                        "stripe_subscription_id": current.subscription_id,
+                    }),
+                },
+                request_context,
+            )
             .map_err(audit_to_mat)?;
         self.apply_runner_cas(
             tenant_id,
@@ -799,19 +810,22 @@ impl D1SubscriptionStateHandler {
 
         // Audit BEFORE write.
         self.audit
-            .emit_billing(&BillingAuditRecord {
-                event_name: "corelink.tenant.tier_changed.v1",
-                stripe_event_id: env.id.clone(),
-                stripe_event_type: env.event_type.clone(),
-                tenant_id: tenant_id.to_string(),
-                stripe_object_id: None,
-                severity: AuditSeverity::Notice,
-                ts_ms: now_ms,
-                payload: serde_json::json!({
-                    "from": current,
-                    "to": new_wire,
-                }),
-            })
+            .emit_billing_with_context(
+                &BillingAuditRecord {
+                    event_name: "corelink.tenant.tier_changed.v1",
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id: tenant_id.to_string(),
+                    stripe_object_id: None,
+                    severity: AuditSeverity::Notice,
+                    ts_ms: now_ms,
+                    payload: serde_json::json!({
+                        "from": current,
+                        "to": new_wire,
+                    }),
+                },
+                request_context,
+            )
             .map_err(audit_to_mat)?;
 
         self.d1
@@ -849,19 +863,22 @@ impl D1SubscriptionStateHandler {
 
         // Audit BEFORE write.
         self.audit
-            .emit_billing(&BillingAuditRecord {
-                event_name: "corelink.tenant.tier_changed.v1",
-                stripe_event_id: env.id.clone(),
-                stripe_event_type: env.event_type.clone(),
-                tenant_id: tenant_id.to_string(),
-                stripe_object_id: None,
-                severity: AuditSeverity::Notice,
-                ts_ms: now_ms,
-                payload: serde_json::json!({
-                    "from": current,
-                    "to": new_wire,
-                }),
-            })
+            .emit_billing_with_context(
+                &BillingAuditRecord {
+                    event_name: "corelink.tenant.tier_changed.v1",
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id: tenant_id.to_string(),
+                    stripe_object_id: None,
+                    severity: AuditSeverity::Notice,
+                    ts_ms: now_ms,
+                    payload: serde_json::json!({
+                        "from": current,
+                        "to": new_wire,
+                    }),
+                },
+                request_context,
+            )
             .map_err(audit_to_mat)?;
 
         self.d1
@@ -877,6 +894,7 @@ impl D1SubscriptionStateHandler {
         &self,
         env: &StripeWebhookEnvelope,
         outcome: &'static str,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
     ) -> Result<(), MaterializerError> {
         let tenant_id = self.tenant_id_from(env)?;
         let inv_id = self.stripe_object_id(env).ok_or_else(|| {
@@ -892,16 +910,19 @@ impl D1SubscriptionStateHandler {
             "outcome": outcome,
         });
         self.audit
-            .emit_billing(&BillingAuditRecord {
-                event_name: "corelink.billing.invoice.materialized.v1",
-                stripe_event_id: env.id.clone(),
-                stripe_event_type: env.event_type.clone(),
-                tenant_id: tenant_id.clone(),
-                stripe_object_id: Some(inv_id.clone()),
-                severity: AuditSeverity::Notice,
-                ts_ms: now_ms,
-                payload: payload.clone(),
-            })
+            .emit_billing_with_context(
+                &BillingAuditRecord {
+                    event_name: "corelink.billing.invoice.materialized.v1",
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id: tenant_id.clone(),
+                    stripe_object_id: Some(inv_id.clone()),
+                    severity: AuditSeverity::Notice,
+                    ts_ms: now_ms,
+                    payload: payload.clone(),
+                },
+                request_context,
+            )
             .map_err(audit_to_mat)?;
 
         self.d1
@@ -916,7 +937,11 @@ impl D1SubscriptionStateHandler {
             .map_err(d1_to_mat)
     }
 
-    fn do_dispute(&self, env: &StripeWebhookEnvelope) -> Result<(), MaterializerError> {
+    fn do_dispute(
+        &self,
+        env: &StripeWebhookEnvelope,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
         let tenant_id = self.tenant_id_from(env)?;
         let dispute_id = self.stripe_object_id(env).ok_or_else(|| {
             MaterializerError::InvalidPayload("missing data.object.id".to_string())
@@ -928,17 +953,20 @@ impl D1SubscriptionStateHandler {
             "dispute_id": dispute_id,
         });
         self.audit
-            .emit_billing(&BillingAuditRecord {
-                event_name: "corelink.billing.dispute.materialized.v1",
-                stripe_event_id: env.id.clone(),
-                stripe_event_type: env.event_type.clone(),
-                tenant_id: tenant_id.clone(),
-                stripe_object_id: Some(dispute_id.clone()),
-                // Sev1: Finance + customer attention required.
-                severity: AuditSeverity::Sev1,
-                ts_ms: now_ms,
-                payload: payload.clone(),
-            })
+            .emit_billing_with_context(
+                &BillingAuditRecord {
+                    event_name: "corelink.billing.dispute.materialized.v1",
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id: tenant_id.clone(),
+                    stripe_object_id: Some(dispute_id.clone()),
+                    // Sev1: Finance + customer attention required.
+                    severity: AuditSeverity::Sev1,
+                    ts_ms: now_ms,
+                    payload: payload.clone(),
+                },
+                request_context,
+            )
             .map_err(audit_to_mat)?;
 
         self.d1
@@ -953,7 +981,11 @@ impl D1SubscriptionStateHandler {
             .map_err(d1_to_mat)
     }
 
-    fn do_refund(&self, env: &StripeWebhookEnvelope) -> Result<(), MaterializerError> {
+    fn do_refund(
+        &self,
+        env: &StripeWebhookEnvelope,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
         let tenant_id = self.tenant_id_from(env)?;
         let charge_id = self.stripe_object_id(env).ok_or_else(|| {
             MaterializerError::InvalidPayload("missing data.object.id".to_string())
@@ -999,16 +1031,19 @@ impl D1SubscriptionStateHandler {
             "fully_refunded": fully_refunded,
         });
         self.audit
-            .emit_billing(&BillingAuditRecord {
-                event_name: "corelink.billing.refund.materialized.v1",
-                stripe_event_id: env.id.clone(),
-                stripe_event_type: env.event_type.clone(),
-                tenant_id: tenant_id.clone(),
-                stripe_object_id: Some(charge_id.clone()),
-                severity: AuditSeverity::Notice,
-                ts_ms: now_ms,
-                payload: payload.clone(),
-            })
+            .emit_billing_with_context(
+                &BillingAuditRecord {
+                    event_name: "corelink.billing.refund.materialized.v1",
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id: tenant_id.clone(),
+                    stripe_object_id: Some(charge_id.clone()),
+                    severity: AuditSeverity::Notice,
+                    ts_ms: now_ms,
+                    payload: payload.clone(),
+                },
+                request_context,
+            )
             .map_err(audit_to_mat)?;
 
         self.d1
@@ -1065,7 +1100,11 @@ impl D1SubscriptionStateHandler {
         Ok(())
     }
 
-    fn do_customer_created(&self, env: &StripeWebhookEnvelope) -> Result<(), MaterializerError> {
+    fn do_customer_created(
+        &self,
+        env: &StripeWebhookEnvelope,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
         let tenant_id = self.tenant_id_from(env)?;
         let cus_id = self.stripe_object_id(env).ok_or_else(|| {
             MaterializerError::InvalidPayload("missing data.object.id".to_string())
@@ -1077,16 +1116,19 @@ impl D1SubscriptionStateHandler {
             "customer_id": cus_id,
         });
         self.audit
-            .emit_billing(&BillingAuditRecord {
-                event_name: "corelink.billing.customer.materialized.v1",
-                stripe_event_id: env.id.clone(),
-                stripe_event_type: env.event_type.clone(),
-                tenant_id: tenant_id.clone(),
-                stripe_object_id: Some(cus_id.clone()),
-                severity: AuditSeverity::Notice,
-                ts_ms: now_ms,
-                payload: payload.clone(),
-            })
+            .emit_billing_with_context(
+                &BillingAuditRecord {
+                    event_name: "corelink.billing.customer.materialized.v1",
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id: tenant_id.clone(),
+                    stripe_object_id: Some(cus_id.clone()),
+                    severity: AuditSeverity::Notice,
+                    ts_ms: now_ms,
+                    payload: payload.clone(),
+                },
+                request_context,
+            )
             .map_err(audit_to_mat)?;
 
         self.d1
@@ -1105,6 +1147,7 @@ impl D1SubscriptionStateHandler {
         &self,
         event_type: CanonicalWebhookEventType,
         env: &StripeWebhookEnvelope,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
     ) -> Result<(), MaterializerError> {
         // No D1 mutation; just emit the audit echo so the chain still
         // pins the delivery. Tenant id is optional for these arms
@@ -1115,18 +1158,21 @@ impl D1SubscriptionStateHandler {
             .unwrap_or_else(|_| "__unknown__".to_string());
         let now_ms = self.clock.now_ms();
         self.audit
-            .emit_billing(&BillingAuditRecord {
-                event_name: "corelink.billing.echo.v1",
-                stripe_event_id: env.id.clone(),
-                stripe_event_type: env.event_type.clone(),
-                tenant_id,
-                stripe_object_id: self.stripe_object_id(env),
-                severity: AuditSeverity::Info,
-                ts_ms: now_ms,
-                payload: serde_json::json!({
-                    "canonical_event_type": event_type.label(),
-                }),
-            })
+            .emit_billing_with_context(
+                &BillingAuditRecord {
+                    event_name: "corelink.billing.echo.v1",
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id,
+                    stripe_object_id: self.stripe_object_id(env),
+                    severity: AuditSeverity::Info,
+                    ts_ms: now_ms,
+                    payload: serde_json::json!({
+                        "canonical_event_type": event_type.label(),
+                    }),
+                },
+                request_context,
+            )
             .map_err(audit_to_mat)
     }
 }
@@ -1136,36 +1182,84 @@ impl StateMaterializer for D1SubscriptionStateHandler {
         &self,
         env: &StripeWebhookEnvelope,
     ) -> Result<(), MaterializerError> {
-        self.do_subscription_upsert(env, true)
+        self.do_subscription_upsert(env, true, None)
+    }
+
+    fn on_subscription_deleted_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        self.do_subscription_upsert(env, true, context)
     }
 
     fn on_subscription_updated(
         &self,
         env: &StripeWebhookEnvelope,
     ) -> Result<(), MaterializerError> {
-        self.do_subscription_upsert(env, false)
+        self.do_subscription_upsert(env, false, None)
+    }
+
+    fn on_subscription_updated_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        self.do_subscription_upsert(env, false, context)
     }
 
     fn on_invoice_paid(&self, env: &StripeWebhookEnvelope) -> Result<(), MaterializerError> {
-        self.do_invoice(env, "paid")
+        self.do_invoice(env, "paid", None)
+    }
+
+    fn on_invoice_paid_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        self.do_invoice(env, "paid", context)
     }
 
     fn on_invoice_payment_failed(
         &self,
         env: &StripeWebhookEnvelope,
     ) -> Result<(), MaterializerError> {
-        self.do_invoice(env, "payment_failed")
+        self.do_invoice(env, "payment_failed", None)
+    }
+
+    fn on_invoice_payment_failed_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        self.do_invoice(env, "payment_failed", context)
     }
 
     fn on_charge_dispute_created(
         &self,
         env: &StripeWebhookEnvelope,
     ) -> Result<(), MaterializerError> {
-        self.do_dispute(env)
+        self.do_dispute(env, None)
+    }
+
+    fn on_charge_dispute_created_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        self.do_dispute(env, context)
     }
 
     fn on_charge_refunded(&self, env: &StripeWebhookEnvelope) -> Result<(), MaterializerError> {
-        self.do_refund(env)
+        self.do_refund(env, None)
+    }
+
+    fn on_charge_refunded_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        self.do_refund(env, context)
     }
 }
 

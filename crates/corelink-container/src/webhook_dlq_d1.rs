@@ -50,9 +50,15 @@ use corelink_billing_stripe_materializer::{BillingAuditError, BillingAuditRecord
 use corelink_stripe_real::dlq::{
     DlqError, DlqQuarantineOutcome, DlqReplayOutcome, WebhookDlqRow, WebhookDlqStore,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::storage::d1_http::{D1HttpClient, D1Row};
+use crate::storage::{
+    d1_http::{D1BatchStatement, D1HttpClient, D1Row},
+    staging_load_test_admission::StagingLoadTestAdmissionContext,
+    staging_load_test_ownership::{
+        StagingLoadTestDisposition, StagingLoadTestResourceClass, StagingLoadTestScenario,
+    },
+};
 
 // =========================================================================
 // Canonical SQL — reconciled against migrations 0045 + 0094 + 0095.
@@ -106,7 +112,8 @@ pub const SQL_DLQ_GET: &str = "SELECT event_id, dlq_row_id, event_type, raw_body
 pub const SQL_BILLING_AUDIT_INSERT: &str = "INSERT INTO stripe_billing_audit_events \
     (event_name, stripe_event_id, stripe_event_type, tenant_id, stripe_object_id, \
      severity, ts_ms, payload_json) \
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
+const SQL_REQUIRE_AUDIT_WRITE_AND_UNIQUE_OWNER: &str = "INSERT INTO staging_load_test_resources (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) SELECT '', 'webhook', 'webhook_effect', '', '', 'disposable', 'invalid', 0 WHERE changes() != 1";
 
 // =========================================================================
 // Shared bridge
@@ -121,6 +128,17 @@ fn run_d1(d1: &Arc<D1HttpClient>, sql: &str, binds: Vec<Value>) -> Result<Vec<D1
     tokio::task::block_in_place(move || {
         tokio::runtime::Handle::current().block_on(async move { d1.query(&sql, &binds).await })
     })
+}
+
+fn run_d1_batch(
+    d1: &Arc<D1HttpClient>,
+    statements: Vec<D1BatchStatement>,
+) -> Result<Vec<Vec<D1Row>>, String> {
+    let d1 = Arc::clone(d1);
+    tokio::task::block_in_place(move || {
+        tokio::runtime::Handle::current().block_on(async move { d1.batch(statements).await })
+    })
+    .map_err(|_| "d1-billing-audit: ownership batch failed".to_owned())
 }
 
 fn required_u64(row: &D1Row, col: &str) -> Result<u64, String> {
@@ -336,6 +354,16 @@ fn severity_str(severity: corelink_billing_stripe_materializer::AuditSeverity) -
 
 impl corelink_billing_stripe_materializer::BillingAuditEmitter for D1BillingAuditEmitter {
     fn emit_billing(&self, record: &BillingAuditRecord) -> Result<(), BillingAuditError> {
+        self.emit_billing_with_context(record, None)
+    }
+
+    fn emit_billing_with_context(
+        &self,
+        record: &BillingAuditRecord,
+        request_context: Option<
+            &dyn corelink_stripe_real::webhook_dispatch::DurableWebhookRequestContext,
+        >,
+    ) -> Result<(), BillingAuditError> {
         let payload_json = serde_json::to_string(&record.payload).map_err(|e| {
             BillingAuditError::Transient(format!("d1-billing-audit: payload serialize: {e}"))
         })?;
@@ -349,10 +377,94 @@ impl corelink_billing_stripe_materializer::BillingAuditEmitter for D1BillingAudi
             json!(i64::try_from(record.ts_ms).unwrap_or(0)),
             json!(payload_json),
         ];
-        run_d1(&self.d1, SQL_BILLING_AUDIT_INSERT, binds)
-            .map(|_| ())
-            .map_err(|e| BillingAuditError::Transient(format!("d1-billing-audit: {e}")))
+        if let Some(request_context) = request_context {
+            let context = request_context
+                .as_any()
+                .downcast_ref::<StagingLoadTestAdmissionContext>()
+                .ok_or_else(|| {
+                    BillingAuditError::Transient(
+                        "d1-billing-audit: request context is invalid".to_owned(),
+                    )
+                })?;
+            context
+                .require_ownership_scenario(StagingLoadTestScenario::Webhook)
+                .map_err(|_| {
+                    BillingAuditError::Transient(
+                        "d1-billing-audit: admitted scenario is invalid".to_owned(),
+                    )
+                })?;
+            let opaque_handle = billing_audit_handle(context, record, &payload_json);
+            let registration = context
+                .ownership_registration(
+                    StagingLoadTestResourceClass::BillingAudit,
+                    StagingLoadTestDisposition::Retained,
+                    &opaque_handle,
+                )
+                .and_then(|registration| {
+                    i64::try_from(record.ts_ms)
+                        .map_err(|_| crate::storage::staging_load_test_ownership::StagingLoadTestOwnershipError::InvalidIdentifier)
+                        .and_then(|now| registration.d1_statement(now))
+                })
+                .map_err(|_| {
+                    BillingAuditError::Transient(
+                        "d1-billing-audit: ownership registration is invalid".to_owned(),
+                    )
+                })?;
+            let verify = D1BatchStatement::new(
+                "SELECT resource.receipt_ref FROM staging_load_test_resources AS resource JOIN staging_load_test_runs AS run ON run.run_id = resource.run_id AND run.scenario = resource.scenario WHERE resource.run_id = ?1 AND resource.scenario = 'webhook' AND run.target_environment = 'staging' AND run.target_deployment_sha = ?2 AND run.state = 'open' AND resource.resource_class = 'billing_audit' AND resource.opaque_handle = ?3 AND resource.disposition = 'retained' LIMIT 1",
+                vec![
+                    json!(context.run_id()),
+                    json!(context.target_deployment_sha()),
+                    json!(opaque_handle),
+                ],
+            );
+            let result = run_d1_batch(
+                &self.d1,
+                vec![
+                    D1BatchStatement::new(SQL_BILLING_AUDIT_INSERT, binds),
+                    D1BatchStatement::new(SQL_REQUIRE_AUDIT_WRITE_AND_UNIQUE_OWNER, vec![]),
+                    registration,
+                    D1BatchStatement::new(SQL_REQUIRE_AUDIT_WRITE_AND_UNIQUE_OWNER, vec![]),
+                    verify,
+                ],
+            )
+            .map_err(BillingAuditError::Transient)?;
+            if !result.get(4).is_some_and(|rows| rows.len() == 1) {
+                return Err(BillingAuditError::Transient(
+                    "d1-billing-audit: ownership registration is missing".to_owned(),
+                ));
+            }
+            Ok(())
+        } else {
+            run_d1(&self.d1, SQL_BILLING_AUDIT_INSERT, binds)
+                .map(|_| ())
+                .map_err(|e| BillingAuditError::Transient(format!("d1-billing-audit: {e}")))
+        }
     }
+}
+
+fn billing_audit_handle(
+    context: &StagingLoadTestAdmissionContext,
+    record: &BillingAuditRecord,
+    payload_json: &str,
+) -> String {
+    let mut digest = sha2::Sha256::new();
+    use sha2::Digest as _;
+    digest.update(b"corelink/webhook-billing-audit-handle/v1\0");
+    digest.update(context.run_id().as_bytes());
+    digest.update([0]);
+    digest.update(context.target_deployment_sha().as_bytes());
+    digest.update([0]);
+    digest.update(context.admitted_at_ms().to_be_bytes());
+    digest.update([0]);
+    digest.update(record.event_name.as_bytes());
+    digest.update([0]);
+    digest.update(record.stripe_event_id.as_bytes());
+    digest.update([0]);
+    digest.update(record.ts_ms.to_be_bytes());
+    digest.update([0]);
+    digest.update(payload_json.as_bytes());
+    format!("stripe-billing-audit:{}", hex::encode(digest.finalize()))
 }
 
 #[cfg(test)]

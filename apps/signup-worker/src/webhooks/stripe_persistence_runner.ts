@@ -1,5 +1,6 @@
 /** Runner billing and entitlement persistence writers. */
-import type { D1DatabaseLike } from "./billing_checkout";
+import type { D1DatabaseLike, D1RunResult } from "./billing_checkout";
+import { runOrStage, type StripeStagingWriteBatch } from "./stripe_staging_batch.js";
 
 export interface AuthoritativeRunnerSubscription {
     subscriptionId: string;
@@ -89,8 +90,9 @@ export async function upsertRunnerBilling(
         stripeCustomerId: string | null;
         nowMs: number;
     },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    await db
+    await runOrStage(db
         .prepare(
             `INSERT INTO runner_billing
                (runner_subscription_id, tenant_id, plan, status,
@@ -107,8 +109,7 @@ export async function upsertRunnerBilling(
             opts.status,
             opts.stripeCustomerId,
             opts.nowMs,
-        )
-        .run();
+        ), batch);
 }
 /**
  * Apply a Runners entitlement through the shared durable fence.
@@ -131,6 +132,7 @@ export async function reconcileRunnersEntitlement(
         entitlement: { maxConcurrency: number; maxVcpuH: number } | null;
         nowMs: number;
     },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
     if (!db.batch) throw new Error("D1 batch support is required for runner entitlement CAS");
     if (!opts.runnerSubscriptionId || !opts.stripeEventId ||
@@ -218,7 +220,42 @@ export async function reconcileRunnersEntitlement(
         `SELECT stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, stripe_event_id
          FROM runner_entitlement_reconcile_fence WHERE tenant_id = ${opts.tenantId ? "?1" : "(SELECT tenant_id FROM runner_billing WHERE runner_subscription_id = ?1)"}`,
     ).bind(opts.tenantId ?? opts.runnerSubscriptionId);
+    if (batch) {
+        const atomicGuard = db.prepare(`INSERT INTO staging_load_test_resources
+            (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms)
+          SELECT '', 'webhook', 'webhook_effect', '', '', 'disposable', 'invalid', 0
+          WHERE NOT EXISTS (
+            SELECT 1 FROM runner_entitlement_reconcile_fence
+            WHERE tenant_id = COALESCE(?1, (
+              SELECT tenant_id FROM runner_billing WHERE runner_subscription_id = ?2
+            ))
+              AND stripe_subscription_id = ?2
+              AND subscription_created_at_ms = ?3
+              AND stripe_event_created_at_ms = ?4
+              AND stripe_event_id = ?5
+          )`).bind(
+              opts.tenantId,
+              opts.runnerSubscriptionId,
+              opts.subscriptionCreatedAtMs,
+              opts.stripeEventCreatedAtMs,
+              opts.stripeEventId,
+          );
+        batch.addGroup([fence, mutation, readFence], (results) => validateRunnerBatch(results, opts), [atomicGuard]);
+        return;
+    }
     const results = await db.batch([fence, mutation, readFence]);
+    validateRunnerBatch(results, opts);
+}
+
+function validateRunnerBatch(
+    results: D1RunResult[],
+    opts: {
+        runnerSubscriptionId: string;
+        subscriptionCreatedAtMs: number | null;
+        stripeEventCreatedAtMs: number | null;
+        stripeEventId: string;
+    },
+): void {
     if (results[0]?.results?.length) return;
     const current = results[2]?.results?.[0];
     if (current?.["stripe_subscription_id"] === opts.runnerSubscriptionId &&
@@ -238,14 +275,14 @@ export async function reconcileRunnersEntitlement(
 export async function markRunnerBillingStatusBySubscription(
     db: D1DatabaseLike,
     opts: { runnerSubscriptionId: string; status: string; nowMs: number },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    await db
+    await runOrStage(db
         .prepare(
             `UPDATE runner_billing
              SET status = ?1,
                  updated_at_ms = ?2
              WHERE runner_subscription_id = ?3`,
         )
-        .bind(opts.status, opts.nowMs, opts.runnerSubscriptionId)
-        .run();
+        .bind(opts.status, opts.nowMs, opts.runnerSubscriptionId), batch);
 }

@@ -407,6 +407,25 @@ pub trait DurableWebhookInbox: fmt::Debug + Send + Sync {
         effect_kind: &str,
         now_ms: u64,
     ) -> Result<EffectReservation, String>;
+
+    /// Reserve an effect while carrying optional request-scoped authority.
+    ///
+    /// Existing inboxes retain their behavior through this default. An
+    /// ownership-aware implementation uses the context in the same D1 batch
+    /// as the pending effect witness.
+    fn reserve_effect_with_context(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<EffectReservation, String> {
+        let _ = context;
+        self.reserve_effect(claim, owner, event, effect_key, effect_kind, now_ms)
+    }
     /// Remove a pending witness only when the materializer proved no business
     /// mutation happened. Ownership loss is retryable and must not delete it.
     fn abort_reserved_effect(
@@ -435,6 +454,22 @@ pub trait DurableWebhookInbox: fmt::Debug + Send + Sync {
         effect_kind: &str,
         now_ms: u64,
     ) -> Result<bool, String>;
+
+    /// Commit an effect while carrying the same request authority used to
+    /// reserve it. Implementations fail closed if that registration is absent.
+    fn commit_effect_with_context(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<bool, String> {
+        let _ = context;
+        self.commit_effect(claim, owner, event, effect_key, effect_kind, now_ms)
+    }
 }
 
 // =========================================================================
@@ -485,10 +520,10 @@ impl std::error::Error for MaterializerError {}
 pub trait StateMaterializer: fmt::Debug + Send + Sync {
     /// `customer.subscription.deleted` → downgrade tenant to Free.
     fn on_subscription_deleted(&self, env: &StripeWebhookEnvelope)
-        -> Result<(), MaterializerError>;
+    -> Result<(), MaterializerError>;
     /// `customer.subscription.updated` → refresh tier + status.
     fn on_subscription_updated(&self, env: &StripeWebhookEnvelope)
-        -> Result<(), MaterializerError>;
+    -> Result<(), MaterializerError>;
     /// `invoice.paid` → extend access expiry + mark invoice paid.
     fn on_invoice_paid(&self, env: &StripeWebhookEnvelope) -> Result<(), MaterializerError>;
     /// `invoice.payment_failed` → set grace-period flag.
@@ -507,6 +542,61 @@ pub trait StateMaterializer: fmt::Debug + Send + Sync {
     /// state transition so a refund cannot leave a paid tier alive.
     fn on_charge_refunded(&self, _env: &StripeWebhookEnvelope) -> Result<(), MaterializerError> {
         Ok(())
+    }
+
+    /// Context-aware materialization hook. Defaults preserve legacy adapters.
+    fn on_subscription_deleted_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        let _ = context;
+        self.on_subscription_deleted(env)
+    }
+    /// Context-aware materialization hook. Defaults preserve legacy adapters.
+    fn on_subscription_updated_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        let _ = context;
+        self.on_subscription_updated(env)
+    }
+    /// Context-aware materialization hook. Defaults preserve legacy adapters.
+    fn on_invoice_paid_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        let _ = context;
+        self.on_invoice_paid(env)
+    }
+    /// Context-aware materialization hook. Defaults preserve legacy adapters.
+    fn on_invoice_payment_failed_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        let _ = context;
+        self.on_invoice_payment_failed(env)
+    }
+    /// Context-aware materialization hook. Defaults preserve legacy adapters.
+    fn on_charge_dispute_created_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        let _ = context;
+        self.on_charge_dispute_created(env)
+    }
+    /// Context-aware materialization hook. Defaults preserve legacy adapters.
+    fn on_charge_refunded_with_context(
+        &self,
+        env: &StripeWebhookEnvelope,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), MaterializerError> {
+        let _ = context;
+        self.on_charge_refunded(env)
     }
 }
 
@@ -616,6 +706,16 @@ pub trait AuditEmitter: fmt::Debug + Send + Sync {
     /// Emit one audit row. Errors propagate as HTTP 500 (Stripe retries
     /// → next delivery hits the dedup row → resolved without re-dispatch).
     fn emit(&self, record: &AuditRecord) -> Result<(), String>;
+
+    /// Emit with optional request-scoped ownership authority.
+    fn emit_with_context(
+        &self,
+        record: &AuditRecord,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<(), String> {
+        let _ = context;
+        self.emit(record)
+    }
 }
 
 // =========================================================================

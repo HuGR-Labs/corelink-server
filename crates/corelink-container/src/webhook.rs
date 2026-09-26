@@ -43,12 +43,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Router,
     body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::post,
-    Router,
 };
 use corelink_billing::stripe::real::webhook_dispatch::{
     DispatchResponse, DurableWebhookRequestContext, WebhookDispatcher,
@@ -56,16 +56,13 @@ use corelink_billing::stripe::real::webhook_dispatch::{
 
 use crate::storage::{
     staging_load_test_admission::{
-        admit_staging_load_test_request, StagingLoadTestAdmissionContext,
-        StagingLoadTestAdmissionGate,
+        StagingLoadTestAdmissionContext, StagingLoadTestAdmissionGate,
+        admit_staging_load_test_request,
     },
     staging_load_test_ownership::StagingLoadTestScenario,
 };
 
-#[derive(Debug)]
-struct StagingWebhookRequestContext(Arc<StagingLoadTestAdmissionContext>);
-
-impl DurableWebhookRequestContext for StagingWebhookRequestContext {
+impl DurableWebhookRequestContext for StagingLoadTestAdmissionContext {
     fn as_any(&self) -> &dyn core::any::Any {
         self
     }
@@ -145,9 +142,7 @@ pub async fn stripe_webhook_handler(
         Ok(context) => context,
         Err(_) => return (StatusCode::FORBIDDEN, "forbidden").into_response(),
     };
-    let request_context = admission.map(|context| {
-        Arc::new(StagingWebhookRequestContext(context)) as Arc<dyn DurableWebhookRequestContext>
-    });
+    let request_context = admission.map(|context| context as Arc<dyn DurableWebhookRequestContext>);
     let resp = state
         .dispatcher
         .process_with_context(&body, sig_header, request_context.as_deref());

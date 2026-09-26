@@ -40,6 +40,13 @@ import {
 } from "./stripe_persistence.js";
 import { resolveAuthoritativeRunnerSubscription } from "./stripe_persistence_runner.js";
 import type { D1DatabaseLike } from "./billing_checkout";
+import {
+    verifyStagingOwnershipEnvelope,
+    type StagingOwnershipContext,
+} from "../staging_load_test_ownership.js";
+import { commitStripeStagingWrites, StripeStagingWriteBatch } from "./stripe_staging_batch.js";
+
+const STAGING_OWNERSHIP_HEADER = "x-corelink-staging-load-admission";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +55,7 @@ import type { D1DatabaseLike } from "./billing_checkout";
 export interface StripeWebhookEnv extends AnalyticsEmitEnv {
     STRIPE_WEBHOOK_SECRET?: string;
     BILLING_DB?: D1DatabaseLike;
+    CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY?: string;
     // Stripe price ids per paid tier — the same env vars the checkout backend
     // (corelink-stripe-real client.rs:649 `STRIPE_PRICE_ID_{TIER}`) reads to
     // CREATE a session. The webhook reads them in REVERSE (price → tier) so an
@@ -117,6 +125,7 @@ async function reconcileCurrentRunnersEntitlement(
     eventSubscriptionId: string,
     tenantId: string | null,
     nowMs: number,
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
     const authority = await resolveAuthoritativeRunnerSubscription({
         eventSubscriptionId,
@@ -139,6 +148,7 @@ async function reconcileCurrentRunnersEntitlement(
         authorityIsCurrent: authority.authorityIsCurrent,
         entitlement,
         nowMs,
+        batch,
     });
 }
 
@@ -219,6 +229,32 @@ export async function handleStripeWebhook(
     const obj = event.data.object;
     const tenantId = tenantIdFromMetadata(obj);
     const nowMs = Date.now();
+    let ownershipContext: StagingOwnershipContext | null = null;
+    const ownershipEnvelope = request.headers.get(STAGING_OWNERSHIP_HEADER);
+    if (ownershipEnvelope !== null) {
+        const requestId = ownershipEnvelope.split(".")[7] ?? "";
+        try {
+            ownershipContext = await verifyStagingOwnershipEnvelope(
+                ownershipEnvelope,
+                "webhook",
+                requestId,
+                nowMs,
+                env.CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY ?? "",
+            );
+            if (!ownershipContext) return new Response("invalid_staging_admission", { status: 403 });
+        } catch {
+            return new Response("invalid_staging_admission", { status: 403 });
+        }
+    }
+
+    // Admitted requests collect the same prepared D1 writes as ordinary Stripe
+    // traffic and commit them with the unique inbox/effect ownership fence.
+    if (ownershipContext) {
+        if (!event.id || !env.BILLING_DB) {
+            return new Response("staging_inbox_unavailable", { status: 503 });
+        }
+    }
+    const requestBatch = ownershipContext ? new StripeStagingWriteBatch() : undefined;
 
     // --- 4. Collect the REQUIRED durable entitlement/billing writes + the
     // analytics emit, then run them in the unified process-then-claim flow below
@@ -246,7 +282,7 @@ export async function handleStripeWebhook(
                 stripeCustomerId:
                     typeof obj["customer"] === "string" ? obj["customer"] : "",
                 checkoutCreatedAtMs: checkoutCreatedAtMs(obj),
-            }));
+            }, requestBatch));
             break;
         }
         // checkout.session.async_payment_succeeded is how a DELAYED payment
@@ -337,7 +373,7 @@ export async function handleStripeWebhook(
                         status: "active",
                         stripeCustomerId,
                         nowMs,
-                    }));
+                    }, requestBatch));
                 emitEvent = {
                     id: newEventId(),
                     event_name: "runner_subscription_started",
@@ -422,7 +458,7 @@ export async function handleStripeWebhook(
                 amountTotal,
                 nowMs,
                 checkoutCreatedAtMs: checkoutCreatedAtMs(obj),
-            });
+            }, requestBatch);
             break;
         }
 
@@ -500,7 +536,7 @@ export async function handleStripeWebhook(
                         status: billingStatus,
                         currentPeriodEndMs,
                         nowMs,
-                    }));
+                    }, requestBatch));
 
                 // (a) DUNNING-RECOVERY re-activation. A subscription that
                 // returns to active/trialing WITHOUT a fresh checkout session
@@ -526,7 +562,7 @@ export async function handleStripeWebhook(
                 // Promise.all race.
                 if (grantsAccess) {
                     requiredWrites.push(() =>
-                        reactivateTierSelectionBySubscription(db, { stripeSubscriptionId, nowMs }),
+                        reactivateTierSelectionBySubscription(db, { stripeSubscriptionId, nowMs }, requestBatch),
                     );
                 }
                 // (b) Propagate an in-place plan change to the entitlement tier.
@@ -538,7 +574,7 @@ export async function handleStripeWebhook(
                     requiredWrites.push(() => updateTierSelectionTierByCustomer(db, {
                             stripeCustomerId,
                             tier: newTier,
-                        }));
+                        }, requestBatch));
                 }
                 // (c) Keep the access gate in sync with the Stripe status. A
                 // subscription that drops to past_due/unpaid/paused/canceled here
@@ -562,7 +598,7 @@ export async function handleStripeWebhook(
                 if (!grantsAccess) {
                     requiredWrites.push(() => deactivateTierSelectionBySubscription(db, {
                             stripeSubscriptionId,
-                        }));
+                        }, requestBatch));
                 }
 
                 // (d) RUNNER subscription: the SEPARATE runner subscription
@@ -593,7 +629,7 @@ export async function handleStripeWebhook(
                                 stripeCustomerId:
                                     typeof stripeCustomerId === "string" ? stripeCustomerId : null,
                                 nowMs,
-                            }));
+                            }, requestBatch));
                     } else {
                         // No tenant/plan metadata on this subscription object
                         // (the common case — checkout mapped the row already):
@@ -602,11 +638,11 @@ export async function handleStripeWebhook(
                                 runnerSubscriptionId: stripeSubscriptionId,
                                 status: rawStatus ?? "unknown",
                                 nowMs,
-                            }));
+                            }, requestBatch));
                     }
                     requiredWrites.push(() => reconcileCurrentRunnersEntitlement(
                         db, env, event, stripeSubscriptionId, tenantId, nowMs,
-                    ));
+                        requestBatch));
                 }
             }
 
@@ -662,7 +698,7 @@ export async function handleStripeWebhook(
                         stripeSubscriptionId,
                         currentPeriodEndMs: periodEndSecs * 1000,
                         nowMs,
-                    }));
+                    }, requestBatch));
             }
 
             // RUNNER subscription seed. subscription.created is the first event
@@ -689,17 +725,17 @@ export async function handleStripeWebhook(
                                 stripeCustomerId:
                                     typeof stripeCustomerId === "string" ? stripeCustomerId : null,
                                 nowMs,
-                            }));
+                            }, requestBatch));
                     } else {
                         requiredWrites.push(() => markRunnerBillingStatusBySubscription(db, {
                                 runnerSubscriptionId: stripeSubscriptionId,
                                 status: rawStatus ?? "unknown",
                                 nowMs,
-                            }));
+                            }, requestBatch));
                     }
                     requiredWrites.push(() => reconcileCurrentRunnersEntitlement(
                         db, env, event, stripeSubscriptionId, tenantId, nowMs,
-                    ));
+                        requestBatch));
                 }
             }
             break;
@@ -751,7 +787,7 @@ export async function handleStripeWebhook(
                         stripeSubscriptionId,
                         status: "past_due",
                         nowMs,
-                    }));
+                    }, requestBatch));
                 // 2. CANONICAL gate: flip tier_selections away from 'active'.
                 //
                 // H1 FIX (money/GDPR): revoke ONLY the tier_selection tied to THIS
@@ -772,7 +808,7 @@ export async function handleStripeWebhook(
                 // robust.
                 requiredWrites.push(() => deactivateTierSelectionBySubscription(db, {
                         stripeSubscriptionId,
-                    }));
+                    }, requestBatch));
 
                 // The invoice has no subscription creation timestamp, so it lacks
                 // the provider tuple required by the durable entitlement fence.
@@ -784,7 +820,7 @@ export async function handleStripeWebhook(
                         runnerSubscriptionId: stripeSubscriptionId,
                         status: "past_due",
                         nowMs,
-                    }));
+                    }, requestBatch));
             }
 
             emitEvent = {
@@ -806,7 +842,7 @@ export async function handleStripeWebhook(
 
             if (env.BILLING_DB) {
                 const db = env.BILLING_DB;
-                requiredWrites.push(() => cancelBilling(db, { stripeSubscriptionId, nowMs }));
+                requiredWrites.push(() => cancelBilling(db, { stripeSubscriptionId, nowMs }, requestBatch));
                 // CANONICAL gate: a canceled subscription must lose access AND be
                 // able to re-subscribe. The old handler left
                 // tier_selections.subscription_state='active', which both kept
@@ -830,7 +866,7 @@ export async function handleStripeWebhook(
                 // carry no top-level `customer` field.
                 requiredWrites.push(() => deactivateTierSelectionBySubscription(db, {
                         stripeSubscriptionId,
-                    }));
+                    }, requestBatch));
 
                 // A deleted Runners subscription uses Stripe's current customer
                 // state before it can touch the shared durable fence. Cache
@@ -838,13 +874,13 @@ export async function handleStripeWebhook(
                 if (runnerEntitlementFromSubscriptionPrice(obj, env)) {
                     requiredWrites.push(() => reconcileCurrentRunnersEntitlement(
                         db, env, event, stripeSubscriptionId, tenantId, nowMs,
-                    ));
+                        requestBatch));
                 }
                 requiredWrites.push(() => markRunnerBillingStatusBySubscription(db, {
                         runnerSubscriptionId: stripeSubscriptionId,
                         status: "canceled",
                         nowMs,
-                    }));
+                    }, requestBatch));
             }
 
             emitEvent = {
@@ -882,7 +918,25 @@ export async function handleStripeWebhook(
         for (const write of requiredWrites) {
             await write();
         }
+        if (requestBatch && ownershipContext && env.BILLING_DB && event.id) {
+            const outcome = HANDLED_EVENT_TYPES.has(event.type) ? "dispatched" : "acknowledged_unknown";
+            await commitStripeStagingWrites(
+                env.BILLING_DB,
+                ownershipContext,
+                { id: event.id, type: event.type },
+                outcome,
+                `stripe_webhook:${event.id}`,
+                nowMs,
+                requestBatch,
+            );
+        }
     } catch (e: unknown) {
+        if (ownershipContext) {
+            const message = e instanceof Error ? e.message : "";
+            return message === "staging webhook replay rejected"
+                ? new Response("staging_admission_replayed", { status: 409 })
+                : new Response("staging_webhook_write_failed", { status: 500 });
+        }
         console.error(
             `[stripe-webhook] entitlement/billing write failed for ${event.type} ${event.id} — returning 500 for Stripe redelivery: ${(e as Error).message}`,
         );
@@ -903,7 +957,7 @@ export async function handleStripeWebhook(
     // the handler fails closed with 503 at the top when it is missing; the
     // check below is TS narrowing.)
     let isFirstDelivery = true;
-    if (event.id && env.BILLING_DB) {
+    if (!ownershipContext && event.id && env.BILLING_DB) {
         const claim = await claimWebhookEvent(env.BILLING_DB, {
             eventId: event.id,
             eventType: event.type,

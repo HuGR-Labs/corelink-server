@@ -58,10 +58,13 @@ export function fakeDb(): {
     const runCalls: Array<{ sql: string; params: unknown[] }> = [];
     // Durable mirror of the dedup PK: event_ids already claimed.
     const claimedEventIds = new Set<string>();
+    // Staging ownership rows have a separate unique receipt fence.
+    const ownedReceipts = new Set<string>();
 
     const prepare = vi.fn((sql: string) => {
         const params: unknown[] = [];
         const stmt = {
+            sql,
             bind: vi.fn((...args: unknown[]) => {
                 params.push(...args);
                 return stmt;
@@ -78,6 +81,13 @@ export function fakeDb(): {
                         claimedEventIds.add(eventId);
                         changes = 1;
                     }
+                } else if (sql.includes("INSERT INTO staging_load_test_resources") && sql.includes("VALUES")) {
+                    const receiptKey = params.slice(0, 4).join("\0");
+                    if (ownedReceipts.has(receiptKey)) {
+                        changes = 0;
+                    } else {
+                        ownedReceipts.add(receiptKey);
+                    }
                 }
                 return { meta: { changes } };
             }),
@@ -85,10 +95,35 @@ export function fakeDb(): {
         return stmt;
     });
     const batch = vi.fn(async (statements: Array<{ run(): Promise<unknown> }>) => {
-        for (const statement of statements) await statement.run();
-        // The fixture's recorded calls are structural; production D1 supplies
-        // the RETURNING row from the first statement when the fence advances.
-        return [{ results: [{}] }, {}, { results: [{}] }];
+        if (statements.length === 3) {
+            for (const statement of statements) await statement.run();
+            // Runner entitlement CAS relies on a RETURNING row from the fence.
+            return [{ results: [{}] }, {}, { results: [{}] }];
+        }
+        const previousClaims = new Set(claimedEventIds);
+        const previousReceipts = new Set(ownedReceipts);
+        const initialCallCount = runCalls.length;
+        const results: unknown[] = [];
+        let priorChanges = 1;
+        try {
+            for (const statement of statements) {
+                const candidate = statement as { sql?: string; run(): Promise<{ meta?: { changes?: number } }> };
+                if (candidate.sql?.includes("WHERE changes() = 0") && priorChanges === 0) {
+                    throw new Error("ownership replay conflict");
+                }
+                const result = await statement.run() as { meta?: { changes?: number } };
+                priorChanges = result.meta?.changes ?? 0;
+                results.push(result);
+            }
+            return results;
+        } catch (error) {
+            claimedEventIds.clear();
+            for (const id of previousClaims) claimedEventIds.add(id);
+            ownedReceipts.clear();
+            for (const receipt of previousReceipts) ownedReceipts.add(receipt);
+            runCalls.splice(initialCallCount);
+            throw error;
+        }
     });
     return { prepare, batch, runCalls };
 }

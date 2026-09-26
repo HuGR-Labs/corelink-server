@@ -6,14 +6,20 @@
 use std::sync::Arc;
 
 use corelink_billing::stripe::real::webhook_dispatch::{
-    DurableWebhookEvent, DurableWebhookInbox, EffectReservation,
+    DurableWebhookEvent, DurableWebhookInbox, DurableWebhookRequestContext, EffectReservation,
     InboxClaim as DispatcherInboxClaim, InboxReceiveOutcome,
     InboxTerminalState as DispatcherInboxTerminalState,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
+use crate::storage::{
+    d1_http::{D1BatchStatement, D1HttpClient, D1Row},
+    staging_load_test_admission::StagingLoadTestAdmissionContext,
+    staging_load_test_ownership::{
+        StagingLoadTestDisposition, StagingLoadTestResourceClass, StagingLoadTestScenario,
+    },
+};
 
 /// Insert an authenticated event without replacing an existing body.
 pub const SQL_RECEIVE: &str = "INSERT INTO stripe_webhook_event_inbox (event_id, event_type, raw_body_hex, payload_sha256, stripe_created_at_ms, state, received_at_ms, updated_at_ms) VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?6, ?6) ON CONFLICT(event_id) DO NOTHING RETURNING state";
@@ -36,6 +42,11 @@ pub const SQL_EFFECT_SEAL: &str = "UPDATE stripe_webhook_event_effects SET effec
 pub const SQL_EFFECT_ABORT: &str = "DELETE FROM stripe_webhook_event_effects WHERE event_id = ?1 AND effect_key = ?2 AND payload_sha256 = ?3 AND fence = ?4 AND effect_kind = ?5 AND EXISTS (SELECT 1 FROM stripe_webhook_event_inbox WHERE event_id = ?1 AND state = 'claimed' AND fence = ?4 AND claim_owner = ?6 AND claim_expires_at_ms > ?7) RETURNING event_id";
 /// Terminalize only when the witness just inserted by the same fenced claim exists.
 pub const SQL_EFFECT_COMPLETE: &str = "UPDATE stripe_webhook_event_inbox SET state = 'completed', claim_owner = NULL, claim_expires_at_ms = NULL, updated_at_ms = ?1, terminal_at_ms = ?1, last_error = NULL WHERE event_id = ?2 AND state = 'claimed' AND fence = ?3 AND claim_owner = ?4 AND claim_expires_at_ms > ?1 AND EXISTS (SELECT 1 FROM stripe_webhook_event_effects WHERE event_id = ?2 AND effect_key = ?5 AND payload_sha256 = ?6 AND fence = ?3 AND effect_kind = ?7) RETURNING event_id";
+
+const SQL_VERIFY_OWNERSHIP: &str = "SELECT resource.receipt_ref FROM staging_load_test_resources AS resource JOIN staging_load_test_runs AS run ON run.run_id = resource.run_id AND run.scenario = resource.scenario WHERE resource.run_id = ?1 AND resource.scenario = 'webhook' AND run.target_environment = 'staging' AND run.target_deployment_sha = ?2 AND run.state = 'open' AND resource.resource_class = ?3 AND resource.opaque_handle = ?4 AND resource.disposition = ?5 LIMIT 1";
+const SQL_REQUIRE_ONE_CHANGE: &str = "INSERT INTO staging_load_test_resources (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) SELECT '', 'webhook', 'webhook_effect', '', '', 'disposable', 'invalid', 0 WHERE changes() != 1";
+const SQL_REQUIRE_NEW_OWNERSHIP: &str = SQL_REQUIRE_ONE_CHANGE;
+const SQL_REQUIRE_EXISTING_OWNERSHIP: &str = "INSERT INTO staging_load_test_resources (run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) SELECT '', 'webhook', 'webhook_effect', '', '', 'disposable', 'invalid', 0 WHERE NOT EXISTS (SELECT 1 FROM staging_load_test_resources AS resource JOIN staging_load_test_runs AS run ON run.run_id = resource.run_id AND run.scenario = resource.scenario WHERE resource.run_id = ?1 AND resource.scenario = 'webhook' AND run.target_environment = 'staging' AND run.target_deployment_sha = ?2 AND run.state = 'open' AND resource.resource_class = ?3 AND resource.opaque_handle = ?4 AND resource.disposition = ?5)";
 
 /// Authenticated event bytes and identity persisted before processing.
 #[derive(Clone, Debug)]
@@ -124,20 +135,74 @@ impl D1WebhookInbox {
         event: &AuthenticatedWebhookEvent,
         now_ms: u64,
     ) -> Result<InboxReceipt, String> {
+        self.receive_with_ownership_context(event, now_ms, None)
+    }
+
+    /// Persist an authenticated event and, for admitted staging traffic,
+    /// register its run ownership in the same D1 batch.
+    pub fn receive_with_ownership_context(
+        &self,
+        event: &AuthenticatedWebhookEvent,
+        now_ms: u64,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<InboxReceipt, String> {
         validate_authenticated_event(event)?;
-        let rows = self.run(
+        let receive = D1BatchStatement::new(
             SQL_RECEIVE,
             vec![
                 json!(event.event_id),
                 json!(event.event_type),
                 json!(event.raw_body_hex),
                 json!(event.payload_sha256),
-                json!(event
-                    .stripe_created_at_ms
-                    .map(|v| i64::try_from(v).unwrap_or(i64::MAX))),
+                json!(
+                    event
+                        .stripe_created_at_ms
+                        .map(|v| i64::try_from(v).unwrap_or(i64::MAX))
+                ),
                 json!(i64::try_from(now_ms).unwrap_or(i64::MAX)),
             ],
-        )?;
+        );
+        let rows = if let Some(context) = request_context {
+            let context = verified_staging_context(Some(context))?
+                .ok_or_else(|| "webhook ownership: context is missing".to_owned())?;
+            let handle = opaque_handle(context, "stripe-webhook-inbox", &event.event_id);
+            let [registration, unique_guard, verify] = ownership_statements(
+                context,
+                StagingLoadTestResourceClass::WebhookInbox,
+                "webhook_inbox",
+                StagingLoadTestDisposition::Disposable,
+                &handle,
+                i64::try_from(now_ms).unwrap_or(i64::MAX),
+            )?;
+            let result = self.run_batch(vec![
+                receive,
+                D1BatchStatement::new(SQL_REQUIRE_ONE_CHANGE, vec![]),
+                registration,
+                unique_guard,
+                verify,
+            ])?;
+            require_ownership_result(&result, 4)?;
+            result
+                .first()
+                .cloned()
+                .ok_or_else(|| "webhook inbox: receive batch result is missing".to_owned())?
+        } else {
+            self.run(
+                SQL_RECEIVE,
+                vec![
+                    json!(event.event_id),
+                    json!(event.event_type),
+                    json!(event.raw_body_hex),
+                    json!(event.payload_sha256),
+                    json!(
+                        event
+                            .stripe_created_at_ms
+                            .map(|v| i64::try_from(v).unwrap_or(i64::MAX))
+                    ),
+                    json!(i64::try_from(now_ms).unwrap_or(i64::MAX)),
+                ],
+            )?
+        };
         if !rows.is_empty() {
             return Ok(InboxReceipt::Received);
         }
@@ -240,6 +305,27 @@ impl D1WebhookInbox {
         effect_kind: &str,
         now_ms: u64,
     ) -> Result<bool, String> {
+        self.commit_effect_with_ownership_context(
+            claim,
+            owner,
+            event,
+            effect_key,
+            effect_kind,
+            now_ms,
+            None,
+        )
+    }
+
+    fn commit_effect_with_ownership_context(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<bool, String> {
         validate_durable_event(event)?;
         if claim.event_id != event.event_id {
             return Err("webhook inbox: claim and authenticated event differ".to_owned());
@@ -250,7 +336,7 @@ impl D1WebhookInbox {
         let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
         let fence = i64::try_from(claim.fence).unwrap_or(i64::MAX);
         let pending_kind = format!("pending:{effect_kind}");
-        let result = self.run_batch(vec![
+        let mut statements = vec![
             D1BatchStatement::new(
                 SQL_EFFECT_SEAL,
                 vec![
@@ -276,9 +362,41 @@ impl D1WebhookInbox {
                     json!(effect_kind),
                 ],
             ),
-        ])?;
+        ];
+        if let Some(request_context) = request_context {
+            let context = verified_staging_context(Some(request_context))?
+                .ok_or_else(|| "webhook ownership: context is missing".to_owned())?;
+            let handle = effect_handle(context, event, effect_key);
+            let [_registration, _unique_guard, verify] = ownership_statements(
+                context,
+                StagingLoadTestResourceClass::WebhookEffect,
+                "webhook_effect",
+                StagingLoadTestDisposition::Disposable,
+                &handle,
+                now,
+            )?;
+            statements.insert(1, D1BatchStatement::new(SQL_REQUIRE_ONE_CHANGE, vec![]));
+            statements.insert(3, D1BatchStatement::new(SQL_REQUIRE_ONE_CHANGE, vec![]));
+            statements.push(verify);
+            statements.push(D1BatchStatement::new(
+                SQL_REQUIRE_EXISTING_OWNERSHIP,
+                vec![
+                    json!(context.run_id()),
+                    json!(context.target_deployment_sha()),
+                    json!("webhook_effect"),
+                    json!(handle),
+                    json!("disposable"),
+                ],
+            ));
+        }
+        let result = self.run_batch(statements)?;
+        if request_context.is_some() {
+            require_ownership_result(&result, 4)?;
+        }
         let inserted = result.first().is_some_and(|rows| !rows.is_empty());
-        let completed = result.get(1).is_some_and(|rows| !rows.is_empty());
+        let completed = result
+            .get(if request_context.is_some() { 2 } else { 1 })
+            .is_some_and(|rows| !rows.is_empty());
         Ok(inserted && completed)
     }
 
@@ -291,6 +409,27 @@ impl D1WebhookInbox {
         effect_kind: &str,
         now_ms: u64,
     ) -> Result<EffectReservation, String> {
+        self.reserve_effect_with_ownership_context(
+            claim,
+            owner,
+            event,
+            effect_key,
+            effect_kind,
+            now_ms,
+            None,
+        )
+    }
+
+    fn reserve_effect_with_ownership_context(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<EffectReservation, String> {
         validate_durable_event(event)?;
         if claim.event_id != event.event_id || effect_key.is_empty() || effect_kind.is_empty() {
             return Err("webhook inbox: invalid effect reservation identity".to_owned());
@@ -298,7 +437,7 @@ impl D1WebhookInbox {
         let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
         let fence = i64::try_from(claim.fence).unwrap_or(i64::MAX);
         let pending_kind = format!("pending:{effect_kind}");
-        let rows = self.run(
+        let effect_insert = D1BatchStatement::new(
             SQL_EFFECT_INSERT,
             vec![
                 json!(claim.event_id),
@@ -309,7 +448,45 @@ impl D1WebhookInbox {
                 json!(now),
                 json!(owner),
             ],
-        )?;
+        );
+        let rows = if let Some(request_context) = request_context {
+            let context = verified_staging_context(Some(request_context))?
+                .ok_or_else(|| "webhook ownership: context is missing".to_owned())?;
+            let handle = effect_handle(context, event, effect_key);
+            let [registration, unique_guard, verify] = ownership_statements(
+                context,
+                StagingLoadTestResourceClass::WebhookEffect,
+                "webhook_effect",
+                StagingLoadTestDisposition::Disposable,
+                &handle,
+                now,
+            )?;
+            let result = self.run_batch(vec![
+                effect_insert,
+                D1BatchStatement::new(SQL_REQUIRE_ONE_CHANGE, vec![]),
+                registration,
+                unique_guard,
+                verify,
+            ])?;
+            require_ownership_result(&result, 4)?;
+            result
+                .first()
+                .cloned()
+                .ok_or_else(|| "webhook inbox: effect batch result is missing".to_owned())?
+        } else {
+            self.run(
+                SQL_EFFECT_INSERT,
+                vec![
+                    json!(claim.event_id),
+                    json!(effect_key),
+                    json!(event.payload_sha256),
+                    json!(fence),
+                    json!(pending_kind),
+                    json!(now),
+                    json!(owner),
+                ],
+            )?
+        };
         if !rows.is_empty() {
             return Ok(EffectReservation::Reserved);
         }
@@ -384,6 +561,29 @@ impl DurableWebhookInbox for D1WebhookInbox {
         }
     }
 
+    fn receive_with_context(
+        &self,
+        event: &DurableWebhookEvent,
+        now_ms: u64,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<InboxReceiveOutcome, String> {
+        match self.receive_with_ownership_context(
+            &AuthenticatedWebhookEvent {
+                event_id: event.event_id.clone(),
+                event_type: event.event_type.clone(),
+                raw_body_hex: event.raw_body_hex.clone(),
+                payload_sha256: event.payload_sha256.clone(),
+                stripe_created_at_ms: Some(event.stripe_created_at_ms),
+            },
+            now_ms,
+            context,
+        )? {
+            InboxReceipt::Received => Ok(InboxReceiveOutcome::Received),
+            InboxReceipt::Terminal => Ok(InboxReceiveOutcome::Terminal),
+            InboxReceipt::LegacyAmbiguous => Ok(InboxReceiveOutcome::LegacyAmbiguous),
+        }
+    }
+
     fn claim(
         &self,
         event_id: &str,
@@ -441,6 +641,30 @@ impl DurableWebhookInbox for D1WebhookInbox {
         )
     }
 
+    fn reserve_effect_with_context(
+        &self,
+        claim: &DispatcherInboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<EffectReservation, String> {
+        self.reserve_effect_with_ownership_context(
+            &InboxClaim {
+                event_id: claim.event_id.clone(),
+                fence: claim.fence,
+            },
+            owner,
+            event,
+            effect_key,
+            effect_kind,
+            now_ms,
+            context,
+        )
+    }
+
     fn abort_reserved_effect(
         &self,
         claim: &DispatcherInboxClaim,
@@ -484,6 +708,30 @@ impl DurableWebhookInbox for D1WebhookInbox {
             now_ms,
         )
     }
+
+    fn commit_effect_with_context(
+        &self,
+        claim: &DispatcherInboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<bool, String> {
+        self.commit_effect_with_ownership_context(
+            &InboxClaim {
+                event_id: claim.event_id.clone(),
+                fence: claim.fence,
+            },
+            owner,
+            event,
+            effect_key,
+            effect_kind,
+            now_ms,
+            context,
+        )
+    }
 }
 
 fn text(row: &D1Row, name: &str) -> Result<String, String> {
@@ -498,6 +746,92 @@ fn number(row: &D1Row, name: &str) -> Result<u64, String> {
         .and_then(Value::as_i64)
         .and_then(|v| u64::try_from(v).ok())
         .ok_or_else(|| format!("webhook inbox: row missing `{name}`"))
+}
+
+fn verified_staging_context(
+    context: Option<&dyn DurableWebhookRequestContext>,
+) -> Result<Option<&StagingLoadTestAdmissionContext>, String> {
+    context
+        .map(|context| {
+            context
+                .as_any()
+                .downcast_ref::<StagingLoadTestAdmissionContext>()
+                .ok_or_else(|| "webhook ownership: request context is invalid".to_owned())
+        })
+        .transpose()
+}
+
+fn ownership_statements(
+    context: &StagingLoadTestAdmissionContext,
+    class: StagingLoadTestResourceClass,
+    class_name: &'static str,
+    disposition: StagingLoadTestDisposition,
+    opaque_handle: &str,
+    now_ms: i64,
+) -> Result<[D1BatchStatement; 3], String> {
+    context
+        .require_ownership_scenario(StagingLoadTestScenario::Webhook)
+        .map_err(|_| "webhook ownership: admitted scenario is invalid".to_owned())?;
+    let registration = context
+        .ownership_registration(class, disposition, opaque_handle)
+        .map_err(|_| "webhook ownership: registration identity is invalid".to_owned())?;
+    let statement = registration
+        .d1_statement(now_ms)
+        .map_err(|_| "webhook ownership: registration statement is invalid".to_owned())?;
+    let disposition_name = match disposition {
+        StagingLoadTestDisposition::Disposable => "disposable",
+        StagingLoadTestDisposition::Retained => "retained",
+    };
+    let verify = D1BatchStatement::new(
+        SQL_VERIFY_OWNERSHIP,
+        vec![
+            json!(context.run_id()),
+            json!(context.target_deployment_sha()),
+            json!(class_name),
+            json!(opaque_handle),
+            json!(disposition_name),
+        ],
+    );
+    let unique_guard = D1BatchStatement::new(SQL_REQUIRE_NEW_OWNERSHIP, vec![]);
+    Ok([statement, unique_guard, verify])
+}
+
+fn require_ownership_result(result: &[Vec<D1Row>], statement_index: usize) -> Result<(), String> {
+    if result
+        .get(statement_index)
+        .is_some_and(|rows| rows.len() == 1)
+    {
+        Ok(())
+    } else {
+        Err("webhook ownership: durable registration is missing".to_owned())
+    }
+}
+
+fn opaque_handle(context: &StagingLoadTestAdmissionContext, domain: &str, value: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"corelink/webhook-ownership-handle/v1\0");
+    digest.update(context.run_id().as_bytes());
+    digest.update([0]);
+    digest.update(context.target_deployment_sha().as_bytes());
+    digest.update([0]);
+    digest.update(context.admitted_at_ms().to_be_bytes());
+    digest.update([0]);
+    digest.update(domain.as_bytes());
+    digest.update([0]);
+    digest.update(value.as_bytes());
+    format!("{}:{}", domain, hex::encode(digest.finalize()))
+}
+
+fn effect_handle(
+    context: &StagingLoadTestAdmissionContext,
+    event: &DurableWebhookEvent,
+    effect_key: &str,
+) -> String {
+    opaque_handle(
+        context,
+        "stripe-webhook-effect",
+        &format!("{}\0{}", event.event_id, effect_key),
+    )
 }
 
 fn validate_authenticated_event(event: &AuthenticatedWebhookEvent) -> Result<(), String> {
@@ -538,6 +872,10 @@ fn validate_durable_event(event: &DurableWebhookEvent) -> Result<(), String> {
     reason = "tests use direct SQLite assertions"
 )]
 mod tests {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    use hmac::{Hmac, Mac};
     use rusqlite::Connection;
 
     use super::*;
@@ -774,5 +1112,235 @@ mod tests {
             stripe_created_at_ms: None,
         };
         assert!(validate_authenticated_event(&event).is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn verified_admission_context_registers_the_inbox_in_its_d1_batch() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("loopback listener");
+        let endpoint = format!(
+            "http://{}",
+            listener.local_addr().expect("loopback address")
+        );
+        let server = std::thread::spawn(move || {
+            for request_index in 0..4 {
+                let (mut stream, _) = listener.accept().expect("loopback accept");
+                let mut bytes = Vec::new();
+                loop {
+                    let mut buffer = [0_u8; 4096];
+                    let read = stream.read(&mut buffer).expect("request read");
+                    bytes.extend_from_slice(&buffer[..read]);
+                    let Some(headers_end) = bytes.windows(4).position(|part| part == b"\r\n\r\n")
+                    else {
+                        continue;
+                    };
+                    let headers = std::str::from_utf8(&bytes[..headers_end]).expect("headers utf8");
+                    let length = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.strip_prefix("content-length: ")
+                                .or_else(|| line.strip_prefix("Content-Length: "))
+                        })
+                        .expect("content length")
+                        .parse::<usize>()
+                        .expect("content length number");
+                    if bytes.len() >= headers_end + 4 + length {
+                        break;
+                    }
+                }
+                let body_start = bytes
+                    .windows(4)
+                    .position(|part| part == b"\r\n\r\n")
+                    .unwrap()
+                    + 4;
+                let request: serde_json::Value =
+                    serde_json::from_slice(&bytes[body_start..]).expect("D1 request");
+                let statements = request["batch"].as_array().expect("D1 batch");
+                assert_eq!(
+                    statements.len(),
+                    match request_index {
+                        0 => 2,
+                        1 | 2 => 5,
+                        _ => 6,
+                    }
+                );
+                if request_index == 1 {
+                    assert!(
+                        statements[0]["sql"]
+                            .as_str()
+                            .unwrap()
+                            .contains("stripe_webhook_event_inbox")
+                    );
+                    assert!(
+                        statements[2]["sql"]
+                            .as_str()
+                            .unwrap()
+                            .contains("staging_load_test_resources")
+                    );
+                    assert!(
+                        statements[4]["sql"]
+                            .as_str()
+                            .unwrap()
+                            .contains("SELECT resource.receipt_ref")
+                    );
+                }
+                if request_index == 2 {
+                    assert!(
+                        statements[0]["sql"]
+                            .as_str()
+                            .unwrap()
+                            .contains("stripe_webhook_event_effects")
+                    );
+                    assert!(
+                        statements[2]["sql"]
+                            .as_str()
+                            .unwrap()
+                            .contains("staging_load_test_resources")
+                    );
+                }
+                if request_index == 3 {
+                    assert!(
+                        statements[0]["sql"]
+                            .as_str()
+                            .unwrap()
+                            .contains("UPDATE stripe_webhook_event_effects")
+                    );
+                    assert!(
+                        statements[4]["sql"]
+                            .as_str()
+                            .unwrap()
+                            .contains("SELECT resource.receipt_ref")
+                    );
+                    assert!(
+                        statements[5]["sql"]
+                            .as_str()
+                            .unwrap()
+                            .contains("NOT EXISTS")
+                    );
+                }
+                let results = (0..statements.len())
+                    .map(|index| {
+                        serde_json::json!({
+                        "results": if (request_index == 1 && index == 0)
+                            || (request_index == 2 && index == 0)
+                            || (request_index == 3 && (index == 0 || index == 2)) {
+                            vec![serde_json::json!({"event_id": "evt_owned"})]
+                        } else if (request_index == 1 || request_index == 2 || request_index == 3) && index == 4 {
+                            vec![serde_json::json!({"receipt_ref": "a".repeat(64)})]
+                                } else { vec![] },
+                                "success": true
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                let body = serde_json::json!({"result": results, "success": true, "errors": []})
+                    .to_string();
+                write!(stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(), body).expect("response write");
+            }
+        });
+
+        let env = crate::storage::StorageEnv {
+            r2_endpoint: "https://localhost:1".to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        };
+        let admission_client =
+            D1HttpClient::new_for_loopback_test(&env, &endpoint).expect("admission D1 client");
+        let inbox_client = Arc::new(
+            D1HttpClient::new_for_loopback_test(&env, &endpoint).expect("inbox D1 client"),
+        );
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        let issued = now - 1;
+        let expires = now + 60_000;
+        let target_sha = "a".repeat(40);
+        let nonce = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let payload = format!(
+            "v1.123.webhook.staging.{}.{}.{}.{}",
+            target_sha, issued, expires, nonce
+        );
+        let key = b"01234567890123456789012345678901";
+        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(key).expect("HMAC key");
+        mac.update(b"corelink/staging-load-admission-auth/v1\0");
+        mac.update(payload.as_bytes());
+        let credential = format!("{payload}.{}", hex::encode(mac.finalize().into_bytes()));
+        let verifier =
+            crate::storage::staging_load_test_admission::StagingLoadTestAdmissionVerifier::new(
+                "staging", key,
+            )
+            .expect("staging verifier");
+        let verified = verifier
+            .verify(&credential, now)
+            .expect("verified admission");
+        let store = crate::storage::staging_load_test_admission::StagingLoadTestAdmissionStore::from_d1_client_for_test(admission_client);
+        let context = store
+            .consume_verified_admission(
+                crate::storage::staging_load_test_admission::StagingLoadTestAdmissionExpectation {
+                    run_id: "123",
+                    scenario: StagingLoadTestScenario::Webhook,
+                    target_environment: "staging",
+                    target_deployment_sha: &target_sha,
+                },
+                verified,
+            )
+            .await
+            .expect("durably consumed admission");
+        let inbox = D1WebhookInbox::new(inbox_client);
+        let raw = "00";
+        let event = AuthenticatedWebhookEvent {
+            event_id: "evt_owned".to_owned(),
+            event_type: "invoice.paid".to_owned(),
+            raw_body_hex: raw.to_owned(),
+            payload_sha256: hex::encode(Sha256::digest(hex::decode(raw).unwrap())),
+            stripe_created_at_ms: None,
+        };
+        let outcome = inbox
+            .receive_with_ownership_context(&event, 10, Some(&context))
+            .expect("atomic inbox write");
+        assert_eq!(outcome, InboxReceipt::Received);
+        let durable_event = DurableWebhookEvent {
+            event_id: event.event_id.clone(),
+            event_type: event.event_type.clone(),
+            raw_body_hex: event.raw_body_hex.clone(),
+            payload_sha256: event.payload_sha256.clone(),
+            stripe_created_at_ms: 0,
+        };
+        let claim = InboxClaim {
+            event_id: durable_event.event_id.clone(),
+            fence: 1,
+        };
+        assert_eq!(
+            inbox
+                .reserve_effect_with_ownership_context(
+                    &claim,
+                    "owner",
+                    &durable_event,
+                    "effect-key",
+                    "invoice.paid",
+                    11,
+                    Some(&context),
+                )
+                .expect("atomic effect reservation"),
+            EffectReservation::Reserved
+        );
+        assert!(
+            inbox
+                .commit_effect_with_ownership_context(
+                    &claim,
+                    "owner",
+                    &durable_event,
+                    "effect-key",
+                    "invoice.paid",
+                    12,
+                    Some(&context),
+                )
+                .expect("effect commit verifies prior ownership")
+        );
+        server.join().expect("loopback D1 server");
     }
 }
