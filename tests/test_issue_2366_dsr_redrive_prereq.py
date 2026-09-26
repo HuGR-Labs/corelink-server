@@ -25,7 +25,7 @@ class Issue2366ContractTests(unittest.TestCase):
         root = Path(temp.name)
         for path in (
             contract.MIGRATION, contract.SCHEMA_FENCE, contract.SECRET_FENCE,
-            contract.SIGNUP_DEPLOY, contract.STAGING_BOOTSTRAP,
+            contract.SIGNUP_DEPLOY, contract.STAGING_QUARANTINE_APPLY,
             contract.HOSTED_GATE,
             contract.STAGING_VERIFIER, contract.STAGING_TOPOLOGY,
             contract.SECRETS_INVENTORY,
@@ -121,7 +121,7 @@ class Issue2366ContractTests(unittest.TestCase):
     def test_each_required_secret_name_is_fail_closed(self) -> None:
         cases = (
             ("production-secret-fence", contract.SECRET_FENCE, "  DSR_DLQ_REDRIVE_AUTH_KEY\n"),
-            ("staging:secret-inventory", contract.STAGING_BOOTSTRAP, "STAGING_DSR_DLQ_REDRIVE_AUTH_KEY"),
+            ("staging:secret-inventory", contract.STAGING_QUARANTINE_APPLY, "STAGING_DSR_DLQ_REDRIVE_AUTH_KEY"),
             ("staging-verifier:worker-secret", contract.STAGING_VERIFIER, '"DSR_DLQ_REDRIVE_AUTH_KEY"'),
             ("staging-verifier:environment-secret", contract.STAGING_VERIFIER, '"STAGING_DSR_DLQ_REDRIVE_AUTH_KEY"'),
             ("secrets-inventory:production", contract.SECRETS_INVENTORY, "| 297 | DSR DLQ redrive authority key"),
@@ -138,7 +138,7 @@ class Issue2366ContractTests(unittest.TestCase):
         )
         self.assertIn(
             "staging:schema-before-deploy",
-            self.mutate(contract.STAGING_BOOTSTRAP, "bash scripts/verify-signup-worker-dsr-redrive-schema.sh", "# schema check removed"),
+            self.mutate(contract.STAGING_QUARANTINE_APPLY, "bash scripts/verify-signup-worker-dsr-redrive-schema.sh", "# schema check removed"),
         )
 
 
