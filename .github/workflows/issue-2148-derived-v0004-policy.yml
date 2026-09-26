@@ -12,6 +12,7 @@ on:
       - '.github/workflows/issue-2148-derived-v0004-policy.yml'
       - 'scripts/backlog_ledger_successor.py'
       - 'scripts/backlog_verify.py'
+      - 'tests/test_backlog_verify_trust_boundary.py'
       - 'tests/test_backlog_ledger_successor.py'
       - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0003.json'
@@ -29,7 +30,7 @@ jobs:
   policy:
     name: verify immutable v0004-v0009 successor policy
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout without write credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
@@ -50,9 +51,31 @@ jobs:
           python-version: '3.12'
       - name: Install CI test dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-ci.txt
-      - name: Prove derived policy through v0009 and mutation rejection
+      # P0 intentionally establishes the C0 admission policy before the stale
+      # v0009 ledger bridge is replaced.  Its bounded proof must therefore
+      # exercise the preserved v0004-v0008 baseline and C0 negatives without
+      # treating the known-stale v0009 authorizer as a P0 admission condition.
+      - name: Prove P0 baseline and B-057 C0 admission negatives
+        if: github.head_ref == 'codex/issue-2414-c0-policy' || github.ref_name == 'codex/issue-2414-c0-policy'
         run: >-
-          python -m pytest -q
+          python -m pytest -vv
+          tests/test_backlog_ledger_successor.py::test_v0004_policy_derives_only_b012_retirement_from_pr_base
+          tests/test_backlog_ledger_successor.py::test_v0004_policy_pins_complete_first_parent_history_from_git_objects
+          tests/test_backlog_ledger_successor.py::test_v0005_policy_pins_complete_first_parent_history_from_git_objects
+          tests/test_backlog_ledger_successor.py::test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition
+          tests/test_backlog_ledger_successor.py::test_v0005_receipt_is_required_to_bridge_post_v0004_history
+          tests/test_backlog_ledger_successor.py::test_v0006_pins_source_hash_and_exact_changed_ids
+          tests/test_backlog_ledger_successor.py::test_v0006_receipt_is_required_for_the_main_baseline_transition
+          tests/test_backlog_ledger_successor.py::test_v0006_authorizer_rejects_wrong_immutable_main_parent
+          tests/test_backlog_ledger_successor.py::test_v0007_replays_exact_b083_lifecycle_clarification
+          tests/test_backlog_ledger_successor.py::test_v0008_replays_only_the_pinned_delivered_b113_and_b098_prose
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_pins_the_fresh_preimage_and_target_bytes
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_admission_is_byte_pinned_and_never_executes_candidate_code
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_admission_rejects_nearby_mutations_and_policy_mutation
+      - name: Prove derived policy through v0009 and mutation rejection
+        if: github.head_ref != 'codex/issue-2414-c0-policy' && github.ref_name != 'codex/issue-2414-c0-policy'
+        run: >-
+          python -m pytest -vv
           tests/test_backlog_ledger_successor.py::test_v0004_policy_derives_only_b012_retirement_from_pr_base
           tests/test_backlog_ledger_successor.py::test_v0004_policy_pins_complete_first_parent_history_from_git_objects
           tests/test_backlog_ledger_successor.py::test_v0005_policy_pins_complete_first_parent_history_from_git_objects

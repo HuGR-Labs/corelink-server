@@ -1,0 +1,46 @@
+name: Issue 2663 teardown contract (credentialless)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-2663-teardown-contract.yml
+      - migrations/d1/0151_staging_load_test_teardown_receipts.sql
+      - scripts/verify_issue_2663_teardown_contract.py
+      - tests/test_issue_2663_teardown_contract.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2663-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  schema-contract:
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact candidate and protected base
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXPECTED_BASE" "$EXPECTED_HEAD")" = "$EXPECTED_BASE"
+      - name: Verify frozen schema and adversarial fixtures
+        run: |
+          python3 scripts/check_migration_prefixes.py
+          python3 scripts/check_migrations_additive.py
+          python3 -I scripts/verify_issue_2663_teardown_contract.py
+          python3 -I tests/test_issue_2663_teardown_contract.py
