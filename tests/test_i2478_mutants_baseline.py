@@ -187,15 +187,16 @@ class BaselineMappingTests(unittest.TestCase):
                 )
 
     def test_aggregate_retains_historical_shard_31_execution_as_failed_baseline(self) -> None:
-        """Run 36195446816 shard 31 completed every entry but one test failed."""
+        """Retain the historical failed entry when it is rebucketed into 27 shards."""
         historical = json.loads(HISTORICAL_SHARD_31.read_text(encoding="utf-8"))
         self.assertEqual(set(historical["completed_entry_ids"] + historical["failed_entry_ids"]), set(historical["entry_ids"]))
         self.assertEqual(historical["status"], "failure")
+        rebucketed_shard = 31 % SHARD_COUNT
         entries = [
             {"id": f"binary:pkg:lib:unit-{index}", "kind": "binary", "package": "pkg", "working_directory": "crates/pkg", "executable": f"debug/deps/unit-{index}", "test_names": [f"test_{index}"]}
             for index in range(SHARD_COUNT * len(historical["entry_ids"]))
         ]
-        for index, entry_id in zip(range(31, len(entries), SHARD_COUNT), historical["entry_ids"], strict=True):
+        for index, entry_id in zip(range(rebucketed_shard, len(entries), SHARD_COUNT), historical["entry_ids"], strict=True):
             entries[index]["id"] = entry_id
         plan = {
             "schema": SCHEMA,
@@ -218,7 +219,7 @@ class BaselineMappingTests(unittest.TestCase):
                 receipt["run_id"] = plan["run_id"]
                 receipt["run_attempt"] = plan["run_attempt"]
                 receipt["sha"] = plan["sha"]
-                if index == 31:
+                if index == rebucketed_shard:
                     receipt = copy.deepcopy(historical)
                     receipt["plan_digest"] = plan["plan_digest"]
                 (directory / "baseline-shard-receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
