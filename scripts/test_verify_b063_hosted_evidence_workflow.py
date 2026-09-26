@@ -73,9 +73,11 @@ class B063WorkflowContractTests(unittest.TestCase):
         steps = changed["jobs"]["live-read-only"]["steps"]
         capture = next(step for step in steps if step.get("name") == "Capture three independent SELECT-only partition reads")
         run = capture["run"]
-        assignment = run.index("sql = (")
-        query = run.index("rows = query(sql)", assignment)
-        capture["run"] = run[:assignment] + 'rows = query("DELETE FROM audit_outbox")\n' + run[query + len("rows = query(sql)\n"):]
+        capture["run"] = run.replace("sql = (", "query_template = (", 1).replace(
+            "rows = query(sql)",
+            'rows = query("DELETE FROM audit_outbox")',
+            1,
+        )
         with self.assertRaisesRegex(AssertionError, "one auditable SQL assignment"):
             verify(render(changed))
 
@@ -84,8 +86,8 @@ class B063WorkflowContractTests(unittest.TestCase):
         steps = changed["jobs"]["live-read-only"]["steps"]
         capture = next(step for step in steps if step.get("name") == "Capture three independent SELECT-only partition reads")
         capture["run"] = capture["run"].replace(
-            "          import json\n",
-            "          import json\n          import requests\n",
+            "import json\n",
+            "import json\nimport requests\n",
             1,
         )
         with self.assertRaisesRegex(AssertionError, "reviewed read-only allowlist"):
