@@ -15,7 +15,7 @@ from typing import Any, Mapping
 from scripts.verify_i2457_mutants_shards import config_digest
 
 
-SHARD_COUNT = 120
+SHARD_COUNT = 27
 SCHEMA = "corelink.hosted-mutants-baseline-test-plan.v1"
 SHARD_SCHEMA = "corelink.hosted-mutants-baseline-test-shard.v1"
 RECEIPT_SCHEMA = "corelink.hosted-mutants-baseline-receipt.v6"

@@ -141,8 +141,8 @@ class MutantsShardAggregateTests(unittest.TestCase):
         shards = [membership(ids, index) for index in range(SHARD_COUNT)]
         self.assertEqual(sum(map(len, shards)), len(ids))
         self.assertEqual(Counter(item for shard in shards for item in shard), Counter(ids))
-        self.assertTrue(all(len(shard) <= 205 for shard in shards))
-        self.assertTrue(all(len(shard) >= 203 for shard in shards))
+        self.assertTrue(all(len(shard) <= 907 for shard in shards))
+        self.assertTrue(all(len(shard) >= 906 for shard in shards))
 
     def test_inventory_receipt_uses_redacted_string_identities(self) -> None:
         self.assertEqual(validate_inventory(self.inventory), self.inventory["mutant_ids"])

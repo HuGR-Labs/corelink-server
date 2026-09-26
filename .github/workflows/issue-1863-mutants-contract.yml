@@ -15,6 +15,7 @@ on:
       - "tests/test_i1863_mutants_hosted_receipt.py"
       - "tests/test_i2457_mutants_shards.py"
       - "tests/test_i2478_mutants_baseline.py"
+      - "docs/handoff/2026-09-26-mutants-triad-central-dispatch-charter.md"
   workflow_dispatch:
 
 permissions:

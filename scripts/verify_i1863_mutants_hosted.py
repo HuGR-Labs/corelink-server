@@ -42,7 +42,7 @@ def validate_successful_receipt(
     if head_branch != "main":
         raise ValueError("hosted mutants aggregate is not from protected main")
     if receipt.get("shard_count") != SHARD_COUNT or receipt.get("covered_mutants", 0) <= 0:
-        raise ValueError("aggregate receipt does not prove all 120 nonempty shards")
+        raise ValueError("aggregate receipt does not prove all 27 nonempty shards")
     if receipt.get("tool_version") != TOOL_VERSION:
         raise ValueError("aggregate receipt tool version is not pinned cargo-mutants 27.0.0")
     if receipt.get("config_digest") != config_digest():
