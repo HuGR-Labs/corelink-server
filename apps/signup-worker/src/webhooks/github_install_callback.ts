@@ -25,8 +25,13 @@
 
 import { writeInstallationProvision } from "./github_provision.js";
 import { verifyInstallState } from "./github_install_state.js";
+import { signupOwnershipContext } from "../signup_writer_ownership.js";
+import type { StagingOwnershipContext } from "../staging_load_test_ownership.js";
 
 export interface InstallCallbackEnv {
+  /** Deployment environment and staging-only admission signing key. */
+  ENVIRONMENT?: string;
+  CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY?: string;
   /** Numeric GitHub App id (`iss` of the App JWT). */
   GITHUB_APP_ID?: string;
   /** App private key, **PKCS#8** PEM (`-----BEGIN PRIVATE KEY-----`). */
@@ -244,6 +249,16 @@ export async function handleInstallGithubCallback(
   }
 
   const url = new URL(request.url);
+  let ownershipContext: StagingOwnershipContext | null;
+  try {
+    ownershipContext = await signupOwnershipContext(
+      request,
+      env.ENVIRONMENT,
+      env.CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY,
+    );
+  } catch {
+    return new Response("invalid_staging_ownership", { status: 403 });
+  }
   const installationId = url.searchParams.get("installation_id");
   const state = url.searchParams.get("state");
   if (!installationId || !state) {
@@ -347,6 +362,7 @@ export async function handleInstallGithubCallback(
       tenantId,
       repos,
       nowMs: Date.now(),
+      ownershipContext,
     });
     console.log(
       `install callback: persist OK installation_id=${installationId} repos=${repos.length}`,
