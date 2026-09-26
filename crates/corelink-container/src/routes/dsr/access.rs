@@ -29,6 +29,7 @@
 //!   immutable → NOT rectifiable. Only the editable subject PII allowlist
 //!   ([`RECTIFIABLE_FIELDS`]) is correctable; any other target fails CLOSED 4xx.
 
+use std::future::Future;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -569,6 +570,12 @@ fn persist_owned_r2_with(
     let registration = context
         .ownership_registration(resource_class, disposition, object_key)
         .map_err(|error| error.to_string())?;
+    if resource_class == StagingLoadTestResourceClass::DsrArtifact
+        && disposition == StagingLoadTestDisposition::Disposable
+        && !is_staging_dsr_export_key(object_key)
+    {
+        return Err("staging DSR export key is invalid".to_owned());
+    }
     let mut operation = Sha256::new();
     operation.update(b"corelink/dsr/r2-operation/v1\0");
     operation.update(context.run_id().as_bytes());
@@ -617,10 +624,116 @@ fn persist_owned_r2_with(
     }
 
     put_object(object_key, bytes)?;
-    let statements = intent.commit_statements(clamp_ms(now_ms));
-    d1_batch_blocking(d1, statements.into_iter().collect())
-        .map_err(|_| "staging R2 ownership commit failed".to_owned())?;
+    let committed_at_ms = clamp_ms(now_ms);
+    let [register_resource, close_intent] = intent.commit_statements(clamp_ms(now_ms));
+    let mut batch = vec![register_resource];
+    if resource_class == StagingLoadTestResourceClass::DsrArtifact
+        && disposition == StagingLoadTestDisposition::Disposable
+    {
+        batch.push(staging_dsr_export_locator_statement(
+            context,
+            object_key,
+            committed_at_ms,
+        )?);
+    }
+    batch.push(close_intent);
+    d1_batch_blocking(d1, batch).map_err(|_| "staging R2 ownership commit failed".to_owned())?;
     Ok(())
+}
+
+fn is_staging_dsr_export_key(object_key: &str) -> bool {
+    let Some(name) = object_key.strip_prefix("dsr_exports/") else {
+        return false;
+    };
+    let id = name
+        .strip_suffix(".sig.json")
+        .or_else(|| name.strip_suffix(".json"));
+    let Some(id) = id else {
+        return false;
+    };
+    !id.is_empty()
+        && id.len() <= 128
+        && id
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
+fn staging_dsr_export_locator_statement(
+    context: &crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext,
+    object_key: &str,
+    registered_at_ms: i64,
+) -> Result<D1BatchStatement, String> {
+    if registered_at_ms < 0 || !is_staging_dsr_export_key(object_key) {
+        return Err("staging DSR export locator is invalid".to_owned());
+    }
+    let receipt_ref = staging_receipt_ref(context, "dsr_artifact", object_key, "disposable");
+    let locator_json = json!({ "object_key": object_key }).to_string();
+    Ok(D1BatchStatement::new(
+        "INSERT INTO staging_load_test_teardown_locators \
+         (run_id, scenario, resource_class, receipt_ref, locator_kind, locator_json, registered_at_ms) \
+         VALUES (?1, ?2, 'dsr_artifact', ?3, 'dsr_r2_export_v1', ?4, ?5)",
+        vec![
+            json!(context.run_id()),
+            json!(context.scenario().as_str()),
+            json!(receipt_ref),
+            json!(locator_json),
+            json!(registered_at_ms),
+        ],
+    ))
+}
+
+pub(crate) struct StagingDsrR2ExportLocator {
+    pub(crate) object_key: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StagingDsrTeardownError {
+    InvalidLocator,
+    DeleteFailed,
+    HeadFailed,
+    ObjectStillPresent,
+}
+
+pub(crate) async fn delete_staging_dsr_export_and_readback(
+    r2: &R2S3Client,
+    locator: &StagingDsrR2ExportLocator,
+) -> Result<(), StagingDsrTeardownError> {
+    delete_staging_dsr_export_and_readback_with(
+        locator,
+        |key| async move { r2.delete(&key).await },
+        |key| async move { r2.head_size(&key).await },
+    )
+    .await
+}
+
+async fn delete_staging_dsr_export_and_readback_with<Delete, DeleteFuture, Head, HeadFuture>(
+    locator: &StagingDsrR2ExportLocator,
+    delete: Delete,
+    head_size: Head,
+) -> Result<(), StagingDsrTeardownError>
+where
+    Delete: FnOnce(String) -> DeleteFuture,
+    DeleteFuture: Future<Output = Result<(), String>>,
+    Head: FnOnce(String) -> HeadFuture,
+    HeadFuture: Future<Output = Result<Option<u64>, String>>,
+{
+    if !is_staging_dsr_export_key(&locator.object_key) {
+        return Err(StagingDsrTeardownError::InvalidLocator);
+    }
+    delete(locator.object_key.clone())
+        .await
+        .map_err(|_| StagingDsrTeardownError::DeleteFailed)?;
+    match head_size(locator.object_key.clone())
+        .await
+        .map_err(|_| StagingDsrTeardownError::HeadFailed)?
+    {
+        None => Ok(()),
+        Some(_) => Err(StagingDsrTeardownError::ObjectStillPresent),
+    }
 }
 
 fn staging_receipt_ref(
@@ -842,22 +955,12 @@ pub(super) fn run_rectification(
         ownership_context,
     )?;
     let params = vec![json!(tenant_id), json!(plan.stored_value)];
-    let rows_updated = if let Some(context) = ownership_context {
-        let handle = format!("{dsr_id}:rectification:{table}.{field}");
-        let registration = context
-            .ownership_registration(
-                StagingLoadTestResourceClass::DsrArtifact,
-                StagingLoadTestDisposition::Disposable,
-                &handle,
-            )
-            .and_then(|registration| registration.d1_statement(clamp_ms(now_ms)))
-            .map_err(|error| error.to_string())?;
+    let rows_updated = if ownership_context.is_some() {
         let results = d1_batch_blocking(
             d1,
             vec![
                 D1BatchStatement::new(&plan.sql, params),
                 D1BatchStatement::new("SELECT changes() AS rows_updated", vec![]),
-                registration,
             ],
         )?;
         results
@@ -1212,6 +1315,180 @@ mod tests {
         assert!(matches!(r, Err(RectifyReject::InvalidValue(_))));
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn admitted_rectification_registers_retained_audit_only() {
+        let (database, endpoint) = ownership_d1_fixture(false, 3);
+        let context = accepted_dsr_context(&endpoint).await;
+        let d1 = Arc::new(test_d1_client(&endpoint));
+        let result = run_rectification(
+            &d1,
+            "00000000-0000-7000-8000-000000000001",
+            TID,
+            "tenant",
+            "email_hash",
+            "new@example.invalid",
+            1_700_000_000_000,
+            Some(&context),
+        )
+        .expect("rectification audit and update succeed")
+        .expect("email hash is rectifiable");
+        assert_eq!(result.rows_updated, 1);
+
+        let db = database.lock().expect("fixture database");
+        let (resource_class, disposition): (String, String) = db
+            .query_row(
+                "SELECT resource_class, disposition FROM staging_load_test_resources",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("retained audit ownership row");
+        let locator_count: i64 = db
+            .query_row(
+                "SELECT count(*) FROM staging_load_test_teardown_locators",
+                [],
+                |row| row.get(0),
+            )
+            .expect("no rectification locator");
+        let stored_email_hash: String = db
+            .query_row(
+                "SELECT email_hash FROM tenant WHERE tenant_id = ?1",
+                [TID],
+                |row| row.get(0),
+            )
+            .expect("rectified tenant value");
+        assert_eq!(resource_class, "audit_evidence");
+        assert_eq!(disposition, "retained");
+        assert_eq!(
+            locator_count, 0,
+            "rectification creates no disposable locator"
+        );
+        assert_eq!(stored_email_hash, email_hash("new@example.invalid"));
+    }
+
+    #[test]
+    fn staging_dsr_key_accepts_only_single_safe_export_or_signature_keys() {
+        for key in [
+            "dsr_exports/dsr-2581.json",
+            "dsr_exports/dsr-2581.sig.json",
+            "dsr_exports/00000000-0000-7000-8000-000000000001.json",
+        ] {
+            assert!(is_staging_dsr_export_key(key), "{key}");
+        }
+        for key in [
+            "../dsr_exports/dsr-2581.json",
+            "dsr_exports/../secret.json",
+            "dsr_exports/a/b.json",
+            "dsr_exports/%2f.json",
+            "dsr_exports/a.sig.json.json",
+            "dsr_exports/.json",
+            "dsr_exports/a.json/extra",
+        ] {
+            assert!(!is_staging_dsr_export_key(key), "{key}");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn admitted_r2_writer_rejects_invalid_key_before_intent_or_put() {
+        let (database, endpoint) = ownership_d1_fixture(false, 1);
+        let context = accepted_dsr_context(&endpoint).await;
+        let d1 = Arc::new(test_d1_client(&endpoint));
+        let put_called = std::sync::atomic::AtomicBool::new(false);
+        let result = persist_owned_r2_with(
+            &d1,
+            &context,
+            StagingLoadTestResourceClass::DsrArtifact,
+            StagingLoadTestDisposition::Disposable,
+            "dsr_exports/../outside.json",
+            b"synthetic bundle".to_vec(),
+            1_700_000_000_000,
+            |_, _| {
+                put_called.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert!(!put_called.load(std::sync::atomic::Ordering::SeqCst));
+        let db = database.lock().expect("fixture database");
+        let (intents, resources, locators): (i64, i64, i64) = db
+            .query_row(
+                "SELECT (SELECT count(*) FROM staging_load_test_r2_intents), (SELECT count(*) FROM staging_load_test_resources), (SELECT count(*) FROM staging_load_test_teardown_locators)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("invalid key created no durable rows");
+        assert_eq!((intents, resources, locators), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn exact_dsr_export_delete_requires_absent_head_for_both_object_kinds() {
+        for key in ["dsr_exports/dsr-2581.json", "dsr_exports/dsr-2581.sig.json"] {
+            let locator = StagingDsrR2ExportLocator {
+                object_key: key.to_owned(),
+            };
+            let deleted_key = key.to_owned();
+            let headed_key = key.to_owned();
+            delete_staging_dsr_export_and_readback_with(
+                &locator,
+                move |actual| {
+                    assert_eq!(actual, deleted_key);
+                    async { Ok(()) }
+                },
+                move |actual| {
+                    assert_eq!(actual, headed_key);
+                    async { Ok(None) }
+                },
+            )
+            .await
+            .expect("exact-key delete followed by absent HEAD");
+        }
+    }
+
+    #[tokio::test]
+    async fn exact_dsr_export_delete_fails_closed_on_bad_delete_head_error_or_residue() {
+        let locator = StagingDsrR2ExportLocator {
+            object_key: "dsr_exports/dsr-2581.json".to_owned(),
+        };
+        assert_eq!(
+            delete_staging_dsr_export_and_readback_with(
+                &locator,
+                |_| async { Err("private transport detail".to_owned()) },
+                |_| async { panic!("HEAD must not run after failed DELETE") },
+            )
+            .await,
+            Err(StagingDsrTeardownError::DeleteFailed)
+        );
+        assert_eq!(
+            delete_staging_dsr_export_and_readback_with(
+                &locator,
+                |_| async { Ok(()) },
+                |_| async { Err("private transport detail".to_owned()) },
+            )
+            .await,
+            Err(StagingDsrTeardownError::HeadFailed)
+        );
+        assert_eq!(
+            delete_staging_dsr_export_and_readback_with(
+                &locator,
+                |_| async { Ok(()) },
+                |_| async { Ok(Some(0)) },
+            )
+            .await,
+            Err(StagingDsrTeardownError::ObjectStillPresent)
+        );
+        let invalid = StagingDsrR2ExportLocator {
+            object_key: "dsr_exports/../other.json".to_owned(),
+        };
+        assert_eq!(
+            delete_staging_dsr_export_and_readback_with(
+                &invalid,
+                |_| async { panic!("DELETE must not run for an invalid key") },
+                |_| async { panic!("HEAD must not run for an invalid key") },
+            )
+            .await,
+            Err(StagingDsrTeardownError::InvalidLocator)
+        );
+    }
+
     /// Audit ids are deterministic per (dsr_id, event_type, suffix) — the
     /// idempotency key that makes a retry an INSERT OR IGNORE no-op.
     #[test]
@@ -1347,7 +1624,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn admitted_r2_writer_recovers_exact_prepare_and_replays_once() {
-        let (database, endpoint) = ownership_d1_fixture(false, 8);
+        let (database, endpoint) = ownership_d1_fixture(false, 10);
         let context = Arc::new(accepted_dsr_context(&endpoint).await);
         let d1 = Arc::new(test_d1_client(&endpoint));
         let put_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -1363,7 +1640,7 @@ mod tests {
                     context.as_ref(),
                     StagingLoadTestResourceClass::DsrArtifact,
                     StagingLoadTestDisposition::Disposable,
-                    "dsr_exports/dsr-2581.json",
+                    "dsr_exports/00000000-0000-7000-8000-000000002581.json",
                     b"synthetic bundle".to_vec(),
                     1_700_000_000_000,
                     move |_, _| {
@@ -1399,6 +1676,21 @@ mod tests {
             "committed exact replay remains idempotent"
         );
         assert_eq!(put_attempts.load(std::sync::atomic::Ordering::SeqCst), 3);
+        persist_owned_r2_with(
+            &d1,
+            context.as_ref(),
+            StagingLoadTestResourceClass::DsrArtifact,
+            StagingLoadTestDisposition::Disposable,
+            "dsr_exports/00000000-0000-7000-8000-000000002581.sig.json",
+            b"synthetic signature".to_vec(),
+            1_700_000_000_000,
+            |_, _| {
+                put_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .expect("signature has its own exact typed locator");
+        assert_eq!(put_attempts.load(std::sync::atomic::Ordering::SeqCst), 4);
 
         let db = database.lock().expect("fixture database");
         let state: String = db
@@ -1416,14 +1708,81 @@ mod tests {
             )
             .expect("durable counts");
         assert_eq!(state, "committed");
-        assert_eq!(intent_count, 1, "retry reused the exact immutable intent");
-        assert_eq!(
-            resource_count, 1,
-            "replay created one canonical resource row"
-        );
+        assert_eq!(intent_count, 2, "retry reused the exact immutable intent");
+        assert_eq!(resource_count, 2, "each R2 object has one ownership row");
         assert_eq!(resource_class, "dsr_artifact");
         assert_eq!(disposition, "disposable");
-        assert_eq!(opaque_handle, "dsr_exports/dsr-2581.json");
+        assert_eq!(
+            opaque_handle,
+            "dsr_exports/00000000-0000-7000-8000-000000002581.json"
+        );
+        let locators = db
+            .prepare(
+                "SELECT l.locator_kind, l.locator_json, l.receipt_ref, r.receipt_ref \
+                 FROM staging_load_test_teardown_locators AS l \
+                 JOIN staging_load_test_resources AS r USING (run_id, scenario, resource_class, receipt_ref) \
+                 ORDER BY l.locator_json",
+            )
+            .expect("locator/resource join")
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .expect("locator/resource rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("valid locator/resource rows");
+        assert_eq!(locators.len(), 2);
+        let keys = locators
+            .iter()
+            .map(|(kind, json, receipt, resource_receipt)| {
+                assert_eq!(kind, "dsr_r2_export_v1");
+                assert_eq!(receipt, resource_receipt, "locator binds exact 0147 row");
+                serde_json::from_str::<Value>(json).unwrap()["object_key"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        assert!(keys.contains(&opaque_handle));
+        assert!(
+            keys.contains(&"dsr_exports/00000000-0000-7000-8000-000000002581.sig.json".to_owned())
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn admitted_r2_commit_failure_leaves_prepared_intent_without_locator() {
+        let (database, endpoint) = ownership_d1_fixture(true, 3);
+        let context = accepted_dsr_context(&endpoint).await;
+        let d1 = Arc::new(test_d1_client(&endpoint));
+        let result = persist_owned_r2_with(
+            &d1,
+            &context,
+            StagingLoadTestResourceClass::DsrArtifact,
+            StagingLoadTestDisposition::Disposable,
+            "dsr_exports/dsr-2581.json",
+            b"synthetic bundle".to_vec(),
+            1_700_000_000_000,
+            |_, _| Ok(()),
+        );
+        assert!(
+            result.is_err(),
+            "failed D1 commit must not claim durable ownership"
+        );
+        let db = database.lock().expect("fixture database");
+        let (state, resources, locators): (String, i64, i64) = db
+            .query_row(
+                "SELECT (SELECT state FROM staging_load_test_r2_intents), (SELECT count(*) FROM staging_load_test_resources), (SELECT count(*) FROM staging_load_test_teardown_locators)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("prepared D1 intent remains recoverable");
+        assert_eq!(state, "prepared");
+        assert_eq!(resources, 0);
+        assert_eq!(locators, 0);
     }
 
     fn test_storage_env(endpoint: &str) -> crate::storage::StorageEnv {
@@ -1508,11 +1867,12 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE staging_load_test_runs (run_id TEXT, scenario TEXT, target_environment TEXT, target_deployment_sha TEXT, state TEXT, admitted_at_ms INTEGER, PRIMARY KEY (run_id, scenario));
                  CREATE TABLE staging_load_test_admission_nonces (nonce_digest TEXT PRIMARY KEY, run_id TEXT, scenario TEXT, target_environment TEXT, target_deployment_sha TEXT, issued_at_ms INTEGER, expires_at_ms INTEGER, admitted_at_ms INTEGER);
-                 CREATE TABLE tenant (tenant_id TEXT PRIMARY KEY, primary_region TEXT NOT NULL);
+                 CREATE TABLE tenant (tenant_id TEXT PRIMARY KEY, email_hash TEXT NOT NULL, primary_region TEXT NOT NULL);
                  CREATE TABLE audit_outbox (id TEXT PRIMARY KEY, tenant_id TEXT, digest TEXT, request_id TEXT, event_type TEXT, payload_json TEXT, enqueued_at INTEGER, emitted_at INTEGER, region TEXT);
                  CREATE TABLE staging_load_test_resources (run_id TEXT, scenario TEXT, resource_class TEXT, receipt_ref TEXT, opaque_handle TEXT, disposition TEXT, state TEXT, registered_at_ms INTEGER, PRIMARY KEY (run_id, scenario, resource_class, receipt_ref));
                  CREATE TABLE staging_load_test_r2_intents (operation_id TEXT PRIMARY KEY, run_id TEXT, scenario TEXT, target_deployment_sha TEXT, resource_class TEXT, receipt_ref TEXT, opaque_handle TEXT, disposition TEXT, state TEXT, prepared_at_ms INTEGER, committed_at_ms INTEGER);
-                 INSERT INTO tenant VALUES ('00000000-0000-7000-8000-000000000002', 'weur');",
+                 CREATE TABLE staging_load_test_teardown_locators (run_id TEXT, scenario TEXT, resource_class TEXT, receipt_ref TEXT, locator_kind TEXT, locator_json TEXT, registered_at_ms INTEGER, PRIMARY KEY (run_id, scenario, resource_class, receipt_ref));
+                 INSERT INTO tenant VALUES ('00000000-0000-7000-8000-000000000002', 'old@example.invalid', 'weur');",
             )
             .expect("fixture schema");
         if fail_resource_registration {
