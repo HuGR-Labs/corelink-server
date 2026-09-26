@@ -62,6 +62,32 @@ async function buildStripeSignature(
 
 // Stable test secret (base64 of 32 zero-bytes, prefixed with whsec_).
 const TEST_SECRET = "whsec_" + btoa(String.fromCharCode(...new Array(32).fill(0)));
+const STAGING_ADMISSION_KEY = "01234567890123456789012345678901";
+const STAGING_REQUEST_ID = "b".repeat(32);
+const STAGING_DOMAIN = "corelink/staging-ownership-envelope/v1\0";
+
+async function stagingAdmissionEnvelope(nowMs: number): Promise<string> {
+    const payload = `v1.123456.webhook.staging.${"a".repeat(40)}.${nowMs - 1000}.${nowMs + 60_000}.${STAGING_REQUEST_ID}`;
+    const key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(STAGING_ADMISSION_KEY),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+    );
+    const tag = new Uint8Array(await crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(STAGING_DOMAIN + payload),
+    ));
+    return `${payload}.${Array.from(tag, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+async function withStagingAdmission(request: Request, nowMs: number): Promise<Request> {
+    const headers = new Headers(request.headers);
+    headers.set("x-corelink-staging-load-admission", await stagingAdmissionEnvelope(nowMs));
+    return new Request(request, { headers });
+}
 
 // ---------------------------------------------------------------------------
 // verifyStripeSignature unit tests
@@ -867,6 +893,70 @@ describe("handleStripeWebhook", () => {
         ).toBe(billingAfterFirst + 1);
         // But the emit did NOT fire a second time (exactly-once on success).
         expect(fetchSpy.mock.calls.length).toBe(emitsAfterFirst);
+    });
+
+    it("commits admitted claim, billing writes, and ownership rows in one D1 batch; replay rolls back", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_staging_atomic",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_staging_atomic",
+                    subscription: "sub_staging_atomic",
+                    amount_total: 4900,
+                    payment_status: "paid",
+                    metadata: { tenant_id: "tenant_staging_atomic", tier: "starter" },
+                },
+            },
+        };
+        const env = { ...baseEnv(db), CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY: STAGING_ADMISSION_KEY };
+        const first = await withStagingAdmission(await makeStripeRequest(event, TEST_SECRET, nowMs), nowMs);
+        expect((await handleStripeWebhook(first, env, fakeCtx())).status).toBe(200);
+        expect(db.batch).toHaveBeenCalledTimes(1);
+        const statements = db.batch.mock.calls[0]?.[0] as Array<{ sql?: string }>;
+        expect(statements.some((statement) => statement.sql?.includes("stripe_webhook_events_processed"))).toBe(true);
+        expect(statements.some((statement) => statement.sql?.includes("INSERT INTO tenant_billing"))).toBe(true);
+        expect(statements.filter((statement) =>
+            statement.sql?.includes("INSERT INTO staging_load_test_resources") && statement.sql.includes("VALUES"),
+        )).toHaveLength(4);
+
+        const callsAfterFirst = db.runCalls.length;
+        const replay = await withStagingAdmission(await makeStripeRequest(event, TEST_SECRET, nowMs + 1000), nowMs + 1000);
+        expect((await handleStripeWebhook(replay, env, fakeCtx())).status).toBe(409);
+        expect(db.runCalls).toHaveLength(callsAfterFirst);
+
+        const alteredEvent = { ...event, id: "evt_staging_altered" };
+        const altered = await makeStripeRequest(alteredEvent, TEST_SECRET, nowMs + 2000);
+        const alteredHeaders = new Headers(altered.headers);
+        // Reuse the exact signed admission envelope while changing the Stripe
+        // event id. The request-level inbox owner fence must reject it too.
+        alteredHeaders.set(
+            "x-corelink-staging-load-admission",
+            first.headers.get("x-corelink-staging-load-admission")!,
+        );
+        const alteredWithAdmission = new Request(altered, { headers: alteredHeaders });
+        expect((await handleStripeWebhook(alteredWithAdmission, env, fakeCtx())).status).toBe(409);
+        expect(db.runCalls).toHaveLength(callsAfterFirst);
+    });
+
+    it("rejects a present invalid staging envelope before Stripe billing writes", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_staging_invalid",
+            type: "checkout.session.completed",
+            data: { object: { customer: "cus_x", subscription: "sub_x", payment_status: "paid", metadata: { tenant_id: "tenant_x", tier: "starter" } } },
+        };
+        const request = await withStagingAdmission(await makeStripeRequest(event, TEST_SECRET, nowMs), nowMs);
+        const headers = new Headers(request.headers);
+        headers.set("x-corelink-staging-load-admission", `${headers.get("x-corelink-staging-load-admission")}0`);
+        const invalid = new Request(request, { headers });
+        const env = { ...baseEnv(db), CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY: STAGING_ADMISSION_KEY };
+        expect((await handleStripeWebhook(invalid, env, fakeCtx())).status).toBe(403);
+        expect(db.runCalls).toHaveLength(0);
+        expect(db.batch).not.toHaveBeenCalled();
     });
 
 });

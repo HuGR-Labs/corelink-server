@@ -62,10 +62,7 @@ use crate::storage::{
     staging_load_test_ownership::StagingLoadTestScenario,
 };
 
-#[derive(Debug)]
-struct StagingWebhookRequestContext(Arc<StagingLoadTestAdmissionContext>);
-
-impl DurableWebhookRequestContext for StagingWebhookRequestContext {
+impl DurableWebhookRequestContext for StagingLoadTestAdmissionContext {
     fn as_any(&self) -> &dyn core::any::Any {
         self
     }
@@ -145,9 +142,7 @@ pub async fn stripe_webhook_handler(
         Ok(context) => context,
         Err(_) => return (StatusCode::FORBIDDEN, "forbidden").into_response(),
     };
-    let request_context = admission.map(|context| {
-        Arc::new(StagingWebhookRequestContext(context)) as Arc<dyn DurableWebhookRequestContext>
-    });
+    let request_context = admission.map(|context| context as Arc<dyn DurableWebhookRequestContext>);
     let resp = state
         .dispatcher
         .process_with_context(&body, sig_header, request_context.as_deref());

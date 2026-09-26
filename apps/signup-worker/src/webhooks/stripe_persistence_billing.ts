@@ -3,6 +3,7 @@ import type { D1DatabaseLike } from "./billing_checkout";
 import { HANDLED_EVENT_TYPES } from "./stripe.js";
 import { recoverCheckoutLedger, upsertBillingPaid as upsertOwnedBillingPaid } from "./billing_checkout";
 import type { PaidTier } from "./stripe_contract.js";
+import { runOrStage, type StripeStagingWriteBatch } from "./stripe_staging_batch.js";
 
 export type ClaimResult =
     | "claimed" // newly inserted — this delivery is the FIRST: process + emit.
@@ -49,14 +50,14 @@ export async function claimWebhookEvent(
         ? "dispatched"
         : "acknowledged_unknown";
     try {
-        const res = await db
+        const claimStatement = db
             .prepare(
                 `INSERT OR IGNORE INTO stripe_webhook_events_processed
                    (event_id, event_type, processed_at_ms, outcome, correlation_id)
                  VALUES (?1, ?2, ?3, ?4, ?5)`,
             )
-            .bind(opts.eventId, opts.eventType, opts.nowMs, outcome, opts.correlationId)
-            .run();
+            .bind(opts.eventId, opts.eventType, opts.nowMs, outcome, opts.correlationId);
+        const res = await claimStatement.run();
         // `INSERT OR IGNORE` writes 1 row on first delivery, 0 on PK conflict.
         return (res?.meta?.changes ?? 0) > 0 ? "claimed" : "duplicate";
     } catch (e: unknown) {
@@ -88,8 +89,9 @@ export async function upsertBillingPaid(
         nowMs: number;
         checkoutCreatedAtMs: number | null;
     },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    return upsertOwnedBillingPaid(db, opts);
+    return upsertOwnedBillingPaid(db, opts, batch);
 }
 /**
  * Update billing status + period-end on `customer.subscription.updated`.
@@ -114,8 +116,9 @@ export async function updateBillingSubscription(
         currentPeriodEndMs: number | null;
         nowMs: number;
     },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    await db
+    await runOrStage(db
         .prepare(
             `UPDATE tenant_billing
              SET status = ?1,
@@ -124,8 +127,7 @@ export async function updateBillingSubscription(
              WHERE stripe_subscription_id = ?4
                AND status != 'canceled'`,
         )
-        .bind(opts.status, opts.currentPeriodEndMs, opts.nowMs, opts.stripeSubscriptionId)
-        .run();
+        .bind(opts.status, opts.currentPeriodEndMs, opts.nowMs, opts.stripeSubscriptionId), batch);
 }
 
 /**
@@ -139,8 +141,9 @@ export async function updateBillingSubscription(
 export async function updateBillingStatus(
     db: D1DatabaseLike,
     opts: { stripeSubscriptionId: string; status: string; nowMs: number },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    await db
+    await runOrStage(db
         .prepare(
             `UPDATE tenant_billing
              SET status = ?1,
@@ -148,8 +151,7 @@ export async function updateBillingStatus(
              WHERE stripe_subscription_id = ?3
                AND status != 'canceled'`,
         )
-        .bind(opts.status, opts.nowMs, opts.stripeSubscriptionId)
-        .run();
+        .bind(opts.status, opts.nowMs, opts.stripeSubscriptionId), batch);
 }
 
 /**
@@ -158,16 +160,16 @@ export async function updateBillingStatus(
 export async function cancelBilling(
     db: D1DatabaseLike,
     opts: { stripeSubscriptionId: string; nowMs: number },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    await db
+    await runOrStage(db
         .prepare(
             `UPDATE tenant_billing
              SET status = 'canceled',
                  updated_at_ms = ?1
              WHERE stripe_subscription_id = ?2`,
         )
-        .bind(opts.nowMs, opts.stripeSubscriptionId)
-        .run();
+        .bind(opts.nowMs, opts.stripeSubscriptionId), batch);
 }
 
 /** Expiry is the only safe transition that releases a pending checkout. */
@@ -175,6 +177,7 @@ export async function expirePendingCheckout(
     db: D1DatabaseLike,
     opts: { tenantId: string; tier: string; sessionId: string; stripeCustomerId: string;
         checkoutCreatedAtMs: number | null },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
     await recoverCheckoutLedger(db, {
         tenantId: opts.tenantId,
@@ -185,11 +188,11 @@ export async function expirePendingCheckout(
         stripeCustomerId: opts.stripeCustomerId,
         checkoutCreatedAtMs: opts.checkoutCreatedAtMs,
         nowMs: Date.now(),
-    });
+    }, batch);
     // Resolve the correlation before clearing the ledger's Stripe identifiers.
     // The session mirror is preferred, while the ledger remains the orphan
     // recovery path when the mirror write was interrupted.
-    await db.prepare(`
+    await runOrStage(db.prepare(`
       UPDATE tier_selections
       SET subscription_state = 'inactive', stripe_customer_id = NULL,
           subscription_started_at_ms = NULL
@@ -200,17 +203,17 @@ export async function expirePendingCheckout(
           (SELECT correlation_id FROM stripe_checkout_ownership_ledger
             WHERE session_id = ?2 AND tenant_id = ?1)
         )
-        `).bind(opts.tenantId, opts.sessionId).run();
-    await db.prepare(`
+        `).bind(opts.tenantId, opts.sessionId), batch);
+    await runOrStage(db.prepare(`
       UPDATE stripe_checkout_ownership_ledger
       SET state = 'abandoned', session_id = NULL, stripe_customer_id = NULL,
           updated_at_ms = ?3
       WHERE tenant_id = ?1 AND session_id = ?2 AND state = 'session_created'
-    `).bind(opts.tenantId, opts.sessionId, Date.now()).run();
-    await db.prepare(`
+    `).bind(opts.tenantId, opts.sessionId, Date.now()), batch);
+    await runOrStage(db.prepare(`
       DELETE FROM stripe_checkout_sessions
       WHERE tenant_id = ?1 AND session_id = ?2
-    `).bind(opts.tenantId, opts.sessionId).run();
+    `).bind(opts.tenantId, opts.sessionId), batch);
 }
 
 /**
@@ -261,8 +264,9 @@ export async function activatePaidTierSelection(
         nowMs: number;
         correlationId: string;
     },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    const result = await db
+    const result = await runOrStage(db
         .prepare(
             `INSERT INTO tier_selections
                (tenant_id, tier, subscription_state, stripe_customer_id,
@@ -298,16 +302,21 @@ export async function activatePaidTierSelection(
             opts.correlationId,
             opts.stripeSubscriptionId,
         )
-        .run();
+        , batch, (actual) => {
+            const actualChanges = actual.meta?.changes;
+            if (actualChanges !== 0 && actualChanges !== 1) {
+                throw new Error("tier activation write did not return D1 changes metadata");
+            }
+        });
     const changes = result.meta?.changes;
     if (changes !== 0 && changes !== 1) {
         throw new Error("tier activation write did not return D1 changes metadata");
     }
-    await db.prepare(`
+    await runOrStage(db.prepare(`
       UPDATE stripe_checkout_ownership_ledger
       SET state = 'completed', updated_at_ms = ?2
       WHERE tenant_id = ?1 AND session_id = ?3 AND state = 'session_created'
-    `).bind(opts.tenantId, opts.nowMs, opts.sessionId).run();
+    `).bind(opts.tenantId, opts.nowMs, opts.sessionId), batch);
 }
 
 /**
@@ -344,8 +353,9 @@ export async function activatePaidTierSelection(
 export async function deactivateTierSelectionBySubscription(
     db: D1DatabaseLike,
     opts: { stripeSubscriptionId: string },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    await db
+    await runOrStage(db
         .prepare(
             `UPDATE tier_selections
              SET subscription_state = 'inactive',
@@ -356,8 +366,7 @@ export async function deactivateTierSelectionBySubscription(
                    )
                AND subscription_state <> 'inactive'`,
         )
-        .bind(opts.stripeSubscriptionId)
-        .run();
+        .bind(opts.stripeSubscriptionId), batch);
 }
 
 /**
@@ -395,8 +404,9 @@ export async function deactivateTierSelectionBySubscription(
 export async function reactivateTierSelectionBySubscription(
     db: D1DatabaseLike,
     opts: { stripeSubscriptionId: string; nowMs: number },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    await db
+    await runOrStage(db
         .prepare(
             `UPDATE tier_selections
              SET subscription_state = 'active',
@@ -408,8 +418,7 @@ export async function reactivateTierSelectionBySubscription(
                    )
                AND subscription_state <> 'active'`,
         )
-        .bind(opts.stripeSubscriptionId, opts.nowMs)
-        .run();
+        .bind(opts.stripeSubscriptionId, opts.nowMs), batch);
 }
 
 /**
@@ -435,16 +444,16 @@ export async function reactivateTierSelectionBySubscription(
 export async function updateTierSelectionTierByCustomer(
     db: D1DatabaseLike,
     opts: { stripeCustomerId: string; tier: PaidTier },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    await db
+    await runOrStage(db
         .prepare(
             `UPDATE tier_selections
              SET tier = ?1
              WHERE stripe_customer_id = ?2
                AND subscription_state = 'active'`,
         )
-        .bind(opts.tier, opts.stripeCustomerId)
-        .run();
+        .bind(opts.tier, opts.stripeCustomerId), batch);
 }
 
 /**
@@ -458,14 +467,14 @@ export async function updateTierSelectionTierByCustomer(
 export async function backfillPeriodEnd(
     db: D1DatabaseLike,
     opts: { stripeSubscriptionId: string; currentPeriodEndMs: number; nowMs: number },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    await db
+    await runOrStage(db
         .prepare(
             `UPDATE tenant_billing
              SET current_period_end_ms = ?1,
                  updated_at_ms = ?2
              WHERE stripe_subscription_id = ?3`,
         )
-        .bind(opts.currentPeriodEndMs, opts.nowMs, opts.stripeSubscriptionId)
-        .run();
+        .bind(opts.currentPeriodEndMs, opts.nowMs, opts.stripeSubscriptionId), batch);
 }
