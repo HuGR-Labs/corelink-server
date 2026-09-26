@@ -148,8 +148,7 @@ async function reconcileCurrentRunnersEntitlement(
         authorityIsCurrent: authority.authorityIsCurrent,
         entitlement,
         nowMs,
-        batch,
-    });
+    }, batch);
 }
 
 // ---------------------------------------------------------------------------
