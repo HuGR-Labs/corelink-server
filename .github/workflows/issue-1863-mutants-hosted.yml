@@ -15,17 +15,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SHARD_COUNT: 27
+  SHARD_COUNT: 120
   SHARDING: round-robin
-  # Cargo-mutants v27 runs one worker unless --jobs is explicit.  The complete
-  # 24,463-member inventory needs eight bounded workers per shard: each cargo
-  # build and test is capped at 60 seconds, while the 240-minute step still
-  # leaves setup/receipt time inside the 255-minute job envelope.
-  #
-  # Inventory + plan + 27x45-minute baseline + two aggregation jobs consume
-  # 1,280 minutes.  The 27 mutation jobs cap at 27x255 = 6,885; 8,165 total
-  # leaves 35 minutes inside this reviewed external-capacity budget.
-  TOTAL_RUNNER_MINUTE_CAP: 8200
+  MUTATION_JOB_LIMIT_MINUTES: 240
+  MUTATION_COMMAND_LIMIT_MINUTES: 210
+  # Every dispatch freezes the complete occurrence-preserving cargo-mutants
+  # inventory. Its size is dynamic; the 24,463 charter count was six below the
+  # 24,469 occurrences in run 36127936753. The fixed 120-way round-robin map
+  # partitions every inventory position exactly once, including repeated
+  # identities, and keeps each resumable shard inside the four-hour job cap.
 
 jobs:
   inventory:
@@ -34,11 +32,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Assert the reviewed campaign runner-minute budget
-        run: |
-          set -euo pipefail
-          test "$SHARD_COUNT" = 27
-          test "$TOTAL_RUNNER_MINUTE_CAP" -ge "$((10 + 35 + SHARD_COUNT * 45 + 10 + SHARD_COUNT * 255 + 10))"
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
@@ -67,7 +60,7 @@ jobs:
           cargo mutants --version | grep -Fx 'cargo-mutants 27.0.0'
           # cargo-mutants 27 requires --shard even for --list.  0/1 is the
           # sole shard of a denominator-one partition, so this enumerates the
-          # complete workspace inventory rather than a sample of the 27 lanes.
+          # complete workspace inventory used to populate all 120 deterministic lanes.
           cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json > "${RUNNER_TEMP}/full-inventory.json"
           python3 scripts/verify_i2457_mutants_shards.py build-inventory \
             --raw "${RUNNER_TEMP}/full-inventory.json" \
@@ -134,7 +127,7 @@ jobs:
           retention-days: 30
 
   baseline-shards:
-    name: unmutated workspace baseline shard ${{ matrix.shard }}/27
+    name: unmutated workspace baseline shard ${{ matrix.shard }}/120
     needs: [inventory, baseline-plan]
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
@@ -143,7 +136,7 @@ jobs:
       fail-fast: false
       max-parallel: 9
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -247,16 +240,16 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   mutants-workspace:
-    name: cargo-mutants shard ${{ matrix.shard }}/27 (fail-on-any-survivor)
+    name: cargo-mutants shard ${{ matrix.shard }}/120 (fail-on-any-survivor)
     needs: [inventory, baseline-aggregate]
     if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
-    timeout-minutes: 255
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       max-parallel: 9
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -293,16 +286,22 @@ jobs:
         with:
           tool: cargo-mutants@27.0.0
           fallback: cargo-binstall
+      - name: Assert the shard stays within the four-hour execution limit
+        run: |
+          set -euo pipefail
+          test "$SHARD_COUNT" = 120
+          test "$MUTATION_JOB_LIMIT_MINUTES" = 240
+          test "$MUTATION_COMMAND_LIMIT_MINUTES" = 210
       - name: Enumerate and run this deterministic shard after the green baseline
-        timeout-minutes: 240
+        timeout-minutes: 210
         run: |
           set +e
           output="${RUNNER_TEMP}/mutants-shard-${{ matrix.shard }}"
           mkdir -p "$output"
-          cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json > "${RUNNER_TEMP}/expected-shard.json"
+          cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/120 --list --json > "${RUNNER_TEMP}/expected-shard.json"
           list_result=$?
           if [[ "$list_result" -eq 0 ]]; then
-            cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --jobs=8 --build-timeout=60 --timeout=60 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output "$output"
+            cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --jobs=8 --build-timeout=60 --timeout=60 --sharding=round-robin --shard ${{ matrix.shard }}/120 --baseline=skip --output "$output"
             mutant_result=$?
           else
             mutant_result=125
@@ -350,7 +349,7 @@ jobs:
           PY
 
   aggregate:
-    name: aggregate exact 27-shard mutation coverage
+    name: aggregate exact 120-shard mutation coverage
     needs: [inventory, baseline-aggregate, mutants-workspace]
     if: always() && github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04

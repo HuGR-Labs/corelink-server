@@ -23,7 +23,7 @@ contain nine job boundaries. `terraform-drift.yml` is not a B-113 lane.
    skipped legacy job as a receipt. Retain the final protected-main hosted run
    URL, SHA, runner, lane, and conclusion with secrets and personal data
    redacted. The retained aggregate must bind the green baseline and exact,
-   duplicate-free union of all 27 deterministic shard inventories. A repository
+   exact occurrence-preserving union of all 120 deterministic shard inventories. A repository
    contract or an in-progress run does not prove that any dispatched run
    succeeded.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from collections import Counter
 import json
 import shutil
 from argparse import Namespace
@@ -131,6 +132,18 @@ class MutantsShardAggregateTests(unittest.TestCase):
         self.assertEqual(receipt["attempt_lineage"], [1])
         self.assertEqual(len(receipt["shard_artifact_digests"]), SHARD_COUNT)
 
+    def test_campaign_sized_inventory_is_partitioned_completely_and_within_bound(self) -> None:
+        # The retained campaign inventory has 24,469 occurrences, including
+        # repeated identities. Round-robin membership partitions list positions,
+        # so multiplicity is retained without overlap or loss.
+        identity = "sha256:" + "a" * 64
+        ids = [identity] * 24_469
+        shards = [membership(ids, index) for index in range(SHARD_COUNT)]
+        self.assertEqual(sum(map(len, shards)), len(ids))
+        self.assertEqual(Counter(item for shard in shards for item in shard), Counter(ids))
+        self.assertTrue(all(len(shard) <= 205 for shard in shards))
+        self.assertTrue(all(len(shard) >= 203 for shard in shards))
+
     def test_inventory_receipt_uses_redacted_string_identities(self) -> None:
         self.assertEqual(validate_inventory(self.inventory), self.inventory["mutant_ids"])
         invalid = copy.deepcopy(self.inventory)
@@ -142,7 +155,7 @@ class MutantsShardAggregateTests(unittest.TestCase):
         with self.assertRaisesRegex(VerificationError, "multiplicity"):
             validate_inventory(invalid)
         invalid = copy.deepcopy(self.inventory)
-        invalid["inventory_shard"] = "0/27"
+        invalid["inventory_shard"] = "1/1"
         with self.assertRaisesRegex(VerificationError, "complete denominator-one"):
             validate_inventory(invalid)
 
@@ -172,8 +185,8 @@ class MutantsShardAggregateTests(unittest.TestCase):
     def test_equal_records_in_separate_shards_have_no_identity_collision(self) -> None:
         shared = self.inventory["mutant_ids"][0]
         self.assertEqual(self.inventory["mutant_ids"][1], shared)
-        self.assertEqual(membership(self.inventory["mutant_ids"], 0), [shared, self.inventory["mutant_ids"][27]])
-        self.assertEqual(membership(self.inventory["mutant_ids"], 1), [shared, self.inventory["mutant_ids"][28]])
+        self.assertEqual(membership(self.inventory["mutant_ids"], 0), [shared, self.inventory["mutant_ids"][SHARD_COUNT]])
+        self.assertEqual(membership(self.inventory["mutant_ids"], 1), [shared, self.inventory["mutant_ids"][SHARD_COUNT + 1]])
         self.assertIn({"identity": shared, "count": 1}, self.shards[0]["mutant_counts"])
         self.assertIn({"identity": shared, "count": 1}, self.shards[1]["mutant_counts"])
 

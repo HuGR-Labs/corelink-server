@@ -39,17 +39,25 @@ deduplicate retries. Unknown cron values are rejected with `noRetry()`; delivery
 exceptions and non-2xx responses remain retryable failures.
 
 If an owner-approved non-production trigger is reintroduced, the synthetic-page
-payload carries the runbook's non-secret PagerDuty contract:
+payload carries the runbook's non-secret provider contract:
 `service=synthetic-drill`, `event_action=trigger`, native `severity=info`,
 semantic `synthetic_severity=sev2_synthetic`, a four-week region selector, and
 the `PAT-CORRELATION-ID-001` correlation prefix. Weeks 0–2 are immediate
 handoffs. Week 3 (`boundary_handoff`) is deliberately not emitted at the
 trigger time: the payload retains the actual `scheduled_at_ms`, sets
 `delivery_mode=deferred`, and sets `emit_at_ms` to the following Sunday at
-23:59:00 UTC. A receiver must schedule that effective timestamp and must not
-send the PagerDuty event immediately. The receiver owns the actual
-PagerDuty Events API call, D1 `synthetic_page_drills` record, and ack/escalation
-processing described in
+23:59:00 UTC. This `delivery_mode` controls when an event may be sent and is
+separate from `provider_mode`. The default provider mode remains `pagerduty`
+and retains the configured Events API plus signed webhook lifecycle. An
+explicitly configured `provider_deferred` mode requires no PagerDuty
+credentials and records a correlated terminal D1 receipt with the configured
+the configured `SENTRY_RELEASE` (used as both scheduler revision and its
+40-character serving SHA), receiver version metadata, and persistence result. Missing
+provenance fails closed. That
+receipt makes no claim that an alert was delivered or a person was reached; it
+also excludes the row from the later PagerDuty delivery sweep. See
+[`RB-SYNTHETIC-PAGE-DRILL`](../../../specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md)
+for the configured PagerDuty path.
 [`RB-SYNTHETIC-PAGE-DRILL`](../../../specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md).
 
 Production and all regional production environments explicitly override the
