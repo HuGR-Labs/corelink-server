@@ -34,6 +34,12 @@ class B063WorkflowContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "must not be user-selectable"):
             verify(render(changed))
 
+    def test_pr_path_filter_includes_its_own_adversarial_contract(self) -> None:
+        changed = copy.deepcopy(self.document)
+        changed["on"]["pull_request"]["paths"].remove("scripts/test_verify_b063_hosted_evidence_workflow.py")
+        with self.assertRaisesRegex(AssertionError, "PR path filter must include"):
+            verify(render(changed))
+
     def test_rejects_missing_or_unreviewed_approval_binding(self) -> None:
         for environment in (None, "production", "production-capacity-read"):
             with self.subTest(environment=environment):
@@ -60,6 +66,48 @@ class B063WorkflowContractTests(unittest.TestCase):
         query = run.index("rows = query(sql)", assignment)
         capture["run"] = run[:assignment] + 'sql = "DELETE FROM audit_outbox"\n' + run[query:]
         with self.assertRaisesRegex(AssertionError, "SELECT|mutating SQL"):
+            verify(render(changed))
+
+    def test_rejects_network_heredoc_without_auditable_sql_assignment(self) -> None:
+        changed = copy.deepcopy(self.document)
+        steps = changed["jobs"]["live-read-only"]["steps"]
+        capture = next(step for step in steps if step.get("name") == "Capture three independent SELECT-only partition reads")
+        run = capture["run"]
+        assignment = run.index("sql = (")
+        query = run.index("rows = query(sql)", assignment)
+        capture["run"] = run[:assignment] + 'rows = query("DELETE FROM audit_outbox")\n' + run[query + len("rows = query(sql)\n"):]
+        with self.assertRaisesRegex(AssertionError, "one auditable SQL assignment"):
+            verify(render(changed))
+
+    def test_rejects_unreviewed_python_network_client_import(self) -> None:
+        changed = copy.deepcopy(self.document)
+        steps = changed["jobs"]["live-read-only"]["steps"]
+        capture = next(step for step in steps if step.get("name") == "Capture three independent SELECT-only partition reads")
+        capture["run"] = capture["run"].replace(
+            "          import json\n",
+            "          import json\n          import requests\n",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "reviewed read-only allowlist"):
+            verify(render(changed))
+
+    def test_rejects_archive_endpoint_instead_of_d1_query_endpoint(self) -> None:
+        changed = copy.deepcopy(self.document)
+        steps = changed["jobs"]["live-read-only"]["steps"]
+        capture = next(step for step in steps if step.get("name") == "Capture three independent SELECT-only partition reads")
+        capture["run"] = capture["run"].replace(
+            "https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{database}/query",
+            "https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/corelink-prod",
+        )
+        with self.assertRaisesRegex(AssertionError, "reviewed Cloudflare D1 query endpoint"):
+            verify(render(changed))
+
+    def test_rejects_archive_route_literal(self) -> None:
+        changed = copy.deepcopy(self.document)
+        steps = changed["jobs"]["live-read-only"]["steps"]
+        capture = next(step for step in steps if step.get("name") == "Capture three independent SELECT-only partition reads")
+        capture["run"] += "\n/_internal/audit/archive"
+        with self.assertRaisesRegex(AssertionError, "must not contain PagerDuty mutation"):
             verify(render(changed))
 
     def test_rejects_dispatch_from_unprotected_or_drifted_ref(self) -> None:

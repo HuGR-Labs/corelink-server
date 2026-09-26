@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import re
 import ast
+import re
 import textwrap
 from pathlib import Path
 
@@ -13,6 +13,16 @@ import yaml
 
 WORKFLOW = Path(".github/workflows/issue-1648-b063-read-only-evidence.yml")
 PYTHON_HEREDOC = re.compile(r"(?m)^[ \t]*python3? - <<'PY'\n(.*?)^[ \t]*PY[ \t]*$", re.DOTALL)
+D1_QUERY_ENDPOINT = "https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{database}/query"
+ALLOWED_PYTHON_IMPORTS = {
+    ("import", "json", ()),
+    ("import", "os", ()),
+    ("import", "sys", ()),
+    ("import", "time", ()),
+    ("from", "datetime", ("datetime", "timezone")),
+    ("from", "urllib.error", ("HTTPError", "URLError")),
+    ("from", "urllib.request", ("Request", "urlopen")),
+}
 
 
 def _sql_expression(node: ast.AST) -> str:
@@ -34,22 +44,97 @@ def _sql_expression(node: ast.AST) -> str:
     raise AssertionError("SQL expression contains an unapproved dynamic fragment")
 
 
+def _d1_endpoint_expression(node: ast.AST) -> str:
+    """Return the one reviewed D1 endpoint shape; reject alternate targets."""
+    if not isinstance(node, ast.JoinedStr):
+        raise AssertionError("D1 endpoint must use the reviewed Cloudflare query URL")
+    parts = []
+    for value in node.values:
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            parts.append(value.value)
+        elif (
+            isinstance(value, ast.FormattedValue)
+            and isinstance(value.value, ast.Name)
+            and value.value.id in {"account", "database"}
+            and value.conversion == -1
+            and value.format_spec is None
+        ):
+            parts.append("{" + value.value.id + "}")
+        else:
+            raise AssertionError("D1 endpoint contains an unapproved dynamic fragment")
+    return "".join(parts)
+
+
 def _verify_select_only_python(run: str) -> None:
     blocks = PYTHON_HEREDOC.findall(run)
     if "/d1/database/" in run and not blocks:
         raise AssertionError("D1 endpoint must be called only from a verified Python heredoc")
+    if re.search(r"(?i)\b(?:curl|wget|wrangler|node|ruby|perl)\b|\bpython3?\s+-c\b", run):
+        raise AssertionError("hosted evidence lane must not use shell network or archive clients")
     for block in blocks:
         tree = ast.parse(textwrap.dedent(block))
+        imports = set()
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                imports.update(("import", alias.name, ()) for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imports.add(("from", node.module or "", tuple(alias.name for alias in node.names)))
+        if imports != ALLOWED_PYTHON_IMPORTS:
+            raise AssertionError("Python heredoc imports must remain on the reviewed read-only allowlist")
+        if any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in {"eval", "exec", "compile", "__import__"}
+            for node in ast.walk(tree)
+        ):
+            raise AssertionError("Python heredoc must not use dynamic code loading")
+        request_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Request"
+        ]
+        urlopen_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "urlopen"
+        ]
+        endpoint_assignments = [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "endpoint" for target in node.targets)
+        ]
         sql_assignments = [
             node.value
             for node in ast.walk(tree)
             if isinstance(node, ast.Assign)
             and any(isinstance(target, ast.Name) and target.id == "sql" for target in node.targets)
         ]
+        has_network_traffic = bool(request_calls or urlopen_calls or endpoint_assignments)
+        if has_network_traffic:
+            if len(endpoint_assignments) != 1 or _d1_endpoint_expression(endpoint_assignments[0]) != D1_QUERY_ENDPOINT:
+                raise AssertionError("Python network traffic must target only the reviewed Cloudflare D1 query endpoint")
+            if len(request_calls) != 1 or len(urlopen_calls) != 1:
+                raise AssertionError("Python network traffic must use one auditable D1 request")
+            request = request_calls[0]
+            if (
+                len(request.args) != 1
+                or not isinstance(request.args[0], ast.Name)
+                or request.args[0].id != "endpoint"
+            ):
+                raise AssertionError("D1 request must use the reviewed endpoint")
+            if (
+                len(urlopen_calls[0].args) != 1
+                or not isinstance(urlopen_calls[0].args[0], ast.Name)
+                or urlopen_calls[0].args[0].id != "request"
+            ):
+                raise AssertionError("D1 request must be sent through the audited request object")
+            if len(sql_assignments) != 1:
+                raise AssertionError("every D1 network block must have one auditable SQL assignment")
+        elif sql_assignments:
+            raise AssertionError("SQL assignment is not bound to the reviewed D1 network path")
         if not sql_assignments:
             continue
-        if len(sql_assignments) != 1:
-            raise AssertionError("D1 script must have one auditable SQL assignment")
         sql = _sql_expression(sql_assignments[0]).lstrip()
         if not re.match(r"(?i)^SELECT\b", sql):
             raise AssertionError("D1 query must be a SELECT statement")
@@ -67,12 +152,12 @@ def _verify_select_only_python(run: str) -> None:
         ):
             raise AssertionError("D1 query calls must use the audited SQL assignment")
 
-        query_function = next(
-            (node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "query"),
-            None,
-        )
-        if query_function is None:
-            raise AssertionError("audited SQL must be sent through the query function")
+        query_functions = [
+            node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "query"
+        ]
+        if len(query_functions) != 1:
+            raise AssertionError("audited SQL must use exactly one query function")
+        query_function = query_functions[0]
         posts_sql = False
         for call in ast.walk(query_function):
             if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name) or call.func.id != "Request":
@@ -105,6 +190,14 @@ def verify(source: str) -> None:
     triggers = workflow.get("on", {})
     if not isinstance(triggers, dict) or "workflow_dispatch" not in triggers or "pull_request" not in triggers:
         raise AssertionError("both dispatch and pull-request contract paths are required")
+    pull_request_paths = triggers["pull_request"].get("paths", [])
+    for required_path in (
+        str(WORKFLOW),
+        "scripts/verify_b063_hosted_evidence_workflow.py",
+        "scripts/test_verify_b063_hosted_evidence_workflow.py",
+    ):
+        if required_path not in pull_request_paths:
+            raise AssertionError(f"PR path filter must include {required_path}")
 
     dispatch_inputs = triggers["workflow_dispatch"].get("inputs", {})
     if "environment" in dispatch_inputs:
@@ -180,7 +273,7 @@ def verify(source: str) -> None:
 
     for run in run_steps:
         _verify_select_only_python(run)
-    for forbidden in ("PAGERDUTY", "pagerduty", "events.pagerduty.com", "event_action"):
+    for forbidden in ("PAGERDUTY", "pagerduty", "events.pagerduty.com", "event_action", "/_internal/audit/archive"):
         if forbidden in source_text:
             raise AssertionError(f"workflow must not contain PagerDuty mutation: {forbidden}")
 

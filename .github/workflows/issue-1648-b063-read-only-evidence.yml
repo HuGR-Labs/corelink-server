@@ -9,6 +9,7 @@ on:
     paths:
       - ".github/workflows/issue-1648-b063-read-only-evidence.yml"
       - "scripts/verify_b063_hosted_evidence_workflow.py"
+      - "scripts/test_verify_b063_hosted_evidence_workflow.py"
   workflow_dispatch:
     inputs:
       read_only:
