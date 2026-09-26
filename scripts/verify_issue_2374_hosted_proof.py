@@ -130,7 +130,7 @@ net.Socket.prototype.connect = function (...args) {
   if (port !== allowedPort || host !== "127.0.0.1") {
     blocked("I2374_ACTION_EGRESS_BLOCKED", `denied Socket.connect destination ${String(host)}:${port}`);
   }
-  return nativeConnect.apply(this, args);
+  return nativeConnect.apply(this, positional);
 };
 '''
 
@@ -1208,7 +1208,7 @@ def verify_policy_gate_cargo_deny(root: Path, baseline: Path) -> None:
     if not shutil.which("cargo-deny"):
         fail("cargo-deny is not installed in the hosted proof job")
     version = subprocess.run(["cargo", "deny", "--version"], check=True, capture_output=True, text=True).stdout.strip()
-    if not re.search(r"(?:^|\\s)0\\.19\\.8(?:$|\\s)", version):
+    if not re.search(r"(?:^|\s)0\.19\.8(?:$|\s)", version):
         fail(f"hosted proof requires workflow-pinned cargo-deny 0.19.8, got {version!r}")
     with tempfile.TemporaryDirectory(prefix="i2374-policy-") as directory:
         tmp = Path(directory)
