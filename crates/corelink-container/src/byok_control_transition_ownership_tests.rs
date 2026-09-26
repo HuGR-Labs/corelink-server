@@ -623,7 +623,7 @@ async fn exact_pending_synthetic_activation_cancels_and_reads_back_empty_baselin
             .query_row(
                 "SELECT COUNT(*) FROM tenant_byok_secret_history \
                  WHERE tenant_id=?1 AND tcs_wrapped IS NOT NULL",
-                [tenant_id],
+                [tenant_id.as_str()],
                 |row| row.get(0),
             )
             .expect("no wrapped history");
@@ -633,7 +633,7 @@ async fn exact_pending_synthetic_activation_cancels_and_reads_back_empty_baselin
                  (SELECT COUNT(*) FROM byok_logical_object_generation WHERE tenant_id=?1), \
                  (SELECT COUNT(*) FROM byok_logical_object_publication WHERE tenant_id=?1), \
                  (SELECT COUNT(*) FROM byok_object_purge_item WHERE tenant_id=?1)",
-                [tenant_id],
+                [tenant_id.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .expect("no generation publication or purge residue");
