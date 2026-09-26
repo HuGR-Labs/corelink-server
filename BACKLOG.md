@@ -6986,7 +6986,7 @@ status: done
 verify: manual
 verify-means: |
   done — 135 merged-PR branches pruned, remote down to 11. Re-check by comparing
-  `gh pr list --repo HuGR-Labs/corelink-runners --state all --json
+  `gh pr list --repo HuGR-dev/corelink-runners --state all --json
   headRefName,state` against `git ls-remote --heads`. Reopens if the
   merged-but-undeleted count climbs again, i.e. if nothing prunes on merge.
 last-verified: 2026-08-24
@@ -14765,7 +14765,7 @@ verify-means: |
 
   1. **O último build da imagem passou?**
 
-         gh run list --repo HuGR-Labs/corelink-runners \
+         gh run list --repo HuGR-dev/corelink-runners \
            --workflow build-cf-container-images.yml --limit 1 \
            --json createdAt,conclusion
 

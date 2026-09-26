@@ -38,7 +38,7 @@
 #                     rather than to launder the current state.
 #     tracking:       a BACKLOG id, a PR/issue URL, or the literal `none`.
 #
-# SCOPE NOTE — `HuGR-Labs/corelink-runners` has its own workflow estate. The
+# SCOPE NOTE — `HuGR-dev/corelink-runners` has its own workflow estate. The
 # guard cannot read a waiver file in that repository (both repos are private
 # and the workflow's default GITHUB_TOKEN is scoped to this repo only), so the
 # runners repo is reported, not waived. See the guard's header.

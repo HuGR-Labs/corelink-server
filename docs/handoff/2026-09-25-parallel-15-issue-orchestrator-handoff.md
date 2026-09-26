@@ -29,10 +29,23 @@ The issue ledger is canonical. Record claim, PR, exact-head CI, cold verdict, bl
 | Repository | Baseline when authored | Notes |
 |---|---|---|
 | `HuGR-dev/corelink-server` | `3515ba04f68f91be63b58b5346d71200786b0808` | PR #2613 was merged green immediately before this handoff. |
-| `HuGR-Labs/corelink-runners` | `7dc29913fd51047fa15d65f2ded759af9c6da8e6` | Private canonical runner repository. |
+| `HuGR-dev/corelink-runners` | `7dc29913fd51047fa15d65f2ded759af9c6da8e6` | Canonical runner repository (ID `1266754321`). |
 | `HuGR-Labs/corelink-workspaces` | `9907d7d68a3df97dabad0f13e07ff43cb868bfcf` | Cross-repo producer for #567/#568. |
 
 Refresh these SHAs before every branch. The baseline records the handoff observation; it is not permission to branch from stale state.
+
+For an existing local runners checkout, set `origin` to the canonical URL and
+verify the result before fetching:
+
+```bash
+git remote set-url origin https://github.com/HuGR-dev/corelink-runners.git
+git remote get-url origin
+gh repo view HuGR-dev/corelink-runners --json nameWithOwner,id,url
+```
+
+The SSH equivalent is `git@github.com:HuGR-dev/corelink-runners.git`. The
+repository ID is `1266754321`; GitHub redirects the former owner URL to this
+same repository. Runner issue and PR numbers therefore remain unchanged.
 
 Central-session exclusions:
 
@@ -184,77 +197,77 @@ Emit an explicit `INDETERMINATE` result from the normal verifier CLI when histor
 
 Likely ownership: `crates/corelink-audit-chain/src/bin/verifier.rs`, focused CLI tests, and one disabled-by-default `i2614` exact-head suite in `.github/workflows/campaign-ci.yml`. Do not touch release files from merged PR #2613 or active central issue files.
 
-### `HuGR-Labs/corelink-runners#566` — GitHub REST pagination
+### `HuGR-dev/corelink-runners#566` — GitHub REST pagination
 
 Replace fictional JSON cursors in orphan run/job discovery with a bounded provider-correct paginator that retains and validates `Link` headers. Never forward the bearer to another origin. Distinguish complete empty results from truncation or unavailable pages. Cover page 2, 31/101+ jobs, multiple run pages, malformed/cyclic/cross-origin links, rate limit, and mid-scan failure. Audit the sibling completed-job paginator and active callers.
 
 Likely ownership: `deploy/cloudflare/src/lib.ts`, `deploy/cloudflare/test/index.test.ts`, and focused pagination helpers/fixtures.
 
-### `HuGR-Labs/corelink-runners#567` — child exit 125 executes twice
+### `HuGR-dev/corelink-runners#567` — child exit 125 executes twice
 
 Freeze a structured execution-state contract across runners and workspaces. A real child that exits 125 must execute exactly once; a proven pre-execution cache failure may fall back once; possibly-executed or unknown state must never retry automatically. Preserve child verdict transparency and cover spawn, post-dispatch I/O, signal, and output-cap paths.
 
 Likely ownership: `actions/corelink-memoize/**`, `corelink-workspaces/crates/clw-cli/src/subcmds/run.rs`, `crates/clw-run/src/lib.rs`, and focused real Action/CLI integration tests. Create separate linked PRs when both repositories change; one issue owner coordinates them.
 
-### `HuGR-Labs/corelink-runners#568` — required-hit capability mismatch
+### `HuGR-dev/corelink-runners#568` — required-hit capability mismatch
 
 Begin after #567. The real accepted CLI artifact must support the exact Action invocation and prove zero child executions on miss, corruption, missing blobs, unavailable cache, and unsupported capability. Bind source SHA, binary digest/signature, capability declaration, Action pin, and distribution metadata. Package version alone is not capability proof, and required-hit must never degrade to optional.
 
 Likely ownership overlaps #567 and therefore cannot be active simultaneously.
 
-### `HuGR-Labs/corelink-runners#570` — incomplete DevEnv cleanup
+### `HuGR-dev/corelink-runners#570` — incomplete DevEnv cleanup
 
 When credential cleanup returns incomplete, preserve its durable handle and autonomously re-arm a bounded recovery consumer. Do not assume a generic idle alarm retries the one-time expiry task. Preserve stale-session fencing, stop responsiveness, idempotency, and revocation secrecy. Cover stash wipe, PAT revoke, storage put/delete, repeated recovery, and healthy controls.
 
 Likely ownership: `deploy/cloudflare/src/lib/devenv_credentials.ts`, `deploy/cloudflare/src/durable_objects/runner_dev_env.ts`, and credential/DO tests.
 
-### `HuGR-Labs/corelink-runners#571` — malformed snapshot reports
+### `HuGR-dev/corelink-runners#571` — malformed snapshot reports
 
 Begin after #570. Parse and validate the real snapshot CLI report fail closed. Empty, malformed, path-invalid, digest-invalid, partial, oversized, or inconsistent reports must not return `ok`. Preserve valid snapshot behavior and never claim CAS persistence from synthetic roots.
 
 Likely ownership: `deploy/cloudflare/src/lib/clw.ts`, `runner_dev_env.ts`, and snapshot tests.
 
-### `HuGR-Labs/corelink-runners#572` — snapshot session/generation binding
+### `HuGR-dev/corelink-runners#572` — snapshot session/generation binding
 
 Begin after #571. Bind both snapshot exec effects and the returned pair to one authorized session/generation. A stop/restart or replacement between effects must safely refuse/cancel stale intent. A `running` flag is not a generation fence. Use bounded coordination and preserve stop/recovery behavior.
 
 Likely ownership: `runner_dev_env.ts`, session/generation types, and barrier-driven lifecycle tests.
 
-### `HuGR-Labs/corelink-runners#575` — image build ENOSPC
+### `HuGR-dev/corelink-runners#575` — image build ENOSPC
 
 Fix the build path so BuildKit cache, exported tarball, and containerd import do not exceed the ephemeral box together. Prove the selected strategy bounds disk usage and preserves digest/provenance. Do not claim closure from a different image or by moving the lane to the owner's machine. No production publish is authorized.
 
 Likely ownership: `.github/workflows/build-cf-container-images.yml`, build helpers, image contract tests.
 
-### `HuGR-Labs/corelink-runners#574` — reproducible DevEnv image
+### `HuGR-dev/corelink-runners#574` — reproducible DevEnv image
 
 Begin after #575. Add the missing reproducible workflow path for `deploy/cloudflare/Dockerfile.runner-devenv`, producing an immutable digest with the same pin/provenance rules as sibling images. Manual one-off image construction does not close this issue. Do not publish or repin production.
 
 Likely ownership overlaps #575 and must be serialized.
 
-### `HuGR-Labs/corelink-runners#578` — README CI truth
+### `HuGR-dev/corelink-runners#578` — README CI truth
 
 Rescue existing PR #579. Its head was `a83efa6c99d15b5e7a72d1ffe229a36f8ccde335`, merge state `CLEAN`, and sole path `README.md`, but the commit signature was invalid and no hosted checks were recorded. Preserve the intended documentation patch, rebase it onto live main, create one signed+DCO commit, and use force-with-lease only after verifying the old OID and patch-id. State dated successful evidence and the actual lack of merge enforcement accurately.
 
-### `HuGR-Labs/corelink-runners#580` — rustls advisory
+### `HuGR-dev/corelink-runners#580` — rustls advisory
 
 Rescue existing PR #581. Its head was `442e1c9c92c8fe12cf4499d3d137c85aacb8cd2a`, merge state `CLEAN`, paths `Cargo.toml` and `Cargo.lock`, but the signature was invalid and no hosted checks were recorded. Preserve the minimal upgrade to `rustls >= 0.23.45`, avoid unrelated dependency movement, recreate a signed+DCO commit on live main, and run deny, audit, all-target compile, and focused TLS tests.
 
-### `HuGR-Labs/corelink-runners#586` — terminal uncertain intake capacity
+### `HuGR-dev/corelink-runners#586` — terminal uncertain intake capacity
 
 Keep ambiguous effects fenced against duplicate provider work while allowing capacity reclamation only through authenticated, evidenced, idempotent reconciliation. Add read-only count/age observability without payloads or credentials. Cover 500 uncertain rows, safe reconciliation, repeated execution, malformed storage, and authorization. Never delete durable evidence blindly.
 
 Likely ownership: `deploy/cloudflare/src/lib/normal_intake_inbox.ts`, authenticated readback/reconciliation seams, and normal-intake tests. Do not touch #602/PR #601 billing files.
 
-### `HuGR-Labs/corelink-runners#603` — historical false-settlement recovery
+### `HuGR-dev/corelink-runners#603` — historical false-settlement recovery
 
 Wait for central #602/PR #601. Build a bounded tenant-safe dry-run and recovery path that classifies already accepted/deduped events separately from unresolved historical markers. No marker or source is removed before durable classification. Restart, partial failure, replay, and rollback remain idempotent. Runtime execution requires separate authority and is outside this package.
 
-### `HuGR-Labs/corelink-runners#604` — sibling acknowledgement consumers
+### `HuGR-dev/corelink-runners#604` — sibling acknowledgement consumers
 
 Wait for central #602/PR #601. Produce a complete caller census and repair every active status-only success assumption under the frozen typed acknowledgement contract. Negative vectors cover missing outcomes, inconsistent counters, reorder, idem-key mismatch, and status-only success. Use separate linked PRs per repository if code changes cross repository boundaries.
 
-### `HuGR-Labs/corelink-runners#605` — Rust/TypeScript restart integration
+### `HuGR-dev/corelink-runners#605` — Rust/TypeScript restart integration
 
 Wait for #603 and #604. Build a credentialless deterministic hosted harness using the real Rust ingest and TypeScript flusher. Cover partial rejection, restart, retry, lost acknowledgement, settlement-write failure, quarantine-write failure, and bounded low-cardinality metrics. Record exact server and runner SHAs; never mutate a provider or production state.
 
