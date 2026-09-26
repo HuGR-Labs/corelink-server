@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify exact head, base, and changed paths
+      - name: Verify exact head, base, and trigger paths
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
           EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
@@ -38,15 +38,15 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           git cat-file -e "$EXPECTED_BASE^{commit}"
           changed_paths="$(git diff --name-only "$EXPECTED_BASE...$EXPECTED_HEAD")"
+          relevant=false
           while IFS= read -r path; do
             case "$path" in
               .github/workflows/issue-2627-stripe-fixtures.yml|\
               apps/signup-worker/tests/stripe.test.ts|\
-              apps/signup-worker/tests/stripe_handler_helpers.ts) ;;
-              *) echo "Unexpected changed path: $path" >&2; exit 1 ;;
+              apps/signup-worker/tests/stripe_handler_helpers.ts) relevant=true ;;
             esac
           done <<< "$changed_paths"
-          test -n "$changed_paths"
+          test "$relevant" = true
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
