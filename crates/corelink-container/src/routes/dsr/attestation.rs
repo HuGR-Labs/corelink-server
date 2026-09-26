@@ -585,6 +585,7 @@ mod tests {
         verify_attestation_signature, ErasureAttestation, ErasureAttestationPayload,
         ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle, Region,
     };
+    use crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext;
 
     use super::{persist_signed_attestation, AttestationSinks, ERASE_MECHANISM};
 

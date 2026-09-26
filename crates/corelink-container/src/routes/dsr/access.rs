@@ -1445,7 +1445,7 @@ mod tests {
     async fn accepted_dsr_context(
         endpoint: &str,
     ) -> crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext {
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         use sha2::Sha256;
 
         let sha = "a".repeat(40);
@@ -1588,6 +1588,7 @@ mod tests {
                     let values = json_sql_values(body["params"].as_array().expect("query params"));
                     let db = thread_db.lock().expect("fixture database lock");
                     query_json_rows(&db, sql, &values)
+                        .map_err(|error| error.to_string())
                         .map(|rows| serde_json::json!({ "result": [{"results": rows, "success": true}], "success": true, "errors": [] }))
                 };
                 let (status, response) = match result {
