@@ -281,7 +281,9 @@ impl ErasureIdempotencyLedger for D1ErasureIdempotencyLedger {
                 current_time_ms().map_err(ErasureIdempotencyError::Backend)?,
             )?);
         }
-        d1_batch_blocking(&self.d1, statements).map_err(ErasureIdempotencyError::Backend)
+        d1_batch_blocking(&self.d1, statements)
+            .map(|_| ())
+            .map_err(ErasureIdempotencyError::Backend)
     }
 
     fn get_outcome_snapshot(

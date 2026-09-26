@@ -432,7 +432,7 @@ fn audit_dsr_event(
         json!(clamp_ms(now_ms)),
     ];
     if let Some(registration) = ownership {
-        d1_batch_blocking(d1, vec![D1BatchStatement::new(sql, params), registration])
+        d1_batch_blocking(d1, vec![D1BatchStatement::new(sql, params), registration]).map(|_| ())
     } else {
         d1_query_blocking(d1, sql, params).map(|_| ())
     }

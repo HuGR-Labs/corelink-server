@@ -13,6 +13,7 @@ AUDIT = read("crates/corelink-container/src/routes/dsr/audit.rs")
 LEDGER = read("crates/corelink-container/src/routes/dsr/ledger.rs")
 ACCESS = read("crates/corelink-container/src/routes/dsr/access.rs")
 ATTESTATION = read("crates/corelink-container/src/routes/dsr/attestation.rs")
+PORTAL = read("crates/corelink-container/src/routes/dsr/portal/part-00-01.rs")
 CENSUS = read("docs/issue-2581-dsr-audit-writer-census.md")
 
 required = {
@@ -30,6 +31,7 @@ required = {
     "attestation R2 evidence is retained": "StagingLoadTestResourceClass::AuditEvidence" in ATTESTATION and "persist_owned_r2(" in ATTESTATION,
     "attestation D1 mutations share registration batches": "d1_batch_blocking(" in ATTESTATION and "erasure-attestation:" in ATTESTATION,
     "ordinary callers keep None-compatible path": "self.emit_attributed(record, None)" in AUDIT and "return self.set_outcome_snapshot(dsr_id, outcome_json)" in LEDGER,
+    "ordinary portal callers explicitly pass None": "run_access(&self.d1, dsr_id, tenant_id, now_ms, None)" in PORTAL and "now_ms,\n            None," in PORTAL,
     "census records the closed family and exclusions": all(token in CENSUS for token in ("dsr_artifact", "dsr_obligation", "audit_evidence", "dsr_consumer.ts", "dsr_verify_cron.ts", "portal/part-00.rs", "adapter_r2_{cas,ac}.rs", "cas_retention")),
     "census rejects secret and PII claims": all(token not in CENSUS.lower() for token in ("raw nonce", "credential value", "personal email")),
 }
