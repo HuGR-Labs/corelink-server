@@ -12,6 +12,7 @@ on:
       - '.github/workflows/issue-2148-derived-v0004-policy.yml'
       - 'scripts/backlog_ledger_successor.py'
       - 'scripts/backlog_verify.py'
+      - 'tests/test_backlog_verify_trust_boundary.py'
       - 'tests/test_backlog_ledger_successor.py'
       - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
       - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0003.json'
@@ -29,7 +30,7 @@ jobs:
   policy:
     name: verify immutable v0004-v0009 successor policy
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout without write credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
@@ -52,7 +53,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements-ci.txt
       - name: Prove derived policy through v0009 and mutation rejection
         run: >-
-          python -m pytest -q
+          python -m pytest -vv
           tests/test_backlog_ledger_successor.py::test_v0004_policy_derives_only_b012_retirement_from_pr_base
           tests/test_backlog_ledger_successor.py::test_v0004_policy_pins_complete_first_parent_history_from_git_objects
           tests/test_backlog_ledger_successor.py::test_v0005_policy_pins_complete_first_parent_history_from_git_objects
@@ -66,6 +67,9 @@ jobs:
           tests/test_backlog_ledger_successor.py::test_v0009_authorizes_only_the_pinned_b057_delta_and_keeps_v0008
           tests/test_backlog_ledger_successor.py::test_v0009_rejects_nearby_unauthorized_b057_transitions
           tests/test_backlog_ledger_successor.py::test_v0009_candidate_cannot_replace_the_trusted_policy
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_pins_the_fresh_preimage_and_target_bytes
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_admission_is_byte_pinned_and_never_executes_candidate_code
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_admission_rejects_nearby_mutations_and_policy_mutation
       # The trusted bad8506 state needs the v0009 data receipt before the full
       # chain can match BACKLOG.md again; policy-only proof remains bounded here.
       - name: Verify complete delivered ledger chain after the v0009 receipt
