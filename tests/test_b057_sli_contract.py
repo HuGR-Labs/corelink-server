@@ -18,7 +18,7 @@ spec.loader.exec_module(verifier)
 class B057ContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.storage = (ROOT / "crates/corelink-container/src/storage/r2_s3.rs").read_text()
+        cls.storage = verifier.storage_source(ROOT)
         cls.aggregate = (ROOT / "crates/corelink-container/src/sli_aggregate.rs").read_text()
         cls.docs = (ROOT / "docs/knowledge/storage/r2-cas-bucket.md").read_text()
 
@@ -54,13 +54,7 @@ class B057ContractTests(unittest.TestCase):
         self.assertIn("temporal-window-counters-at", gaps)
 
     def test_each_audit_failure_path_emits_an_error_sli(self) -> None:
-        operations = (
-            ("lookup", "impl corelink_handler_ac::AcLookupHandler", "impl corelink_handler_ac::AcUpdateHandler", "emit_lookup_sli"),
-            ("update", "impl corelink_handler_ac::AcUpdateHandler", "impl corelink_handler_ac::AcDeleteHandler", "emit_update_sli"),
-            ("delete", "impl corelink_handler_ac::AcDeleteHandler", "impl corelink_handler_ac::AcListHandler", "emit_update_sli"),
-            ("list", "impl corelink_handler_ac::AcListHandler", "/// Build an `R2AcHandler`", "emit_list_sli"),
-        )
-        for operation, start, end, emit in operations:
+        for operation, start, end, emit in verifier.AUDIT_OPERATION_SECTIONS:
             begin = self.storage.index(start)
             finish = self.storage.index(end, begin + len(start))
             section = self.storage[begin:finish]
@@ -70,6 +64,18 @@ class B057ContractTests(unittest.TestCase):
             mutated = self.storage[:begin] + mutated_section + self.storage[finish:]
             gaps = verifier.assess_source(mutated, self.aggregate, self.docs)
             self.assertIn(f"audit-failure-sli-{operation}", gaps)
+
+    def test_attempted_audit_failure_paths_emit_an_error_sli(self) -> None:
+        for operation, event, emit in verifier.ATTEMPTED_AUDIT_FAILURES:
+            attempted = verifier.attempted_audit_failure_section(
+                self.storage, operation, event
+            )
+            token = f"self.{emit}(true, elapsed_us(started));"
+            self.assertIn(token, attempted, operation)
+            mutated_attempt = attempted.replace(token, "// attempted audit SLI removed", 1)
+            mutated = self.storage.replace(attempted, mutated_attempt, 1)
+            gaps = verifier.assess_source(mutated, self.aggregate, self.docs)
+            self.assertIn(f"audit-failure-sli-{operation}-attempted", gaps)
 
     def test_list_does_not_pollute_lookup_hit_latency_catalog(self) -> None:
         begin = self.storage.index("impl corelink_handler_ac::AcListHandler")

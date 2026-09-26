@@ -1,0 +1,56 @@
+name: B-057 focused Python proof
+
+on:
+  pull_request:
+    paths:
+      - scripts/verify_b057_sli.py
+      - tests/test_b057_sli_contract.py
+      - .github/workflows/issue-2414-b057-sli.yml
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact commit SHA to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2414-b057-${{ github.event.pull_request.head.sha || inputs.expected_sha }}
+  cancel-in-progress: false
+
+jobs:
+  b057-python:
+    name: B-057 verifier and mutation contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact candidate commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require exact candidate checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.expected_sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          else
+            test "$EXPECTED_SHA" = "$PR_HEAD_SHA"
+          fi
+
+      - name: Verify B-057 source contract
+        run: python3 -S scripts/verify_b057_sli.py
+
+      - name: Run B-057 mutation contract tests
+        run: python3 -S tests/test_b057_sli_contract.py
