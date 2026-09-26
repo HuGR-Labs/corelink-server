@@ -12,6 +12,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Mapping
 
+from scripts.verify_i2457_mutants_shards import config_digest
+
 
 SHARD_COUNT = 120
 SCHEMA = "corelink.hosted-mutants-baseline-test-plan.v1"
@@ -200,7 +202,35 @@ def run_shard(args: argparse.Namespace) -> None:
         raise SystemExit(f"baseline shard {args.shard} failed entries: {', '.join(failed)}")
 
 
-def aggregate(args: argparse.Namespace) -> None:
+def validate_shard_completion(receipt: Mapping[str, Any], expected: list[str], shard: int, args: argparse.Namespace) -> bool:
+    """Validate complete execution and return whether every mapped entry passed.
+
+    A retained failed shard is evidence that its complete frozen mapping ran.  It
+    must be aggregated into a failed baseline receipt so the failure remains
+    auditable and blocks mutation work; it is not missing shard evidence.
+    """
+    require(receipt.get("schema") == SHARD_SCHEMA, f"baseline shard {shard} schema is invalid")
+    require(receipt.get("run_id") == args.run_id and receipt.get("sha") == args.sha, f"baseline shard {shard} provenance drifted")
+    attempt = receipt.get("run_attempt")
+    require(isinstance(attempt, int) and not isinstance(attempt, bool) and 0 < attempt <= args.run_attempt, f"baseline shard {shard} attempt is invalid")
+    require(receipt.get("entry_ids") == expected, f"baseline shard {shard} mapping drifted")
+    completed = receipt.get("completed_entry_ids")
+    failed = receipt.get("failed_entry_ids")
+    require(isinstance(completed, list) and isinstance(failed, list), f"baseline shard {shard} completion evidence is malformed")
+    observed = completed + failed
+    require(
+        all(isinstance(entry_id, str) for entry_id in observed)
+        and len(observed) == len(set(observed))
+        and set(observed) == set(expected),
+        f"baseline shard {shard} completion evidence is incomplete or duplicated",
+    )
+    succeeded = not failed
+    require(receipt.get("status") == ("success" if succeeded else "failure"), f"baseline shard {shard} status does not bind completion evidence")
+    return succeeded
+
+
+def aggregate(args: argparse.Namespace) -> int:
+    require(args.config_digest == config_digest(), "baseline configuration digest drifted")
     plans = [read(path) for path in args.artifacts.rglob("baseline-test-plan.json")]
     require(plans, "baseline test plan artifact is missing")
     candidates = [item for item in plans if item.get("run_id") == args.run_id and item.get("sha") == args.sha and isinstance(item.get("run_attempt"), int) and item["run_attempt"] <= args.run_attempt]
@@ -212,21 +242,27 @@ def aggregate(args: argparse.Namespace) -> None:
     receipts = [read(path) for path in args.artifacts.rglob("baseline-shard-receipt.json")]
     by_shard: dict[int, list[Mapping[str, Any]]] = defaultdict(list)
     for receipt in receipts:
-        if receipt.get("run_id") == args.run_id and receipt.get("sha") == args.sha and receipt.get("plan_digest") == plan["plan_digest"]:
-            shard = receipt.get("shard")
-            if isinstance(shard, int):
-                by_shard[shard].append(receipt)
+        require(isinstance(receipt, Mapping), "baseline shard receipt is malformed")
+        require(
+            receipt.get("run_id") == args.run_id
+            and receipt.get("sha") == args.sha
+            and receipt.get("plan_digest") == plan["plan_digest"],
+            "baseline shard provenance drifted",
+        )
+        shard = receipt.get("shard")
+        require(
+            isinstance(shard, int) and not isinstance(shard, bool) and 0 <= shard < SHARD_COUNT,
+            "baseline shard identity is invalid",
+        )
+        by_shard[shard].append(receipt)
     require(set(by_shard) == set(range(SHARD_COUNT)), "baseline shards are incomplete or unexpected")
-    selected: list[Mapping[str, Any]] = []
+    all_succeeded = True
     for shard in range(SHARD_COUNT):
         attempts = [item.get("run_attempt") for item in by_shard[shard]]
         require(len(attempts) == len(set(attempts)), f"baseline shard {shard} has duplicate attempts")
         receipt = max(by_shard[shard], key=lambda item: item.get("run_attempt", 0))
         expected = [entry["id"] for entry in membership(entries, shard)]
-        require(receipt.get("run_attempt", 0) <= args.run_attempt, "baseline shard is from a future attempt")
-        require(receipt.get("entry_ids") == expected, f"baseline shard {shard} mapping drifted")
-        require(receipt.get("completed_entry_ids") == expected and receipt.get("failed_entry_ids") == [] and receipt.get("status") == "success", f"baseline shard {shard} did not complete")
-        selected.append(receipt)
+        all_succeeded = validate_shard_completion(receipt, expected, shard, args) and all_succeeded
     receipt = {
         "schema": RECEIPT_SCHEMA,
         "run_id": args.run_id,
@@ -239,10 +275,11 @@ def aggregate(args: argparse.Namespace) -> None:
         "plan_digest": plan["plan_digest"],
         "shard_count": SHARD_COUNT,
         "covered_entries": len(entries),
-        "status": "success",
-        "exit_code": 0,
+        "status": "success" if all_succeeded else "failure",
+        "exit_code": 0 if all_succeeded else 1,
     }
     write(args.out, receipt)
+    return receipt["exit_code"]
 
 
 def main() -> int:
@@ -257,11 +294,11 @@ def main() -> int:
     aggregate_parser.add_argument("--artifacts", type=Path, required=True); aggregate_parser.add_argument("--sha", required=True); aggregate_parser.add_argument("--run-id", required=True); aggregate_parser.add_argument("--run-attempt", type=int, required=True); aggregate_parser.add_argument("--config-digest", required=True); aggregate_parser.add_argument("--inventory-digest", required=True); aggregate_parser.add_argument("--out", type=Path, required=True); aggregate_parser.set_defaults(func=aggregate)
     args = parser.parse_args()
     try:
-        args.func(args)
+        result = args.func(args)
     except (OSError, json.JSONDecodeError, VerificationError) as error:
         print(f"#2478 baseline rejected: {error}", file=sys.stderr)
         return 1
-    return 0
+    return 0 if result is None else result
 
 
 if __name__ == "__main__":
