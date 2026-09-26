@@ -77,6 +77,12 @@ MUTATION_MARKERS = {
     "coverage": "actions/upload-artifact@",
 }
 SHA = re.compile(r"[0-9a-f]{40}")
+POLICY_CARGO_DENY_COMMAND = (
+    'cargo deny --manifest-path "$POLICY_TREE/Cargo.toml" check --config "$DENY_CONFIG" licenses bans'
+)
+POLICY_CARGO_DENY_OLD_INVALID_COMMAND = (
+    'cargo deny --manifest-path "$POLICY_TREE/Cargo.toml" --config "$DENY_CONFIG" check licenses bans'
+)
 
 SOCKET_GUARD_SOURCE = r'''
 "use strict";
@@ -209,6 +215,15 @@ def run_blocks(lines: list[str]) -> tuple[str, ...]:
     return tuple(blocks)
 
 
+def commands_preserve_intent(relative: str, job: str, original: tuple[str, ...], candidate: tuple[str, ...]) -> bool:
+    if relative == ".github/workflows/dependabot-policy.yml" and job == "policy-gate":
+        original = tuple(
+            block.replace(POLICY_CARGO_DENY_OLD_INVALID_COMMAND, POLICY_CARGO_DENY_COMMAND)
+            for block in original
+        )
+    return original == candidate
+
+
 def step_blocks(lines: list[str]) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
     active: str | None = None
@@ -267,7 +282,7 @@ def verify_step_semantics(relative: str, job: str, candidate: list[str], baselin
         old_uses, new_uses = action_reference(old_step), action_reference(new_step)
         if old_uses != new_uses:
             fail(f"{relative}:{job}:{old_name}: action pin changed")
-        if run_blocks(old_step) != run_blocks(new_step):
+        if not commands_preserve_intent(relative, job, run_blocks(old_step), run_blocks(new_step)):
             fail(f"{relative}:{job}:{old_name}: original command changed")
         if step_value(old_step, "if") != step_value(new_step, "if"):
             fail(f"{relative}:{job}:{old_name}: step condition changed")
@@ -304,7 +319,13 @@ def verify_baseline(candidate: Path, baseline: Path) -> None:
     expected_coverage = old_coverage.replace(unsupported, supported, 1).replace(
         nested_html_output, canonical_html_output, 1
     )
-    if (
+    coverage_already_canonical = (
+        old_coverage == new_coverage
+        and unsupported not in old_coverage
+        and supported in old_coverage
+        and canonical_html_output in old_coverage
+    )
+    if not coverage_already_canonical and (
         old_coverage.count(unsupported) != 1
         or old_coverage.count(nested_html_output) != 1
         or new_coverage != expected_coverage
@@ -359,7 +380,7 @@ def verify_baseline(candidate: Path, baseline: Path) -> None:
             for setting in ("name", "if", "timeout-minutes", "permissions", "env", "needs", "strategy", "environment", "container", "services", "continue-on-error", "defaults", "outputs", "uses", "with"):
                 if job_setting(candidate_jobs[job], setting) != job_setting(baseline_jobs[job], setting):
                     fail(f"{relative}:{job}: {setting} changed from the baseline")
-            if run_blocks(baseline_jobs[job]) != run_blocks(candidate_jobs[job]):
+            if not commands_preserve_intent(relative, job, run_blocks(baseline_jobs[job]), run_blocks(candidate_jobs[job])):
                 fail(f"{relative}:{job}: inline command changed from the immutable baseline")
             candidate_secrets = sorted(re.findall(r"\$\{\{\s*secrets\.[^}]+}}", "\n".join(candidate_jobs[job])))
             baseline_secrets = sorted(re.findall(r"\$\{\{\s*secrets\.[^}]+}}", "\n".join(baseline_jobs[job])))
@@ -371,6 +392,11 @@ def verify_baseline(candidate: Path, baseline: Path) -> None:
             verify_step_semantics(relative, job, candidate_jobs[job], baseline_jobs[job], channel.group(1))
 
 def verify_inventory(root: Path) -> None:
+    policy_text = (root / ".github/workflows/dependabot-policy.yml").read_text(encoding="utf-8")
+    if POLICY_CARGO_DENY_COMMAND not in policy_text:
+        fail("Dependabot policy must use cargo-deny's supported `check --config` ordering")
+    if POLICY_CARGO_DENY_OLD_INVALID_COMMAND in policy_text:
+        fail("Dependabot policy still contains cargo-deny's invalid `--config ... check` ordering")
     if 'cargo llvm-cov report --summary-only $COV_FLAGS' not in (root / "scripts/coverage.sh").read_text(encoding="utf-8"):
         fail("coverage script must use the supported cargo-llvm-cov report argument shape")
 
@@ -1177,6 +1203,51 @@ def verify_remaining_original_commands(root: Path, baseline: Path) -> None:
                                 "UPDATE_TYPE": "version-update:semver-patch"}, replacements=audit_replacements)
 
 
+def verify_policy_gate_cargo_deny(root: Path, baseline: Path) -> None:
+    """Execute the exact policy command and reject its unsupported former order."""
+    if not shutil.which("cargo-deny"):
+        fail("cargo-deny is not installed in the hosted proof job")
+    version = subprocess.run(["cargo", "deny", "--version"], check=True, capture_output=True, text=True).stdout.strip()
+    if not re.search(r"(?:^|\\s)0\\.19\\.8(?:$|\\s)", version):
+        fail(f"hosted proof requires workflow-pinned cargo-deny 0.19.8, got {version!r}")
+    with tempfile.TemporaryDirectory(prefix="i2374-policy-") as directory:
+        tmp = Path(directory)
+        fixture = _git_fixture(tmp / "policy-pr", candidate_files={
+            "apps/fixture/package.json": '{"name":"fixture","license":"MIT"}\\n',
+        })
+        for relative in (
+            ".github/workflows/dependabot-policy.yml",
+            "scripts/check_dependabot_policy_trusted_tree.py",
+            "scripts/test_dependabot_policy_trust_boundary.sh",
+            "scripts/test_ci_use_host_toolchain.sh",
+            "scripts/prepare_b133_python.sh",
+            "scripts/ci-use-host-toolchain.sh",
+            "rust-toolchain.toml",
+        ):
+            target = fixture / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((baseline / relative).read_bytes())
+        env = {**os.environ, "UNTRUSTED_TREE": str(fixture), "POLICY_TREE": str(tmp / "policy-tree"),
+               "CARGO_HOME": str(tmp / "cargo-home"), "DENY_CONFIG": str(tmp / "deny.toml")}
+        policy = ".github/workflows/dependabot-policy.yml"
+        run_original_shell(root, policy, "policy-gate", "Prepare isolated Cargo policy tree (PR data only)",
+                           cwd=baseline, env=env)
+        command = named_run_block(root, policy, "policy-gate", "Run cargo-deny licenses (fail-closed)")
+        checked = subprocess.run(["bash", "-euo", "pipefail", "-c", command], cwd=baseline,
+                                 env=env, capture_output=True, text=True)
+        if checked.returncode != 0:
+            fail(f"Dependabot policy cargo-deny command failed: {checked.stderr[-1000:]} {checked.stdout[-500:]}")
+        old_order = command.replace(POLICY_CARGO_DENY_COMMAND, POLICY_CARGO_DENY_OLD_INVALID_COMMAND)
+        if old_order == command:
+            fail("cargo-deny old-order negative control could not find the canonical command")
+        rejected = subprocess.run(["bash", "-euo", "pipefail", "-c", old_order], cwd=baseline,
+                                  env=env, capture_output=True, text=True)
+        if rejected.returncode == 0 or "unexpected argument '--config'" not in rejected.stderr:
+            fail("cargo-deny old-order negative control was not rejected as invalid syntax: "
+                 f"rc={rejected.returncode} stderr={rejected.stderr[-700:]}")
+        print("cargo-deny syntax negative control: old `--config ... check` ordering rejected")
+
+
 def verify_negative_controls(root: Path, baseline: Path) -> None:
     """Require mutations to the runner, credentials, protection, or identity to fail."""
     with tempfile.TemporaryDirectory(prefix="i2374-negative-") as directory:
@@ -1281,6 +1352,7 @@ def main() -> int:
             if not args.baseline_root:
                 fail("exact hosted proof requires --baseline-root for immutable comparison")
             verify_remaining_original_commands(args.root, args.baseline_root)
+            verify_policy_gate_cargo_deny(args.root, args.baseline_root)
     except (ContractError, subprocess.CalledProcessError) as error:
         print(f"issue-2374 hosted proof: FAIL: {error}", file=sys.stderr)
         return 1
