@@ -801,7 +801,7 @@ async fn cancellation_batch_failure_rolls_back_without_success_or_purge() {
         .expect_err("failed cancellation transaction cannot report success");
     assert_eq!(result, StagingByokTeardownError::StorageUnavailable);
     let db = fixture.db.lock().expect("sqlite lock");
-    let (phase, state, wrapped, outcomes, purges): (String, String, Option<Vec<u8>>, i64, i64) = db
+    let (phase, state, wrapped, outcomes, purges): (String, String, Option<String>, i64, i64) = db
         .query_row(
             "SELECT a.phase,c.state,s.tcs_wrapped, \
              (SELECT COUNT(*) FROM byok_control_outcome o WHERE o.tenant_id=a.tenant_id), \
