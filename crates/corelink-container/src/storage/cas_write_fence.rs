@@ -531,7 +531,7 @@ mod tests {
         staging_load_test_ownership::StagingLoadTestScenario,
         StorageEnv,
     };
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use serde_json::json;
     use sha2::Sha256;
     use std::{
@@ -552,7 +552,7 @@ mod tests {
             expires_at_ms,
             nonce,
         );
-        let mut mac = HmacSha256::new_from_slice(key).expect("fixed test key");
+        let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key).expect("fixed test key");
         mac.update(b"corelink/staging-load-admission-auth/v1\0");
         mac.update(payload.as_bytes());
         let tag = mac
