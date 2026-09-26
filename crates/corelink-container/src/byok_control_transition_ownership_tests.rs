@@ -785,6 +785,18 @@ async fn published_partial_synthetic_activation_is_not_cancelled_as_pending() {
 async fn cancellation_batch_failure_rolls_back_without_success_or_purge() {
     let fixture = Fixture::new();
     let (control, locator) = pending_synthetic_activation(&fixture, "131", NONCE_B).await;
+    let pre_cancel_side_effects: (i64, i64) = fixture
+        .db
+        .lock()
+        .expect("sqlite lock")
+        .query_row(
+            "SELECT \
+             (SELECT COUNT(*) FROM byok_control_outcome o WHERE o.tenant_id=?1), \
+             (SELECT COUNT(*) FROM byok_object_purge_item p WHERE p.tenant_id=?1)",
+            [locator.tenant_id.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("pre-cancellation side-effect baseline");
     fixture.begin_teardown("131");
     fixture
         .db
@@ -822,7 +834,11 @@ async fn cancellation_batch_failure_rolls_back_without_success_or_purge() {
         .expect("failed cancellation leaves pending state");
     assert_eq!((phase.as_str(), state.as_str()), ("copy", "pending"));
     assert!(wrapped.is_some());
-    assert_eq!((outcomes, purges), (0, 0));
+    assert_eq!(
+        (outcomes, purges),
+        pre_cancel_side_effects,
+        "failed cancellation cannot add an outcome or purge"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
