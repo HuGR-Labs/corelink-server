@@ -35,8 +35,8 @@ class CoverageSummaryCommandTests(unittest.TestCase):
                 "    raise SystemExit(0)\n"
                 "if '--html' in args:\n"
                 "    out = pathlib.Path(args[args.index('--output-dir') + 1])\n"
-                "    out.mkdir(parents=True, exist_ok=True)\n"
-                "    (out / 'index.html').write_text('<html>report</html>')\n"
+                "    (out / 'html').mkdir(parents=True, exist_ok=True)\n"
+                "    (out / 'html' / 'index.html').write_text('<html>report</html>')\n"
                 "    raise SystemExit(0)\n"
                 "raise SystemExit('unexpected cargo invocation: ' + repr(args))\n"
             )
@@ -58,6 +58,10 @@ class CoverageSummaryCommandTests(unittest.TestCase):
             )
 
             calls = [json.loads(line) for line in log_path.read_text().splitlines()]
+            html_call = next(call for call in calls if '--html' in call)
+            self.assertEqual(
+                html_call[html_call.index('--output-dir') + 1], str(root / 'coverage')
+            )
             self.assertIn(["llvm-cov", "report", "--summary-only"], calls)
             self.assertFalse(
                 any(call[:2] == ["llvm-cov", "report"] and "--workspace" in call for call in calls)

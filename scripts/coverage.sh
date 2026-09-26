@@ -76,7 +76,7 @@ if [[ "$SUMMARY_ONLY" -eq 0 ]]; then
     echo "==> generating HTML report → $COV_OUT/html"
     # shellcheck disable=SC2086
     cargo llvm-cov --workspace --no-default-features --html \
-        --output-dir "$COV_OUT/html" $COV_FLAGS
+        --output-dir "$COV_OUT" $COV_FLAGS
 fi
 
 echo "==> generating per-crate summary → $COV_OUT/SUMMARY.txt"
