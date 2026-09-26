@@ -45,7 +45,7 @@ name: Workflow-state guard
 # SCOPE LIMITATION — READ THIS BEFORE TRUSTING IT
 #
 # This job gates stable repository ID `1232040291` ONLY. It also ATTEMPTS to report
-# on `HuGR-Labs/corelink-runners`, but both repositories are private and the
+# on `HuGR-dev/corelink-runners`, but both repositories are private and the
 # default `GITHUB_TOKEN` is scoped to the repository the workflow runs in, so
 # that call is expected to 404. When it does, the runners repo is recorded in
 # the summary as `NOT INSPECTED — no cross-repo credential` and the run does
@@ -102,4 +102,4 @@ jobs:
           python3 scripts/check_workflow_state.py \
             --repo "${GITHUB_REPOSITORY}" \
             --waivers .github/workflow-state-waivers.yml \
-            --also-report HuGR-Labs/corelink-runners
+            --also-report HuGR-dev/corelink-runners
