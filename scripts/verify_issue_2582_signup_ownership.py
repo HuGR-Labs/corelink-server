@@ -64,7 +64,7 @@ def verify_census() -> None:
             and "seedTenantEntitlementStatements(" in clerk,
         "GitHub provisioning maps and batches signup_artifact":
             "writeSignupArtifactBatch(" in github
-            and ":github-installation`" in github,
+            and 'signupArtifactHandle("github-installation", opts.installationId)' in github,
         "Worker verifies request-bound signup envelopes":
             'verifyStagingOwnershipEnvelope(envelope, "signup", requestId' in adapter
             and 'environment !== "staging"' in adapter,
@@ -76,13 +76,13 @@ def verify_census() -> None:
             and "ownership as unknown as SignupPreparedStatement" in adapter
             and "requireFreshOwnershipInsert(db, opaqueHandle)" in adapter
             and "AND changes() = 0 LIMIT 1" in adapter,
-        "Clerk replay handles are stable and contain only the request identifier":
-            "`${ownershipContext.requestId}:tenant`" in clerk
-            and "`${ownershipContext.requestId}:pat`" in clerk
-            and "`${ownershipContext.requestId}:org-map`" in clerk
-            and "`${ownershipContext.requestId}:entitlements`" in clerk,
-        "GitHub replay handle is stable and contains only the request identifier":
-            "`${opts.ownershipContext.requestId}:github-installation`" in github,
+        "Clerk ownership handles derive from logical artifact identities":
+            'signupArtifactHandle("clerk-tenant", ownerUserId)' in clerk
+            and 'signupArtifactHandle("clerk-initial-pat", tenantId)' in clerk
+            and 'signupArtifactHandle("clerk-org-map", clerkOrgId)' in clerk
+            and 'signupArtifactHandle("clerk-entitlements", tenantId)' in clerk,
+        "GitHub ownership handle derives from the installation identity":
+            'signupArtifactHandle("github-installation", opts.installationId)' in github,
         "Signup classification is the only registered resource class":
             adapter.count('"signup_artifact"') == 1
             and '"disposable"' in adapter,

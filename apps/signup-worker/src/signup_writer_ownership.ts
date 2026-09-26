@@ -16,6 +16,38 @@ import type {
 const OWNERSHIP_ENVELOPE_HEADER = "x-corelink-staging-ownership";
 const OWNERSHIP_REQUEST_ID_HEADER = "x-corelink-staging-request-id";
 const INVALID_OWNERSHIP = "staging ownership envelope is invalid";
+const SIGNUP_ARTIFACT_HANDLE_DOMAIN = "corelink/signup-artifact-handle/v1\0";
+
+function bytesToHex(value: ArrayBuffer): string {
+  return Array.from(new Uint8Array(value), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Derive a stable, redacted ledger key from the domain row's identity.
+ *
+ * A request ID authenticates one request but is deliberately fresh on a
+ * retry. Using it as the ownership handle would let two valid requests claim
+ * two ledger rows after an `INSERT OR IGNORE` domain no-op. The kind keeps
+ * independent signup artifacts in separate namespaces; the digest avoids
+ * recording Clerk, tenant, or GitHub identifiers in the ownership ledger.
+ */
+export async function signupArtifactHandle(kind: string, identity: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const parts = [kind, identity].map((part) => encoder.encode(part));
+  const domain = encoder.encode(SIGNUP_ARTIFACT_HANDLE_DOMAIN);
+  const size = domain.byteLength + parts.reduce((total, part) => total + 8 + part.byteLength, 0);
+  const input = new Uint8Array(size);
+  let offset = 0;
+  input.set(domain, offset);
+  offset += domain.byteLength;
+  for (const part of parts) {
+    new DataView(input.buffer).setBigUint64(offset, BigInt(part.byteLength), false);
+    offset += 8;
+    input.set(part, offset);
+    offset += part.byteLength;
+  }
+  return `signup:v1:${bytesToHex(await crypto.subtle.digest("SHA-256", input))}`;
+}
 
 /**
  * `ownershipInsertStatement` deliberately tolerates an exact replay with

@@ -3,6 +3,7 @@ import { defaultApiClient } from "../src/webhooks/clerk.js";
 import { writeInstallationProvision } from "../src/webhooks/github_provision.js";
 import {
   signupOwnershipContext,
+  signupArtifactHandle,
   writeSignupArtifactBatch,
 } from "../src/signup_writer_ownership.js";
 
@@ -216,7 +217,7 @@ describe("signup writer ownership", () => {
     expect(batches[0]?.[0]?.sql).toContain("INSERT OR IGNORE INTO tenant");
     expect(batches[0]?.[1]?.sql).toContain("INSERT INTO staging_load_test_resources");
     expect(batches[0]?.[1]?.values[2]).toBe("signup_artifact");
-    expect(batches[0]?.[1]?.values[4]).toBe(`${REQUEST_ID}:tenant`);
+    expect(batches[0]?.[1]?.values[4]).toBe(await signupArtifactHandle("clerk-tenant", "user_test"));
     expect(batches[0]?.[2]?.sql).toContain("AND changes() = 0");
     expect(JSON.stringify(batches[0]?.[1]?.values)).not.toContain("user_test");
     expect(JSON.stringify(batches[0]?.[1]?.values)).not.toContain(KEY);
@@ -239,7 +240,7 @@ describe("signup writer ownership", () => {
     expect(batches[0]?.[0]?.sql).toContain("tenant_gh_installation_map");
     expect(batches[0]?.[1]?.sql).toContain("runner_repo_allowlist");
     expect(batches[0]?.[2]?.sql).toContain("staging_load_test_resources");
-    expect(batches[0]?.[2]?.values[4]).toBe(`${REQUEST_ID}:github-installation`);
+    expect(batches[0]?.[2]?.values[4]).toBe(await signupArtifactHandle("github-installation", "731"));
     expect(batches[0]?.[3]?.sql).toContain("AND changes() = 0");
     expect(JSON.stringify(batches[0]?.[2]?.values)).not.toContain("org/private-repo");
 
@@ -255,21 +256,28 @@ describe("signup writer ownership", () => {
     expect(batches).toHaveLength(1);
   });
 
-  it("rolls back the entire batch when concurrent replays share one request claim", async () => {
+  it("rolls back the entire batch when concurrent valid requests claim one installation", async () => {
     const { db, batches, domainRows, synchronizeOwnershipPreflightReads } = fakeDb();
-    const context = await signupOwnershipContext(await requestWithOwnership(), "staging", KEY, NOW + 1);
-    if (context === null) throw new Error("verified context missing");
+    const firstContext = await signupOwnershipContext(await requestWithOwnership(), "staging", KEY, NOW + 1);
+    const secondRequestId = "c".repeat(32);
+    const secondContext = await signupOwnershipContext(
+      await requestWithOwnership(secondRequestId),
+      "staging",
+      KEY,
+      NOW + 1,
+    );
+    if (firstContext === null || secondContext === null) throw new Error("verified context missing");
     synchronizeOwnershipPreflightReads();
 
-    const write = () =>
+    const write = (ownershipContext: NonNullable<typeof firstContext>) =>
       writeInstallationProvision(db, {
         installationId: "731",
         tenantId: "tenant-opaque-id",
         repos: ["org/private-repo"],
         nowMs: NOW + 2,
-        ownershipContext: context,
+        ownershipContext,
       });
-    const results = await Promise.allSettled([write(), write()]);
+    const results = await Promise.allSettled([write(firstContext), write(secondContext)]);
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
@@ -277,6 +285,9 @@ describe("signup writer ownership", () => {
     expect(domainRows.size).toBe(2);
     expect(batches[1]?.[2]?.sql).toContain("ON CONFLICT (run_id, scenario, resource_class, receipt_ref) DO NOTHING");
     expect(batches[1]?.[3]?.sql).toContain("AND changes() = 0");
+    expect(batches[0]?.[2]?.values[4]).toBe(batches[1]?.[2]?.values[4]);
+    expect(batches[0]?.[2]?.values[4]).not.toContain(REQUEST_ID);
+    expect(batches[0]?.[2]?.values[4]).not.toContain(secondRequestId);
   });
 
   it("fails closed before domain writes when atomic D1 batches are unavailable", async () => {

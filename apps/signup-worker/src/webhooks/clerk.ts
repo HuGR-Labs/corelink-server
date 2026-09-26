@@ -56,6 +56,7 @@ import {
   seedTenantEntitlements,
 } from "../lib/d1.js";
 import {
+  signupArtifactHandle,
   signupOwnershipContext,
   writeSignupArtifactBatch,
 } from "../signup_writer_ownership.js";
@@ -709,7 +710,7 @@ export async function handleClerkWebhook(
             await writeSignupArtifactBatch(
               configDb,
               ownershipContext,
-              `${ownershipContext.requestId}:org-map`,
+              await signupArtifactHandle("clerk-org-map", clerkOrgId),
               [insertTenantOrgMapStatement(configDb, params)],
               nowMs,
             );
@@ -736,7 +737,7 @@ export async function handleClerkWebhook(
             await writeSignupArtifactBatch(
               configDb,
               ownershipContext,
-              `${ownershipContext.requestId}:entitlements`,
+              await signupArtifactHandle("clerk-entitlements", tenantId),
               seedTenantEntitlementStatements(configDb, params),
               nowMs,
             );
@@ -864,7 +865,7 @@ export function defaultApiClient(
         await writeSignupArtifactBatch(
           env.CONFIG_DB,
           ownershipContext,
-          `${ownershipContext.requestId}:tenant`,
+          await signupArtifactHandle("clerk-tenant", ownerUserId),
           [insertTenantStatement(env.CONFIG_DB, tenantParams)],
           nowMs,
         );
@@ -983,7 +984,7 @@ export function defaultApiClient(
           await writeSignupArtifactBatch(
             env.CONFIG_DB,
             ownershipContext,
-            `${ownershipContext.requestId}:pat`,
+            await signupArtifactHandle("clerk-initial-pat", tenantId),
             [patStatement],
             nowMs,
           );

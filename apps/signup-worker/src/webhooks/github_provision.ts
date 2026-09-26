@@ -54,6 +54,7 @@
  */
 
 import {
+  signupArtifactHandle,
   signupOwnershipContext,
   writeSignupArtifactBatch,
 } from "../signup_writer_ownership.js";
@@ -310,7 +311,7 @@ export async function writeInstallationProvision(
     await writeSignupArtifactBatch(
       db,
       opts.ownershipContext,
-      `${opts.ownershipContext.requestId}:github-installation`,
+      await signupArtifactHandle("github-installation", opts.installationId),
       statements,
       opts.nowMs,
     );
