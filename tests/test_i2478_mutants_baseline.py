@@ -23,6 +23,7 @@ from scripts.verify_i2478_mutants_baseline import (
     run_shard,
     validate_plan,
 )
+from scripts.verify_i2457_mutants_shards import VerificationError as MutantsEvidenceVerificationError
 from scripts.verify_i2457_mutants_shards import config_digest, validate_baseline
 
 
@@ -173,7 +174,7 @@ class BaselineMappingTests(unittest.TestCase):
             self.assertEqual(aggregate(args), 1)
             baseline = json.loads(args.out.read_text(encoding="utf-8"))
             self.assertEqual((baseline["status"], baseline["exit_code"]), ("failure", 1))
-            with self.assertRaisesRegex(VerificationError, "did not succeed"):
+            with self.assertRaisesRegex(MutantsEvidenceVerificationError, "did not succeed"):
                 validate_baseline(
                     baseline,
                     {
@@ -237,7 +238,7 @@ class BaselineMappingTests(unittest.TestCase):
                 directory.mkdir()
                 receipt = self.shard(plan, index)
                 if index == 4:
-                    receipt["completed_entry_ids"].append(receipt["entry_ids"][0])
+                    receipt["completed_entry_ids"] = receipt["completed_entry_ids"] + [receipt["entry_ids"][0]]
                 (directory / "baseline-shard-receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
             args = Namespace(artifacts=root, sha=self.sha, run_id=self.run_id, run_attempt=1, config_digest=config_digest(), inventory_digest="c" * 64, out=root / "baseline.json")
             with self.assertRaisesRegex(VerificationError, "completion evidence"):
