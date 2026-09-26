@@ -10,30 +10,30 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     sync::{
-        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::Duration,
 };
 
 use hmac::{Hmac, KeyInit, Mac};
-use rusqlite::{Connection, params_from_iter, types::Value as SqlValue};
-use serde_json::{Value, json};
+use rusqlite::{params_from_iter, types::Value as SqlValue, Connection};
+use serde_json::{json, Value};
 use sha2::Sha256;
 
 use super::*;
 use crate::{
     customer_d1::{ByokCryptoMode, ByokMode},
     storage::{
-        StorageEnv,
         d1_http::D1HttpClient,
         staging_load_test_admission::{
-            STAGING_LOAD_TEST_ADMISSION_HEADER, StagingLoadTestAdmissionGate,
+            admit_staging_load_test_request, StagingLoadTestAdmissionGate,
             StagingLoadTestAdmissionStore, StagingLoadTestAdmissionVerifier,
-            admit_staging_load_test_request,
+            STAGING_LOAD_TEST_ADMISSION_HEADER,
         },
         staging_load_test_ownership::StagingLoadTestScenario,
+        StorageEnv,
     },
 };
 
@@ -301,6 +301,39 @@ async fn admitted_context(
         .expect("synthetic admission context")
 }
 
+async fn pending_synthetic_activation(
+    fixture: &Fixture,
+    run_id: &str,
+    nonce: &str,
+) -> (D1ByokControl, StagingByokPendingTeardownLocator) {
+    let context = admitted_context(&fixture.gate(), run_id, nonce).await;
+    fixture.seed_synthetic_tenant(run_id, TENANT);
+    let tenant_ref = staging_synthetic_tenant_ref(run_id, "byok", DEPLOYMENT_SHA, TENANT);
+    let control = D1ByokControl::new(Arc::new(fixture.d1()));
+    control
+        .prepare_staging_synthetic_activation(&staging_activation(), 10_007, &context, &tenant_ref)
+        .await
+        .expect("pending synthetic activation");
+    let (tenant_id, intent_id): (String, String) = fixture
+        .db
+        .lock()
+        .expect("sqlite lock")
+        .query_row(
+            "SELECT json_extract(locator_json,'$.tenant_id'),json_extract(locator_json,'$.intent_id') \
+             FROM staging_load_test_teardown_locators WHERE run_id=?1 AND scenario='byok'",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("exact-run sealed intent");
+    (
+        control,
+        StagingByokPendingTeardownLocator {
+            tenant_id,
+            intent_id,
+        },
+    )
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn synthetic_activation_is_registered_atomically_and_replay_fails_closed() {
     let fixture = Fixture::new();
@@ -318,12 +351,10 @@ async fn synthetic_activation_is_registered_atomically_and_replay_fails_closed()
             .expect("verified durable admission")
             .expect("synthetic context");
     let control = D1ByokControl::new(Arc::new(fixture.d1()));
-    assert!(
-        control
-            .prepare_activation_with_context(&staging_activation(), 9_999, Some(&context))
-            .await
-            .is_err()
-    );
+    assert!(control
+        .prepare_activation_with_context(&staging_activation(), 9_999, Some(&context))
+        .await
+        .is_err());
     fixture.seed_synthetic_tenant("123", TENANT);
     let tenant_ref = staging_synthetic_tenant_ref("123", "byok", DEPLOYMENT_SHA, TENANT);
 
@@ -417,15 +448,13 @@ async fn synthetic_activation_is_registered_atomically_and_replay_fails_closed()
         STAGING_LOAD_TEST_ADMISSION_HEADER,
         "forged".parse().expect("forged credential header"),
     );
-    assert!(
-        admit_staging_load_test_request(
-            Some(&gate),
-            &forged_headers,
-            StagingLoadTestScenario::Byok,
-        )
-        .await
-        .is_err()
-    );
+    assert!(admit_staging_load_test_request(
+        Some(&gate),
+        &forged_headers,
+        StagingLoadTestScenario::Byok,
+    )
+    .await
+    .is_err());
     let resources: i64 = fixture
         .db
         .lock()
@@ -478,17 +507,15 @@ async fn wrong_scenario_and_registration_failure_cannot_commit_activation() {
     .await
     .expect("valid CAS admission")
     .expect("context");
-    assert!(
-        control
-            .prepare_staging_synthetic_activation(
-                &staging_activation(),
-                10_000,
-                &wrong_context,
-                "0000000000000000000000000000000000000000000000000000000000000000",
-            )
-            .await
-            .is_err()
-    );
+    assert!(control
+        .prepare_staging_synthetic_activation(
+            &staging_activation(),
+            10_000,
+            &wrong_context,
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .await
+        .is_err());
     let config_rows: i64 = fixture
         .db
         .lock()
@@ -503,17 +530,15 @@ async fn wrong_scenario_and_registration_failure_cannot_commit_activation() {
     fixture.seed_synthetic_tenant("125", TENANT);
     let tenant_ref = staging_synthetic_tenant_ref("125", "byok", DEPLOYMENT_SHA, TENANT);
     fixture.seed_ownership_failure("125");
-    assert!(
-        control
-            .prepare_staging_synthetic_activation(
-                &staging_activation(),
-                10_001,
-                &good_context,
-                &tenant_ref,
-            )
-            .await
-            .is_err()
-    );
+    assert!(control
+        .prepare_staging_synthetic_activation(
+            &staging_activation(),
+            10_001,
+            &good_context,
+            &tenant_ref,
+        )
+        .await
+        .is_err());
     let db = fixture.db.lock().expect("sqlite lock");
     let configs: i64 = db
         .query_row("SELECT COUNT(*) FROM tenant_byok_config", [], |row| {
@@ -636,23 +661,14 @@ async fn synthetic_activation_rejects_wrong_reference_and_preexisting_byok_state
     let control = D1ByokControl::new(Arc::new(fixture.d1()));
     let good_ref = staging_synthetic_tenant_ref("127", "byok", DEPLOYMENT_SHA, TENANT);
     let wrong_ref = staging_synthetic_tenant_ref("128", "byok", DEPLOYMENT_SHA, TENANT);
-    assert!(
-        control
-            .prepare_staging_synthetic_activation(
-                &staging_activation(),
-                10_003,
-                &context,
-                &wrong_ref
-            )
-            .await
-            .is_err()
-    );
-    assert!(
-        control
-            .prepare_staging_synthetic_activation(&activation(), 10_004, &context, &good_ref)
-            .await
-            .is_err()
-    );
+    assert!(control
+        .prepare_staging_synthetic_activation(&staging_activation(), 10_003, &context, &wrong_ref)
+        .await
+        .is_err());
+    assert!(control
+        .prepare_staging_synthetic_activation(&activation(), 10_004, &context, &good_ref)
+        .await
+        .is_err());
     let no_wrong_id_intents: i64 = fixture
         .db
         .lock()
@@ -662,17 +678,10 @@ async fn synthetic_activation_rejects_wrong_reference_and_preexisting_byok_state
         })
         .expect("intent count after mismatched caller identity");
     assert_eq!(no_wrong_id_intents, 0);
-    assert!(
-        control
-            .prepare_staging_synthetic_activation(
-                &staging_activation(),
-                10_005,
-                &context,
-                &good_ref
-            )
-            .await
-            .is_ok()
-    );
+    assert!(control
+        .prepare_staging_synthetic_activation(&staging_activation(), 10_005, &context, &good_ref)
+        .await
+        .is_ok());
     let intents: i64 = fixture
         .db
         .lock()
@@ -693,17 +702,15 @@ async fn synthetic_activation_rejects_wrong_reference_and_preexisting_byok_state
     let existing_context = admitted_context(&existing.gate(), "129", NONCE_B).await;
     existing.seed_synthetic_marker("129", TENANT);
     let existing_ref = staging_synthetic_tenant_ref("129", "byok", DEPLOYMENT_SHA, TENANT);
-    assert!(
-        existing_control
-            .prepare_staging_synthetic_activation(
-                &staging_activation(),
-                10_006,
-                &existing_context,
-                &existing_ref,
-            )
-            .await
-            .is_err()
-    );
+    assert!(existing_control
+        .prepare_staging_synthetic_activation(
+            &staging_activation(),
+            10_006,
+            &existing_context,
+            &existing_ref,
+        )
+        .await
+        .is_err());
     let (existing_intents, owned_resources, locators): (i64, i64, i64) = existing
         .db
         .lock()
@@ -718,6 +725,140 @@ async fn synthetic_activation_rejects_wrong_reference_and_preexisting_byok_state
         )
         .expect("prior-state rejection is atomic");
     assert_eq!((existing_intents, owned_resources, locators), (1, 0, 0));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn published_partial_synthetic_activation_is_not_cancelled_as_pending() {
+    let fixture = Fixture::new();
+    let (control, locator) = pending_synthetic_activation(&fixture, "130", NONCE_A).await;
+    {
+        let db = fixture.db.lock().expect("sqlite lock");
+        db.execute_batch("DROP TRIGGER trg_byok_activation_intent_forward_only;")
+            .expect("allow construction of adversarial published state");
+        db.execute(
+            "UPDATE tenant_byok_config SET state='partial',config_version=config_version+1 \\
+             WHERE tenant_id=?1",
+            [locator.tenant_id.as_str()],
+        )
+        .expect("published partial config fixture");
+        db.execute(
+            "UPDATE byok_tenant_gate SET current_generation=1,gate_epoch=gate_epoch+1 \\
+             WHERE tenant_id=?1",
+            [locator.tenant_id.as_str()],
+        )
+        .expect("published generation fixture");
+        db.execute(
+            "UPDATE byok_activation_intent SET phase='published_partial', \\
+                 publication_gate_epoch=observed_gate_epoch+1, \\
+                 published_config_version=config_version+1,cas_complete=1,ac_complete=1, \\
+                 state_version=state_version+1 WHERE intent_id=?1",
+            [&locator.intent_id],
+        )
+        .expect("published partial activation fixture");
+    }
+    fixture.begin_teardown("130");
+    let result = control
+        .cancel_staging_pending_activation_and_readback(&locator)
+        .await
+        .expect_err("published partial state cannot use pending cancellation");
+    assert_eq!(result, StagingByokTeardownError::InvalidLocator);
+    let db = fixture.db.lock().expect("sqlite lock");
+    let (phase, state, generation, purges): (String, String, i64, i64) = db
+        .query_row(
+            "SELECT a.phase,c.state,g.current_generation, \\
+             (SELECT COUNT(*) FROM byok_object_purge_item p WHERE p.tenant_id=a.tenant_id) \\
+             FROM byok_activation_intent a JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \\
+             JOIN byok_tenant_gate g ON g.tenant_id=a.tenant_id WHERE a.intent_id=?1",
+            [&locator.intent_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("published partial remains untouched");
+    assert_eq!(
+        (phase.as_str(), state.as_str(), generation, purges),
+        ("published_partial", "partial", 1, 0)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancellation_batch_failure_rolls_back_without_success_or_purge() {
+    let fixture = Fixture::new();
+    let (control, locator) = pending_synthetic_activation(&fixture, "131", NONCE_B).await;
+    fixture.begin_teardown("131");
+    fixture
+        .db
+        .lock()
+        .expect("sqlite lock")
+        .execute_batch(
+            "CREATE TRIGGER reject_staging_byok_cancel BEFORE UPDATE OF phase ON byok_activation_intent \\
+             WHEN NEW.phase='aborted' BEGIN SELECT RAISE(ABORT,'injected cancellation failure'); END;",
+        )
+        .expect("inject cancellation batch failure");
+    let result = control
+        .cancel_staging_pending_activation_and_readback(&locator)
+        .await
+        .expect_err("failed cancellation transaction cannot report success");
+    assert_eq!(result, StagingByokTeardownError::StorageUnavailable);
+    let db = fixture.db.lock().expect("sqlite lock");
+    let (phase, state, wrapped, outcomes, purges): (String, String, Option<Vec<u8>>, i64, i64) = db
+        .query_row(
+            "SELECT a.phase,c.state,s.tcs_wrapped, \\
+             (SELECT COUNT(*) FROM byok_control_outcome o WHERE o.tenant_id=a.tenant_id), \\
+             (SELECT COUNT(*) FROM byok_object_purge_item p WHERE p.tenant_id=a.tenant_id) \\
+             FROM byok_activation_intent a JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \\
+             JOIN tenant_byok_secret s ON s.tenant_id=a.tenant_id WHERE a.intent_id=?1",
+            [&locator.intent_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .expect("failed cancellation leaves pending state");
+    assert_eq!((phase.as_str(), state.as_str()), ("copy", "pending"));
+    assert!(wrapped.is_some());
+    assert_eq!((outcomes, purges), (0, 0));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancellation_readback_residue_cannot_return_success() {
+    let fixture = Fixture::new();
+    let (control, locator) = pending_synthetic_activation(&fixture, "132", NONCE_A).await;
+    fixture.begin_teardown("132");
+    fixture
+        .db
+        .lock()
+        .expect("sqlite lock")
+        .execute_batch(
+            "CREATE TRIGGER inject_staging_byok_readback_residue AFTER INSERT ON byok_activation_postcondition \\
+             WHEN NEW.expected_phase='aborted' BEGIN \\
+               UPDATE byok_tenant_gate SET current_generation=1 \\
+                WHERE tenant_id=(SELECT tenant_id FROM byok_activation_intent WHERE intent_id=NEW.intent_id); \\
+             END;",
+        )
+        .expect("inject readback residue after cancellation postcondition");
+    let result = control
+        .cancel_staging_pending_activation_and_readback(&locator)
+        .await
+        .expect_err("post-cancellation residue must fail exact readback");
+    assert_eq!(result, StagingByokTeardownError::UnsafeState);
+    let db = fixture.db.lock().expect("sqlite lock");
+    let (phase, state, generation): (String, String, i64) = db
+        .query_row(
+            "SELECT a.phase,c.state,g.current_generation FROM byok_activation_intent a \\
+             JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \\
+             JOIN byok_tenant_gate g ON g.tenant_id=a.tenant_id WHERE a.intent_id=?1",
+            [&locator.intent_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("readback residue remains visible");
+    assert_eq!(
+        (phase.as_str(), state.as_str(), generation),
+        ("aborted", "inactive", 1)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -3,8 +3,8 @@
 use std::{sync::Arc, time::Duration};
 
 use corelink_hash::Digest;
-use rand::{RngCore, rngs::OsRng};
-use serde_json::{Value, json};
+use rand::{rngs::OsRng, RngCore};
+use serde_json::{json, Value};
 use sha2::{Digest as Sha2Digest, Sha256};
 
 use crate::byok_transition_fence::{
@@ -1851,18 +1851,14 @@ impl D1ByokControl {
             vec![
                 json!(intent.tenant_id),
                 json!(intent.source_generation),
-                json!(
-                    intent
-                        .source_identity
-                        .as_ref()
-                        .map(|source| source.config_version)
-                ),
-                json!(
-                    intent
-                        .source_identity
-                        .as_ref()
-                        .map(|source| &source.provider)
-                ),
+                json!(intent
+                    .source_identity
+                    .as_ref()
+                    .map(|source| source.config_version)),
+                json!(intent
+                    .source_identity
+                    .as_ref()
+                    .map(|source| &source.provider)),
                 json!(intent.source_identity.as_ref().map(|source| &source.key_id)),
                 json!(intent.source_identity.as_ref().map(|source| &source.region)),
             ],
