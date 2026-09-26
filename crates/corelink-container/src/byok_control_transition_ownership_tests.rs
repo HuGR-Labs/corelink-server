@@ -70,6 +70,7 @@ impl Fixture {
                 "0031_byok_tenant_status.sql",
                 "0081_byok_tenant_config.sql",
                 "0118_byok_transition_fence.sql",
+                "0119_byok_control_transition_guard.sql",
                 "0121_byok_activation_pipeline.sql",
                 "0147_staging_load_test_run_ownership.sql",
                 "0148_staging_load_test_admission_nonce.sql",
@@ -175,13 +176,27 @@ fn activation() -> ByokActivation {
 }
 
 fn issue_credential(run_id: &str, nonce: &str) -> String {
+    issue_credential_for_scenario(run_id, StagingLoadTestScenario::Byok, nonce)
+}
+
+fn issue_credential_for_scenario(
+    run_id: &str,
+    scenario: StagingLoadTestScenario,
+    nonce: &str,
+) -> String {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("clock")
         .as_millis() as i64;
     let issued = now_ms - 1_000;
     let expires = now_ms + 60_000;
-    let payload = format!("v1.{run_id}.byok.staging.{DEPLOYMENT_SHA}.{issued}.{expires}.{nonce}");
+    let scenario = match scenario {
+        StagingLoadTestScenario::Byok => "byok",
+        StagingLoadTestScenario::Cas => "cas",
+        _ => panic!("unsupported test scenario"),
+    };
+    let payload =
+        format!("v1.{run_id}.{scenario}.staging.{DEPLOYMENT_SHA}.{issued}.{expires}.{nonce}");
     let mut mac = HmacSha256::new_from_slice(KEY).expect("HMAC key");
     mac.update(b"corelink/staging-load-admission-auth/v1\0");
     mac.update(payload.as_bytes());
@@ -312,7 +327,8 @@ async fn wrong_scenario_and_registration_failure_cannot_commit_activation() {
     let gate = fixture.gate();
 
     let mut wrong_headers = axum::http::HeaderMap::new();
-    let cas_credential = issue_credential("124", NONCE_A).replace(".byok.", ".cas.");
+    let cas_credential =
+        issue_credential_for_scenario("124", StagingLoadTestScenario::Cas, NONCE_A);
     wrong_headers.insert(
         STAGING_LOAD_TEST_ADMISSION_HEADER,
         cas_credential.parse().expect("credential header"),
