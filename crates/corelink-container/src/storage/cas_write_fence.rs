@@ -658,7 +658,7 @@ mod tests {
                 if sql.starts_with("INSERT INTO cas_write_intent") {
                     let request_id = request["params"][2].as_str().expect("write lease token");
                     respond(&mut stream, vec![json!({"request_id": request_id})]);
-                } else if sql.contains("SELECT operation_id FROM staging_load_test_r2_intents") {
+                } else if sql.contains("SELECT operation_id, state FROM staging_load_test_r2_intents") {
                     assert!(sql.contains("resource_class = 'cas_reference'"));
                     assert!(sql.contains("state IN ('prepared', 'committed')"));
                     reusable_reads += 1;
