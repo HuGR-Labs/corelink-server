@@ -12498,27 +12498,30 @@ owner: tl
 status: parked
 verify: manual
 verify-means: |
-  parked — exige credencial de produção, e admito uma segunda razão mais séria: **a causa
-  ainda não está nomeada**, e um `verify` escrito para a causa errada passa verde com o
-  defeito vivo. Já erramos a causa uma vez neste mesmo item.
+  parked — the repository-owned false-serialization correction is delivered by #1659 / PR
+  #2407 (`d751176ee67fe207a405d4089823ac5ea5fd43a2`). It expands only the fixed CAS
+  accounting lock table to 32,768 stripes; AC keeps its separate 256-stripe table. Same
+  `(tenant, content_hash)` write/delete accounting stays serialized through reserve,
+  storage, and settlement. The 220-key regression requires stable same-key placement and
+  at least 210 distinct stripes. Exact-head credentialless `i1659-dry` run 36074666594,
+  DCO run 36074528835, rustfmt run 36074528780, and the recorded cold review passed. This
+  proves the repository correction only; it does not confirm the historical 87%/2 req/s
+  observation, current throughput, or runtime failure cause.
 
-  A etapa de concorrência já foi executada e está registrada acima: o joelho fica em
-  ~2 req/s e as falhas são 429. Falta a etapa que decide o que serializa — ler o log do
-  servidor durante a rajada, **SEM filtro**. `wrangler tail --search` retorna zero com a
-  linha presente, então filtrar aqui esconde exatamente a evidência.
-
-  Ordem correta de ataque: fechar [B-107] e [B-108] primeiro. Se a serialização for o
-  `ostore` ou o `qbatch` disputando a mesma linha de tenant, ela desaparece junto e este
-  item fecha sem conserto próprio. Só se sobreviver aos dois é que merece investigação
-  independente.
-
-  ⚠️ **A medição é do pin `4f9313e0`, não da `main`** — produção estava 43 commits atrás
-  (ver [B-110]). O fix do mapa de tombstone (#1431) NÃO estava em produção; repin em #1445.
-  Remedir após o roll antes de fixar teto ou nomear causa.
-
-  Fecha quando N PUTs concorrentes (N na ordem dos 220 do sccache) tiverem taxa de falha
-  zero e a vazão escalar com a concorrência.
-last-verified: 2026-08-30
+  **Live acceptance remains open on #1659 / this B-103 tracker.** The 2026-08-30 result
+  used pin `4f9313e0`, not current production. After staging is ready under #1700 and the
+  required B-107/#1663 and B-122/#1667 baselines are available, the authorized operator
+  must run the protected workflow `.github/workflows/b103-cargo-write-reproducer.yml`
+  against one fresh deployment, tenant, PAT, and region. The receipt must bind the target,
+  deployment SHA, and tenant hash; record three warm sequential PUTs then the approximately
+  220-write burst with zero failures and throughput scaling; retain each response's status,
+  body/code, `Retry-After`, request identity, and `Server-Timing`; and correlate all
+  operation IDs to the unfiltered same-window `corelink-staging` Worker tail so the result
+  distinguishes container `rate_limited`, Worker `QUOTA_EXCEEDED`, and D1/R2 serialization.
+  Keep the redacted run artifacts and reconcile this row before closure. Historical
+  throughput and 429s do not substitute for this receipt; no repository or dry-lane proof
+  establishes runtime acceptance.
+last-verified: 2026-09-26
 ```
 
 ### B-104 — o 404 autenticado tem mediana de 0,32s e cauda de 2,47s; a mediana é o resíduo que o #1033 nunca explicou
