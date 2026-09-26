@@ -16,6 +16,12 @@ path = "src/main.rs"
 name = "corelink-gc-sweep-production"
 path = "src/bin/gc_sweep.rs"
 
+[[bin]]
+name = "issue-605-billing-ingest-fixture"
+path = "src/bin/issue_605_billing_ingest_fixture.rs"
+test = false
+bench = false
+
 [lints]
 workspace = true
 
