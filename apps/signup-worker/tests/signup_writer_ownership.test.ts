@@ -290,6 +290,40 @@ describe("signup writer ownership", () => {
     expect(batches[0]?.[2]?.values[4]).not.toContain(secondRequestId);
   });
 
+  it("rejects one of two concurrent valid Clerk claims for the same user", async () => {
+    const { db, batches, domainRows, synchronizeOwnershipPreflightReads } = fakeDb();
+    const firstContext = await signupOwnershipContext(await requestWithOwnership(), "staging", KEY, NOW + 1);
+    const secondRequestId = "c".repeat(32);
+    const secondContext = await signupOwnershipContext(
+      await requestWithOwnership(secondRequestId),
+      "staging",
+      KEY,
+      NOW + 1,
+    );
+    if (firstContext === null || secondContext === null) throw new Error("verified context missing");
+    synchronizeOwnershipPreflightReads();
+
+    const createTenant = (ownershipContext: NonNullable<typeof firstContext>) =>
+      defaultApiClient(
+        {
+          CONFIG_DB: db,
+          CORELINK_API_BASE: "https://api.test",
+          CLERK_WEBHOOK_SECRET: "test-secret",
+        },
+        ownershipContext,
+      ).createTenant("test-tenant", "user_test", "enam");
+    const results = await Promise.allSettled([createTenant(firstContext), createTenant(secondContext)]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(batches).toHaveLength(2);
+    expect(domainRows).toEqual(new Set(["tenant:user_test"]));
+    expect(batches[0]?.[1]?.values[4]).toBe(batches[1]?.[1]?.values[4]);
+    expect(batches[0]?.[1]?.values[4]).toBe(await signupArtifactHandle("clerk-tenant", "user_test"));
+    expect(batches[0]?.[1]?.values[4]).not.toContain(REQUEST_ID);
+    expect(batches[0]?.[1]?.values[4]).not.toContain(secondRequestId);
+  });
+
   it("fails closed before domain writes when atomic D1 batches are unavailable", async () => {
     const context = await signupOwnershipContext(await requestWithOwnership(), "staging", KEY, NOW + 1);
     if (context === null) throw new Error("verified context missing");
