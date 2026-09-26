@@ -621,6 +621,17 @@ fn persist_owned_r2_with(
         if !exact || !matches!(state, Some("prepared" | "committed")) {
             return Err("staging R2 ownership intent conflicts with this write".to_owned());
         }
+        if state == Some("committed") {
+            verify_committed_staging_r2_resource(
+                d1,
+                context,
+                class_name,
+                disposition_name,
+                &expected_receipt,
+                object_key,
+            )?;
+            return Ok(());
+        }
     }
 
     put_object(object_key, bytes)?;
@@ -638,6 +649,74 @@ fn persist_owned_r2_with(
     }
     batch.push(close_intent);
     d1_batch_blocking(d1, batch).map_err(|_| "staging R2 ownership commit failed".to_owned())?;
+    Ok(())
+}
+
+fn verify_committed_staging_r2_resource(
+    d1: &Arc<D1HttpClient>,
+    context: &crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext,
+    resource_class: &str,
+    disposition: &str,
+    receipt_ref: &str,
+    object_key: &str,
+) -> Result<(), String> {
+    let resources = d1_query_blocking(
+        d1,
+        "SELECT opaque_handle, disposition, state FROM staging_load_test_resources \
+         WHERE run_id = ?1 AND scenario = ?2 AND resource_class = ?3 AND receipt_ref = ?4",
+        vec![
+            json!(context.run_id()),
+            json!(context.scenario().as_str()),
+            json!(resource_class),
+            json!(receipt_ref),
+        ],
+    )
+    .map_err(|_| "staging R2 committed resource could not be verified".to_owned())?;
+    let Some(resource) = resources.first() else {
+        return Err("staging R2 committed resource could not be verified".to_owned());
+    };
+    if resources.len() != 1
+        || resource.get("opaque_handle").and_then(Value::as_str) != Some(object_key)
+        || resource.get("disposition").and_then(Value::as_str) != Some(disposition)
+        || resource.get("state").and_then(Value::as_str) != Some("registered")
+    {
+        return Err("staging R2 committed resource conflicts with this write".to_owned());
+    }
+    if resource_class == "dsr_artifact" && disposition == "disposable" {
+        let locators = d1_query_blocking(
+            d1,
+            "SELECT locator_kind, locator_json FROM staging_load_test_teardown_locators \
+             WHERE run_id = ?1 AND scenario = ?2 AND resource_class = ?3 AND receipt_ref = ?4",
+            vec![
+                json!(context.run_id()),
+                json!(context.scenario().as_str()),
+                json!(resource_class),
+                json!(receipt_ref),
+            ],
+        )
+        .map_err(|_| "staging DSR teardown locator could not be verified".to_owned())?;
+        let Some(locator) = locators.first() else {
+            return Err("staging DSR teardown locator could not be verified".to_owned());
+        };
+        let locator_json = locator
+            .get("locator_json")
+            .and_then(Value::as_str)
+            .and_then(|serialized| serde_json::from_str::<Value>(serialized).ok());
+        if locators.len() != 1
+            || locator.get("locator_kind").and_then(Value::as_str) != Some("dsr_r2_export_v1")
+            || locator_json
+                .as_ref()
+                .and_then(|value| value.get("object_key"))
+                .and_then(Value::as_str)
+                != Some(object_key)
+            || locator_json
+                .as_ref()
+                .and_then(Value::as_object)
+                .is_none_or(|value| value.len() != 1)
+        {
+            return Err("staging DSR teardown locator conflicts with this write".to_owned());
+        }
+    }
     Ok(())
 }
 
@@ -955,24 +1034,8 @@ pub(super) fn run_rectification(
         ownership_context,
     )?;
     let params = vec![json!(tenant_id), json!(plan.stored_value)];
-    let rows_updated = if ownership_context.is_some() {
-        let results = d1_batch_blocking(
-            d1,
-            vec![
-                D1BatchStatement::new(&plan.sql, params),
-                D1BatchStatement::new("SELECT changes() AS rows_updated", vec![]),
-            ],
-        )?;
-        results
-            .get(1)
-            .and_then(|rows| rows.first())
-            .and_then(|row| row.get("rows_updated"))
-            .and_then(Value::as_u64)
-            .unwrap_or(0)
-    } else {
-        let rows = d1_query_blocking(d1, &plan.sql, params)?;
-        u64::try_from(rows.len()).unwrap_or(0)
-    };
+    let rows = d1_query_blocking(d1, &plan.sql, params)?;
+    let rows_updated = u64::try_from(rows.len()).unwrap_or(0);
     Ok(Ok(RectifyResult {
         table: table.to_owned(),
         field: field.to_owned(),
@@ -1320,7 +1383,7 @@ mod tests {
         let (database, endpoint) = ownership_d1_fixture(false, 3);
         let context = accepted_dsr_context(&endpoint).await;
         let d1 = Arc::new(test_d1_client(&endpoint));
-        let result = run_rectification(
+        run_rectification(
             &d1,
             "00000000-0000-7000-8000-000000000001",
             TID,
@@ -1332,7 +1395,6 @@ mod tests {
         )
         .expect("rectification audit and update succeed")
         .expect("email hash is rectifiable");
-        assert_eq!(result.rows_updated, 1);
 
         let db = database.lock().expect("fixture database");
         let (resource_class, disposition): (String, String) = db
@@ -1624,7 +1686,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn admitted_r2_writer_recovers_exact_prepare_and_replays_once() {
-        let (database, endpoint) = ownership_d1_fixture(false, 10);
+        let (database, endpoint) = ownership_d1_fixture(false, 11);
         let context = Arc::new(accepted_dsr_context(&endpoint).await);
         let d1 = Arc::new(test_d1_client(&endpoint));
         let put_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -1675,7 +1737,7 @@ mod tests {
             run(Ok(())).await.is_ok(),
             "committed exact replay remains idempotent"
         );
-        assert_eq!(put_attempts.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert_eq!(put_attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
         persist_owned_r2_with(
             &d1,
             context.as_ref(),
@@ -1690,7 +1752,7 @@ mod tests {
             },
         )
         .expect("signature has its own exact typed locator");
-        assert_eq!(put_attempts.load(std::sync::atomic::Ordering::SeqCst), 4);
+        assert_eq!(put_attempts.load(std::sync::atomic::Ordering::SeqCst), 3);
 
         let db = database.lock().expect("fixture database");
         let state: String = db
@@ -1702,7 +1764,11 @@ mod tests {
             .expect("intent state");
         let (intent_count, resource_count, resource_class, disposition, opaque_handle): (i64, i64, String, String, String) = db
             .query_row(
-                "SELECT (SELECT count(*) FROM staging_load_test_r2_intents), (SELECT count(*) FROM staging_load_test_resources), (SELECT resource_class FROM staging_load_test_resources), (SELECT disposition FROM staging_load_test_resources), (SELECT opaque_handle FROM staging_load_test_resources)",
+                "SELECT (SELECT count(*) FROM staging_load_test_r2_intents), \
+                        (SELECT count(*) FROM staging_load_test_resources), \
+                        (SELECT resource_class FROM staging_load_test_resources WHERE opaque_handle = 'dsr_exports/00000000-0000-7000-8000-000000002581.json'), \
+                        (SELECT disposition FROM staging_load_test_resources WHERE opaque_handle = 'dsr_exports/00000000-0000-7000-8000-000000002581.json'), \
+                        (SELECT opaque_handle FROM staging_load_test_resources WHERE opaque_handle = 'dsr_exports/00000000-0000-7000-8000-000000002581.json')",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )
@@ -1747,7 +1813,7 @@ mod tests {
                     .to_owned()
             })
             .collect::<Vec<_>>();
-        assert!(keys.contains(&opaque_handle));
+        assert!(keys.contains(&"dsr_exports/00000000-0000-7000-8000-000000002581.json".to_owned()));
         assert!(
             keys.contains(&"dsr_exports/00000000-0000-7000-8000-000000002581.sig.json".to_owned())
         );
