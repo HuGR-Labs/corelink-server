@@ -5,6 +5,7 @@ use std::{sync::Arc, time::Duration};
 use corelink_hash::Digest;
 use rand::{rngs::OsRng, RngCore};
 use serde_json::{json, Value};
+use sha2::{Digest as Sha2Digest, Sha256};
 
 use crate::byok_transition_fence::{
     ByokStatus, ConfigState, D1ByokFence, FenceError, TransitionFence,
@@ -44,6 +45,47 @@ pub struct TenantCmkBinding {
     /// Complete CMK identity observed for the tenant.
     pub identity: CmkIdentity,
 }
+
+/// Opaque exact-run identity passed from the sealed migration-0151 locator.
+/// The IDs are deliberately omitted from debug output.
+pub(crate) struct StagingByokPendingTeardownLocator {
+    pub(crate) tenant_id: String,
+    pub(crate) intent_id: String,
+}
+
+impl core::fmt::Debug for StagingByokPendingTeardownLocator {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("StagingByokPendingTeardownLocator")
+            .field("tenant_id", &"[REDACTED]")
+            .field("intent_id", &"[REDACTED]")
+            .finish()
+    }
+}
+
+/// Fixed, redacted result for synthetic BYOK teardown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StagingByokTeardownError {
+    /// The internal locator is absent, malformed, or does not bind one exact
+    /// disposable synthetic activation.
+    InvalidLocator,
+    /// The tenant has left the permitted pending, generation-zero state.
+    UnsafeState,
+    /// The durable readback or cancellation batch could not be verified.
+    StorageUnavailable,
+}
+
+impl core::fmt::Display for StagingByokTeardownError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidLocator => "staging BYOK teardown locator is invalid",
+            Self::UnsafeState => "staging BYOK teardown state is not safely cancellable",
+            Self::StorageUnavailable => "staging BYOK teardown readback is unavailable",
+        })
+    }
+}
+
+impl std::error::Error for StagingByokTeardownError {}
 
 /// Production control authority. Every successful method completes its fence,
 /// state mutation, gate-epoch change and durable outcome in one D1 batch.
@@ -118,11 +160,69 @@ impl D1ByokControl {
         now_ms: i64,
         context: StagingLoadTestWriteContext<'_>,
     ) -> Result<(), ByokWriteError> {
+        if context.is_some() {
+            return Err(ByokWriteError::Invalid(
+                "staging BYOK activation requires a sealed synthetic tenant reference".to_owned(),
+            ));
+        }
+        self.prepare_activation_authorized(activation, now_ms, context, None)
+            .await
+    }
+
+    /// Persist BYOK activation only for a freshly provisioned synthetic tenant
+    /// bound to the exact admitted run, scenario, and deployment.
+    pub(crate) async fn prepare_staging_synthetic_activation(
+        &self,
+        activation: &ByokActivation,
+        now_ms: i64,
+        context: &StagingLoadTestAdmissionContext,
+        tenant_ref: &str,
+    ) -> Result<(), ByokWriteError> {
+        let tenant_id = self
+            .resolve_staging_synthetic_tenant(context, tenant_ref)
+            .await?;
+        if !activation.tenant_id.is_empty() && activation.tenant_id != tenant_id {
+            return Err(ByokWriteError::Invalid(
+                "staging synthetic tenant reference does not match the activation".to_owned(),
+            ));
+        }
+        let mut bound_activation = activation.clone();
+        bound_activation.tenant_id = tenant_id;
+        self.prepare_activation_authorized(
+            &bound_activation,
+            now_ms,
+            Some(context),
+            Some(tenant_ref),
+        )
+        .await
+    }
+
+    async fn prepare_activation_authorized(
+        &self,
+        activation: &ByokActivation,
+        now_ms: i64,
+        context: StagingLoadTestWriteContext<'_>,
+        tenant_ref: Option<&str>,
+    ) -> Result<(), ByokWriteError> {
         validate_byok_context(context)?;
         activation.validate_for_control()?;
         if now_ms < 0 {
             return Err(ByokWriteError::Invalid(
                 "activation timestamp must not be negative".to_owned(),
+            ));
+        }
+        if let Some(context) = context {
+            let tenant_ref = tenant_ref.ok_or_else(|| {
+                ByokWriteError::Invalid(
+                    "staging BYOK activation requires a sealed synthetic tenant reference"
+                        .to_owned(),
+                )
+            })?;
+            self.validate_staging_synthetic_baseline(&activation.tenant_id, context, tenant_ref)
+                .await?;
+        } else if tenant_ref.is_some() {
+            return Err(ByokWriteError::Invalid(
+                "synthetic tenant reference requires staging admission".to_owned(),
             ));
         }
         let region = required_region(activation.cmk_region.as_deref())?;
@@ -179,6 +279,7 @@ impl D1ByokControl {
             current_identity.as_ref(),
             now_ms,
             context,
+            tenant_ref,
         )
         .await
     }
@@ -287,6 +388,220 @@ impl D1ByokControl {
         self.shred(tenant_id, now_ms).await
     }
 
+    /// Cancel and verify one exact-run synthetic activation. This path never
+    /// reaches shred; any non-copy, nonzero-generation, or nonempty graph state
+    /// is rejected before the production cancellation batch runs.
+    pub(crate) async fn cancel_staging_pending_activation_and_readback(
+        &self,
+        locator: &StagingByokPendingTeardownLocator,
+    ) -> Result<(), StagingByokTeardownError> {
+        if !valid_staging_locator(locator) {
+            return Err(StagingByokTeardownError::InvalidLocator);
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT run.run_id,run.scenario,run.target_deployment_sha AS target_deployment_sha, \
+                 json_extract(l.locator_json,'$.tenant_ref') AS tenant_ref \
+                 FROM staging_load_test_teardown_locators l \
+                 JOIN staging_load_test_resources resource ON resource.run_id=l.run_id \
+                  AND resource.scenario=l.scenario AND resource.resource_class=l.resource_class \
+                  AND resource.receipt_ref=l.receipt_ref \
+                 JOIN staging_load_test_runs run ON run.run_id=l.run_id AND run.scenario=l.scenario \
+                 JOIN staging_load_test_synthetic_tenants synthetic \
+                  ON synthetic.run_id=l.run_id AND synthetic.scenario=l.scenario \
+                 JOIN tenant t ON t.tenant_id=synthetic.tenant_id \
+                 JOIN byok_tenant_gate gate ON gate.tenant_id=t.tenant_id \
+                 JOIN byok_activation_intent activation ON activation.tenant_id=t.tenant_id \
+                 JOIN tenant_byok_config config ON config.tenant_id=t.tenant_id \
+                 JOIN tenant_byok_secret secret ON secret.tenant_id=t.tenant_id \
+                 WHERE l.locator_kind='byok_pending_synthetic_v1' \
+                  AND l.resource_class='byok_artifact' AND l.scenario='byok' \
+                  AND json_extract(l.locator_json,'$.tenant_id')=?1 \
+                  AND json_extract(l.locator_json,'$.intent_id')=?2 \
+                  AND synthetic.tenant_id=?1 AND synthetic.baseline_marker='generation_zero_empty' \
+                  AND activation.intent_id=?2 AND activation.phase='copy' \
+                  AND activation.source_generation=0 AND activation.target_generation=1 \
+                  AND config.state='pending' AND t.byok_status='active' \
+                  AND secret.tcs_wrapped IS NOT NULL AND secret.cmk_key_id=config.cmk_key_id \
+                  AND gate.current_generation=0 \
+                  AND run.target_environment='staging' AND run.state='teardown_started' \
+                  AND resource.disposition='disposable' AND resource.state='delete_started' \
+                  AND resource.opaque_handle=('byok-activation:' || ?2) \
+                  AND (SELECT count(*) FROM byok_activation_intent live \
+                    WHERE live.tenant_id=t.tenant_id AND live.phase IN \
+                     ('copy','published_partial','purging','ready_finalize'))=1 \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_source_object source \
+                    WHERE source.tenant_id=t.tenant_id OR source.intent_id=activation.intent_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_source_capture source \
+                    WHERE source.tenant_id=t.tenant_id) \
+                  AND EXISTS (SELECT 1 FROM byok_activation_guard guard \
+                    WHERE guard.guard_id=activation.guard_id AND guard.outcome='active') \
+                  AND NOT EXISTS (SELECT 1 FROM byok_logical_object_generation generation \
+                    WHERE generation.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_logical_object_publication publication \
+                    WHERE publication.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_object_purge_item purge \
+                    WHERE purge.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_object_purge_cause cause \
+                    JOIN byok_object_purge_item purge ON purge.purge_id=cause.purge_id \
+                    WHERE purge.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_purge_identity_quarantine quarantine \
+                    WHERE quarantine.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_data_intent data_intent \
+                    WHERE data_intent.tenant_id=t.tenant_id AND data_intent.outcome='active')",
+                &[json!(locator.tenant_id), json!(locator.intent_id)],
+            )
+            .await
+            .map_err(|_| StagingByokTeardownError::StorageUnavailable)?;
+        if rows.len() != 1 {
+            return Err(StagingByokTeardownError::InvalidLocator);
+        }
+        let run_id = rows[0]
+            .get("run_id")
+            .and_then(Value::as_str)
+            .ok_or(StagingByokTeardownError::InvalidLocator)?;
+        let scenario = rows[0]
+            .get("scenario")
+            .and_then(Value::as_str)
+            .ok_or(StagingByokTeardownError::InvalidLocator)?;
+        let target_sha = rows[0]
+            .get("target_deployment_sha")
+            .and_then(Value::as_str)
+            .ok_or(StagingByokTeardownError::InvalidLocator)?;
+        let tenant_ref = rows[0]
+            .get("tenant_ref")
+            .and_then(Value::as_str)
+            .ok_or(StagingByokTeardownError::InvalidLocator)?;
+        if tenant_ref
+            != staging_synthetic_tenant_ref(run_id, scenario, target_sha, &locator.tenant_id)
+        {
+            return Err(StagingByokTeardownError::InvalidLocator);
+        }
+        let snapshot = self
+            .fence
+            .load_snapshot(&locator.tenant_id)
+            .await
+            .map_err(|_| StagingByokTeardownError::StorageUnavailable)?;
+        if snapshot.config_state != ConfigState::Pending || snapshot.current_generation != 0 {
+            return Err(StagingByokTeardownError::UnsafeState);
+        }
+        let intent = self
+            .load_live_activation(&locator.tenant_id)
+            .await
+            .map_err(|_| StagingByokTeardownError::StorageUnavailable)?;
+        if intent.intent_id != locator.intent_id || intent.source_generation != 0 {
+            return Err(StagingByokTeardownError::UnsafeState);
+        }
+        self.commit_activation_cancellation(&snapshot, &intent)
+            .await
+            .map_err(|_| StagingByokTeardownError::StorageUnavailable)?;
+        self.verify_staging_cancellation_readback(locator, tenant_ref)
+            .await
+    }
+
+    async fn verify_staging_cancellation_readback(
+        &self,
+        locator: &StagingByokPendingTeardownLocator,
+        expected_tenant_ref: &str,
+    ) -> Result<(), StagingByokTeardownError> {
+        let rows = self
+            .client
+            .query(
+                "SELECT run.run_id,run.scenario,run.target_deployment_sha, \
+                 json_extract(l.locator_json,'$.tenant_ref') AS tenant_ref \
+                 FROM staging_load_test_teardown_locators l \
+                 JOIN staging_load_test_resources resource ON resource.run_id=l.run_id \
+                  AND resource.scenario=l.scenario AND resource.resource_class=l.resource_class \
+                  AND resource.receipt_ref=l.receipt_ref \
+                 JOIN staging_load_test_runs run ON run.run_id=l.run_id AND run.scenario=l.scenario \
+                 JOIN staging_load_test_synthetic_tenants synthetic \
+                  ON synthetic.run_id=l.run_id AND synthetic.scenario=l.scenario \
+                 JOIN tenant t ON t.tenant_id=synthetic.tenant_id \
+                 JOIN byok_tenant_gate gate ON gate.tenant_id=t.tenant_id \
+                 JOIN byok_activation_intent activation ON activation.tenant_id=t.tenant_id \
+                 JOIN tenant_byok_config config ON config.tenant_id=t.tenant_id \
+                 JOIN tenant_byok_secret secret ON secret.tenant_id=t.tenant_id \
+                 WHERE l.locator_kind='byok_pending_synthetic_v1' \
+                  AND l.resource_class='byok_artifact' AND l.scenario='byok' \
+                  AND json_extract(l.locator_json,'$.tenant_id')=?1 \
+                  AND json_extract(l.locator_json,'$.intent_id')=?2 \
+                  AND synthetic.tenant_id=?1 AND synthetic.baseline_marker='generation_zero_empty' \
+                  AND activation.intent_id=?2 AND activation.phase='aborted' \
+                  AND activation.source_generation=0 AND activation.target_generation=1 \
+                  AND config.state='inactive' AND config.cmk_provider IS NULL \
+                  AND config.cmk_key_id IS NULL AND config.cmk_region IS NULL \
+                  AND secret.tcs_wrapped IS NULL AND secret.cmk_key_id IS NULL \
+                  AND gate.current_generation=0 AND t.byok_status='active' \
+                  AND run.target_environment='staging' AND run.state='teardown_started' \
+                  AND resource.disposition='disposable' AND resource.state='delete_started' \
+                  AND resource.opaque_handle=('byok-activation:' || ?2) \
+                  AND NOT EXISTS (SELECT 1 FROM tenant_byok_config active_config \
+                    WHERE active_config.tenant_id=t.tenant_id AND active_config.state IN ('pending','active','partial')) \
+                  AND NOT EXISTS (SELECT 1 FROM tenant_byok_secret active_secret \
+                    WHERE active_secret.tenant_id=t.tenant_id AND active_secret.tcs_wrapped IS NOT NULL) \
+                  AND NOT EXISTS (SELECT 1 FROM tenant_byok_secret_history secret_history \
+                    WHERE secret_history.tenant_id=t.tenant_id AND secret_history.tcs_wrapped IS NOT NULL) \
+                  AND NOT EXISTS (SELECT 1 FROM tenant_byok_config_history config_history \
+                    WHERE config_history.tenant_id=t.tenant_id AND config_history.state IN ('active','partial')) \
+                  AND EXISTS (SELECT 1 FROM byok_activation_guard guard \
+                    WHERE guard.guard_id=activation.guard_id AND guard.outcome='aborted') \
+                  AND EXISTS (SELECT 1 FROM byok_activation_postcondition postcondition \
+                    WHERE postcondition.intent_id=activation.intent_id \
+                     AND postcondition.expected_phase='aborted') \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_guard live_guard \
+                    WHERE live_guard.tenant_id=t.tenant_id AND live_guard.outcome='active') \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_intent live \
+                    WHERE live.tenant_id=t.tenant_id AND live.phase IN \
+                     ('copy','published_partial','purging','ready_finalize')) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_source_capture source_capture \
+                    WHERE source_capture.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_source_object source \
+                    WHERE source.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_logical_object_generation generation \
+                    WHERE generation.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_logical_object_publication publication \
+                    WHERE publication.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_object_purge_item purge \
+                    WHERE purge.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_object_purge_cause cause \
+                    JOIN byok_object_purge_item purge ON purge.purge_id=cause.purge_id \
+                    WHERE purge.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_purge_identity_quarantine quarantine \
+                    WHERE quarantine.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_data_intent data_intent \
+                    WHERE data_intent.tenant_id=t.tenant_id AND data_intent.outcome='active')",
+                &[json!(locator.tenant_id), json!(locator.intent_id)],
+            )
+            .await
+            .map_err(|_| StagingByokTeardownError::StorageUnavailable)?;
+        if rows.len() != 1 {
+            return Err(StagingByokTeardownError::UnsafeState);
+        }
+        let run_id = rows[0]
+            .get("run_id")
+            .and_then(Value::as_str)
+            .ok_or(StagingByokTeardownError::UnsafeState)?;
+        let scenario = rows[0]
+            .get("scenario")
+            .and_then(Value::as_str)
+            .ok_or(StagingByokTeardownError::UnsafeState)?;
+        let target_sha = rows[0]
+            .get("target_deployment_sha")
+            .and_then(Value::as_str)
+            .ok_or(StagingByokTeardownError::UnsafeState)?;
+        let stored_ref = rows[0]
+            .get("tenant_ref")
+            .and_then(Value::as_str)
+            .ok_or(StagingByokTeardownError::UnsafeState)?;
+        let computed_ref =
+            staging_synthetic_tenant_ref(run_id, scenario, target_sha, &locator.tenant_id);
+        if stored_ref != expected_tenant_ref || stored_ref != computed_ref {
+            return Err(StagingByokTeardownError::UnsafeState);
+        }
+        Ok(())
+    }
+
     async fn latest_completed_action(
         &self,
         tenant_id: &str,
@@ -304,6 +619,134 @@ impl D1ByokControl {
             .map(|row| text(row, "action"))
             .transpose()
             .map_err(ByokWriteError::Transport)
+    }
+
+    async fn validate_staging_synthetic_baseline(
+        &self,
+        tenant_id: &str,
+        context: &StagingLoadTestAdmissionContext,
+        tenant_ref: &str,
+    ) -> Result<(), ByokWriteError> {
+        let expected_ref = staging_synthetic_tenant_ref(
+            context.run_id(),
+            context.scenario().as_str(),
+            context.target_deployment_sha(),
+            tenant_id,
+        );
+        if tenant_ref != expected_ref {
+            return Err(ByokWriteError::Invalid(
+                "staging synthetic tenant reference does not match the admitted run".to_owned(),
+            ));
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT 1 AS ready FROM staging_load_test_synthetic_tenants st \
+                 JOIN staging_load_test_runs run ON run.run_id=st.run_id AND run.scenario=st.scenario \
+                 JOIN tenant t ON t.tenant_id=st.tenant_id \
+                 JOIN byok_tenant_gate gate ON gate.tenant_id=t.tenant_id \
+                 WHERE st.run_id=?1 AND st.scenario=?2 AND st.tenant_id=?3 \
+                  AND st.baseline_marker='generation_zero_empty' \
+                  AND run.target_environment='staging' AND run.target_deployment_sha=?4 \
+                  AND run.state='open' AND t.byok_status='active' AND gate.current_generation=0 \
+                  AND NOT EXISTS (SELECT 1 FROM tenant_byok_config c WHERE c.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM tenant_byok_secret s WHERE s.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM tenant_byok_config_history h WHERE h.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM tenant_byok_secret_history h WHERE h.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_intent a WHERE a.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_guard a WHERE a.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_source_capture a WHERE a.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_source_object a WHERE a.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_key_health a WHERE a.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_operation_guard a \
+                    JOIN byok_activation_intent i ON i.intent_id=a.intent_id WHERE i.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_worker_assertion a \
+                    JOIN byok_activation_intent i ON i.intent_id=a.intent_id WHERE i.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_postcondition a \
+                    JOIN byok_activation_intent i ON i.intent_id=a.intent_id WHERE i.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_suspension_postcondition a \
+                    JOIN byok_activation_intent i ON i.intent_id=a.intent_id WHERE i.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_activation_transition_assertion a \
+                    JOIN byok_activation_guard g ON g.guard_id=a.guard_id WHERE g.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_logical_object_generation g WHERE g.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_logical_object_publication p WHERE p.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_object_purge_item p WHERE p.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_object_purge_cause p JOIN byok_object_purge_item i \
+                    ON i.purge_id=p.purge_id WHERE i.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_purge_identity_quarantine p WHERE p.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_data_intent d WHERE d.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_transition_fence f WHERE f.tenant_id=t.tenant_id) \
+                  AND NOT EXISTS (SELECT 1 FROM byok_control_outcome o WHERE o.tenant_id=t.tenant_id)",
+                &[
+                    json!(context.run_id()),
+                    json!(context.scenario().as_str()),
+                    json!(tenant_id),
+                    json!(context.target_deployment_sha()),
+                ],
+            )
+            .await
+            .map_err(|_| {
+                ByokWriteError::Invalid(
+                    "staging synthetic tenant baseline could not be verified".to_owned(),
+                )
+            })?;
+        if rows.len() != 1 {
+            return Err(ByokWriteError::Invalid(
+                "staging synthetic tenant baseline is not empty".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn resolve_staging_synthetic_tenant(
+        &self,
+        context: &StagingLoadTestAdmissionContext,
+        tenant_ref: &str,
+    ) -> Result<String, ByokWriteError> {
+        validate_byok_context(Some(context))?;
+        let rows = self
+            .client
+            .query(
+                "SELECT synthetic.tenant_id FROM staging_load_test_synthetic_tenants synthetic \
+                 JOIN staging_load_test_runs run ON run.run_id=synthetic.run_id \
+                  AND run.scenario=synthetic.scenario \
+                 WHERE synthetic.run_id=?1 AND synthetic.scenario=?2 \
+                  AND synthetic.baseline_marker='generation_zero_empty' \
+                  AND run.target_environment='staging' AND run.target_deployment_sha=?3 \
+                  AND run.state='open'",
+                &[
+                    json!(context.run_id()),
+                    json!(context.scenario().as_str()),
+                    json!(context.target_deployment_sha()),
+                ],
+            )
+            .await
+            .map_err(|_| {
+                ByokWriteError::Invalid(
+                    "staging synthetic tenant locator could not be verified".to_owned(),
+                )
+            })?;
+        if rows.len() != 1 {
+            return Err(ByokWriteError::Invalid(
+                "staging synthetic tenant locator is absent or ambiguous".to_owned(),
+            ));
+        }
+        let tenant_id = text(&rows[0], "tenant_id").map_err(|_| {
+            ByokWriteError::Invalid("staging synthetic tenant locator is invalid".to_owned())
+        })?;
+        if tenant_ref
+            != staging_synthetic_tenant_ref(
+                context.run_id(),
+                context.scenario().as_str(),
+                context.target_deployment_sha(),
+                &tenant_id,
+            )
+        {
+            return Err(ByokWriteError::Invalid(
+                "staging synthetic tenant reference does not match the admitted run".to_owned(),
+            ));
+        }
+        Ok(tenant_id)
     }
 
     /// Resolve every encryption-active or activating tenant for one complete
@@ -743,6 +1186,7 @@ impl D1ByokControl {
         current_identity: Option<&ActiveConfigIdentity>,
         now_ms: i64,
         context: StagingLoadTestWriteContext<'_>,
+        tenant_ref: Option<&str>,
     ) -> Result<(), ByokWriteError> {
         use base64::Engine as _;
         let wrapped = base64::engine::general_purpose::STANDARD.encode(&act.tcs_wrapped);
@@ -981,6 +1425,19 @@ impl D1ByokControl {
             // bounded R2 copy/reconciliation work. Register that opaque intent
             // identity in this same D1 batch before the worker can claim it.
             statements.push(byok_ownership_statement(context, &intent_id, now_ms)?);
+            let tenant_ref = tenant_ref.ok_or_else(|| {
+                ByokWriteError::Invalid(
+                    "staging BYOK activation requires a sealed synthetic tenant reference"
+                        .to_owned(),
+                )
+            })?;
+            statements.push(byok_teardown_locator_statement(
+                context,
+                &act.tenant_id,
+                tenant_ref,
+                &intent_id,
+                now_ms,
+            )?);
         }
         self.run_batch(statements)
             .await
@@ -1642,7 +2099,7 @@ impl D1ByokControl {
             _ => {
                 return Err(ByokWriteError::Invalid(
                     "unknown control transition".to_owned(),
-                ))
+                ));
             }
         }
         append_completion(&mut statements, fence, action, full, at_ms, false);
@@ -1697,7 +2154,15 @@ fn guard_statement(
     D1BatchStatement::new(
         "INSERT INTO byok_transition_commit_guard \
          (token,tenant_id,epoch,action,cmk_provider,cmk_key_id,cmk_region) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-        vec![json!(fence.token()), json!(fence.tenant_id()), json!(fence.epoch()), json!(action), json!(provider), json!(key), json!(region)],
+        vec![
+            json!(fence.token()),
+            json!(fence.tenant_id()),
+            json!(fence.epoch()),
+            json!(action),
+            json!(provider),
+            json!(key),
+            json!(region),
+        ],
     )
 }
 
@@ -1844,6 +2309,74 @@ fn byok_ownership_statement(
     registration
         .d1_statement(registered_at_ms)
         .map_err(|error| ByokWriteError::Invalid(error.to_string()))
+}
+
+fn byok_teardown_locator_statement(
+    context: &StagingLoadTestAdmissionContext,
+    tenant_id: &str,
+    tenant_ref: &str,
+    intent_id: &str,
+    registered_at_ms: i64,
+) -> Result<D1BatchStatement, ByokWriteError> {
+    validate_byok_context(Some(context))?;
+    let opaque_handle = format!("byok-activation:{intent_id}");
+    let sql = "INSERT INTO staging_load_test_teardown_locators \
+        (run_id,scenario,resource_class,receipt_ref,locator_kind,locator_json,registered_at_ms) \
+        VALUES (?1,?2,'byok_artifact',( \
+          SELECT resource.receipt_ref FROM staging_load_test_resources resource \
+          JOIN staging_load_test_runs run ON run.run_id=resource.run_id \
+            AND run.scenario=resource.scenario \
+          JOIN staging_load_test_synthetic_tenants synthetic \
+            ON synthetic.run_id=resource.run_id AND synthetic.scenario=resource.scenario \
+           AND synthetic.tenant_id=?3 AND synthetic.baseline_marker='generation_zero_empty' \
+          WHERE resource.run_id=?1 AND resource.scenario=?2 \
+            AND resource.resource_class='byok_artifact' AND resource.opaque_handle=?7 \
+            AND resource.disposition='disposable' AND resource.state='registered' \
+            AND run.target_environment='staging' AND run.target_deployment_sha=?8 \
+            AND run.state='open' LIMIT 1), \
+          'byok_pending_synthetic_v1',json_object('tenant_id',?3,'intent_id',?4,'tenant_ref',?5),?6)";
+    Ok(D1BatchStatement::new(
+        sql,
+        vec![
+            json!(context.run_id()),
+            json!(context.scenario().as_str()),
+            json!(tenant_id),
+            json!(intent_id),
+            json!(tenant_ref),
+            json!(registered_at_ms),
+            json!(opaque_handle),
+            json!(context.target_deployment_sha()),
+        ],
+    ))
+}
+
+fn staging_synthetic_tenant_ref(
+    run_id: &str,
+    scenario: &str,
+    target_deployment_sha: &str,
+    tenant_id: &str,
+) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"corelink/staging-synthetic-tenant-ref/v1\0");
+    for field in [run_id, scenario, target_deployment_sha, tenant_id] {
+        digest.update((field.len() as u64).to_be_bytes());
+        digest.update(field.as_bytes());
+    }
+    hex::encode(digest.finalize())
+}
+
+fn valid_staging_locator(locator: &StagingByokPendingTeardownLocator) -> bool {
+    let tenant = locator.tenant_id.as_bytes();
+    let intent = locator.intent_id.as_bytes();
+    tenant.len() == 36
+        && tenant.iter().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => *byte == b'-',
+            _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(byte),
+        })
+        && intent.len() == 64
+        && intent
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
 }
 
 struct ActivationHashes {

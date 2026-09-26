@@ -1,0 +1,70 @@
+name: Issue 2666 BYOK synthetic teardown
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-2666-byok-teardown.yml
+      - crates/corelink-container/src/byok_control_transition.rs
+      - crates/corelink-container/src/byok_control_transition_ownership_tests.rs
+      - scripts/verify_issue_2666_byok_teardown.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2666-byok-teardown-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  byok-teardown:
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.repository_id == '1232040291' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - name: Check out the exact pull request head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind checks to the exact head and protected base
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_BASE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_HEAD" ]]
+          [[ "$(git merge-base "$EXPECTED_BASE" "$EXPECTED_HEAD")" == "$EXPECTED_BASE" ]]
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Install pinned Protobuf compiler
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          version: v23.4
+
+      - name: Verify BYOK teardown scope and negative controls
+        run: python3 -I scripts/verify_issue_2666_byok_teardown.py
+
+      - name: Check formatting for owned Rust files
+        run: rustfmt --check --edition 2021 crates/corelink-container/src/byok_control_transition.rs crates/corelink-container/src/byok_control_transition_ownership_tests.rs
+
+      - name: Compile the server library
+        run: cargo check --locked --package corelink-server --lib
+
+      - name: Run focused loopback BYOK admission, ownership, and teardown proof
+        timeout-minutes: 15
+        run: "timeout 900s cargo test --locked --package corelink-server --lib byok_control_transition::ownership_tests:: -- --nocapture"
