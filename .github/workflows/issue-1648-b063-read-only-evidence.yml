@@ -9,6 +9,7 @@ on:
     paths:
       - ".github/workflows/issue-1648-b063-read-only-evidence.yml"
       - "scripts/verify_b063_hosted_evidence_workflow.py"
+      - "scripts/test_verify_b063_hosted_evidence_workflow.py"
   workflow_dispatch:
     inputs:
       read_only:
@@ -23,12 +24,6 @@ on:
         default: "3"
         type: choice
         options: ["3"]
-      environment:
-        description: "Authorized D1 environment"
-        required: true
-        default: "production"
-        type: choice
-        options: ["production", "staging"]
       run_live:
         description: "Enable the live D1 read lane only after owner approval"
         required: true
@@ -56,8 +51,12 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Install pinned workflow contract parser
+        run: python3 -m pip install --disable-pip-version-check --no-input PyYAML==6.0.3
       - name: Verify fail-closed read-only contract
-        run: python3 scripts/verify_b063_hosted_evidence_workflow.py
+        run: |
+          python3 scripts/verify_b063_hosted_evidence_workflow.py
+          python3 -m unittest scripts/test_verify_b063_hosted_evidence_workflow.py
 
   live-read-only:
     if: >-
@@ -67,14 +66,17 @@ jobs:
       github.ref_protected == true &&
       inputs.run_live == 'true'
     runs-on: ubuntu-24.04
-    environment: ${{ inputs.environment }}
+    # This existing environment has required reviewers and a protected-branch
+    # policy. It gates credentials for the production D1 read; the D1 target
+    # remains the production database recorded in the receipt.
+    environment: staging
     timeout-minutes: 10
     env:
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
       CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       READ_ONLY: ${{ inputs.read_only }}
       LAG_HOURS: ${{ inputs.lag_hours }}
-      EVIDENCE_ENVIRONMENT: ${{ inputs.environment }}
+      EVIDENCE_ENVIRONMENT: production
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -86,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${READ_ONLY}" == "true" ]] || { echo "READ_ONLY != \"true\"" >&2; exit 1; }
-          [[ "${EVIDENCE_ENVIRONMENT}" == "production" || "${EVIDENCE_ENVIRONMENT}" == "staging" ]] || exit 1
+          [[ "${EVIDENCE_ENVIRONMENT}" == "production" ]] || exit 1
           [[ "${LAG_HOURS}" == "3" ]] || exit 1
           : "${CF_ACCOUNT_ID:?CF_ACCOUNT_ID is required (fail-closed)}"
           : "${CF_API_TOKEN:?CF_API_TOKEN is required (fail-closed)}"
