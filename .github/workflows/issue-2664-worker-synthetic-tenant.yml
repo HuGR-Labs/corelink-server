@@ -1,0 +1,59 @@
+name: Issue 2664 Worker synthetic BYOK tenant
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-2664-worker-synthetic-tenant.yml
+      - worker/src/lib/staging_synthetic_tenant.ts
+      - worker/src/index_special_misc.ts
+      - worker/src/route_match.ts
+      - worker/tests/staging_synthetic_tenant.test.ts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2664-worker-synthetic-tenant-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  focused-worker-proof:
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact candidate and protected base
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXPECTED_BASE" "$EXPECTED_HEAD")" = "$EXPECTED_BASE"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Set up pinned pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Install focused Worker dependencies
+        run: pnpm install --frozen-lockfile --filter @corelink/worker... --ignore-scripts
+
+      - name: Typecheck Worker
+        run: pnpm --filter @corelink/worker exec tsc --noEmit -p tsconfig.json
+
+      - name: Run synthetic tenant adversarial tests
+        run: pnpm --filter @corelink/worker exec vitest run tests/staging_synthetic_tenant.test.ts
