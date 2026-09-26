@@ -17,7 +17,7 @@ use std::{
     time::Duration,
 };
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use rusqlite::{params_from_iter, types::Value as SqlValue, Connection};
 use serde_json::{json, Value};
 use sha2::Sha256;

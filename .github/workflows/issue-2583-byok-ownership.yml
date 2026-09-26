@@ -48,6 +48,11 @@ jobs:
         with:
           toolchain: 1.91.1
 
+      - name: Install pinned Protobuf compiler
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          version: v23.4
+
       - name: Verify BYOK scope and negative controls
         run: python3 -I scripts/verify_issue_2583_byok_ownership.py
 
