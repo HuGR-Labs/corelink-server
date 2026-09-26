@@ -11,7 +11,13 @@ use crate::byok_transition_fence::{
 };
 use crate::customer_d1::{ByokActivation, ByokState, ByokWriteError};
 use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
-use crate::storage::staging_load_test_ownership::StagingLoadTestWriteContext;
+use crate::storage::{
+    staging_load_test_admission::StagingLoadTestAdmissionContext,
+    staging_load_test_ownership::{
+        StagingLoadTestDisposition, StagingLoadTestResourceClass, StagingLoadTestScenario,
+        StagingLoadTestWriteContext,
+    },
+};
 
 const TRANSITION_LEASE: Duration = Duration::from_secs(60);
 const ACTIVATION_DEADLINE_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
@@ -100,6 +106,19 @@ impl D1ByokControl {
         activation: &ByokActivation,
         now_ms: i64,
     ) -> Result<(), ByokWriteError> {
+        self.prepare_activation_with_context(activation, now_ms, None)
+            .await
+    }
+
+    /// Persist validated custody material and register a synthetic activation
+    /// in the same D1 transaction when request-scoped staging authority exists.
+    pub async fn prepare_activation_with_context(
+        &self,
+        activation: &ByokActivation,
+        now_ms: i64,
+        context: StagingLoadTestWriteContext<'_>,
+    ) -> Result<(), ByokWriteError> {
+        validate_byok_context(context)?;
         activation.validate_for_control()?;
         if now_ms < 0 {
             return Err(ByokWriteError::Invalid(
@@ -159,21 +178,9 @@ impl D1ByokControl {
             &hashes,
             current_identity.as_ref(),
             now_ms,
+            context,
         )
         .await
-    }
-
-    /// Carry optional request-scoped staging authority to the owned activation
-    /// writer boundary. The current control transition remains behaviorally
-    /// identical until the BYOK writer child appends its registration statement.
-    pub async fn prepare_activation_with_context(
-        &self,
-        activation: &ByokActivation,
-        now_ms: i64,
-        context: StagingLoadTestWriteContext<'_>,
-    ) -> Result<(), ByokWriteError> {
-        let _ = context;
-        self.prepare_activation(activation, now_ms).await
     }
 
     /// Cancel only an unpublished activation. A retry after cancellation has
@@ -221,7 +228,7 @@ impl D1ByokControl {
         now_ms: i64,
         context: StagingLoadTestWriteContext<'_>,
     ) -> Result<(), ByokWriteError> {
-        let _ = context;
+        validate_byok_context(context)?;
         self.cancel_activation(tenant_id, now_ms).await
     }
 
@@ -276,7 +283,7 @@ impl D1ByokControl {
         now_ms: i64,
         context: StagingLoadTestWriteContext<'_>,
     ) -> Result<(), ByokWriteError> {
-        let _ = context;
+        validate_byok_context(context)?;
         self.shred(tenant_id, now_ms).await
     }
 
@@ -735,6 +742,7 @@ impl D1ByokControl {
         hashes: &ActivationHashes,
         current_identity: Option<&ActiveConfigIdentity>,
         now_ms: i64,
+        context: StagingLoadTestWriteContext<'_>,
     ) -> Result<(), ByokWriteError> {
         use base64::Engine as _;
         let wrapped = base64::engine::general_purpose::STANDARD.encode(&act.tcs_wrapped);
@@ -968,6 +976,12 @@ impl D1ByokControl {
              WHERE transition_token=?1 AND tenant_id=?2",
             vec![json!(transition_token), json!(act.tenant_id)],
         ));
+        if let Some(context) = context {
+            // The BYOK activation intent is the durable owner for its later
+            // bounded R2 copy/reconciliation work. Register that opaque intent
+            // identity in this same D1 batch before the worker can claim it.
+            statements.push(byok_ownership_statement(context, &intent_id, now_ms)?);
+        }
         self.run_batch(statements)
             .await
             .map_err(ByokWriteError::Transport)
@@ -1804,6 +1818,34 @@ fn required_region(region: Option<&str>) -> Result<&str, ByokWriteError> {
         })
 }
 
+fn validate_byok_context(context: StagingLoadTestWriteContext<'_>) -> Result<(), ByokWriteError> {
+    if let Some(context) = context {
+        context
+            .require_ownership_scenario(StagingLoadTestScenario::Byok)
+            .map_err(|error| ByokWriteError::Invalid(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn byok_ownership_statement(
+    context: &StagingLoadTestAdmissionContext,
+    intent_id: &str,
+    registered_at_ms: i64,
+) -> Result<D1BatchStatement, ByokWriteError> {
+    validate_byok_context(Some(context))?;
+    let opaque_handle = format!("byok-activation:{intent_id}");
+    let registration = context
+        .ownership_registration(
+            StagingLoadTestResourceClass::ByokArtifact,
+            StagingLoadTestDisposition::Disposable,
+            &opaque_handle,
+        )
+        .map_err(|error| ByokWriteError::Invalid(error.to_string()))?;
+    registration
+        .d1_statement(registered_at_ms)
+        .map_err(|error| ByokWriteError::Invalid(error.to_string()))
+}
+
 struct ActivationHashes {
     request: String,
     policy: String,
@@ -1960,3 +2002,7 @@ fn text(row: &D1Row, column: &str) -> Result<String, String> {
         .map(ToOwned::to_owned)
         .ok_or_else(|| format!("{column} missing from BYOK tenant binding"))
 }
+
+#[cfg(test)]
+#[path = "byok_control_transition_ownership_tests.rs"]
+mod ownership_tests;
