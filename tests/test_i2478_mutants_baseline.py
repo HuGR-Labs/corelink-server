@@ -221,6 +221,7 @@ class BaselineMappingTests(unittest.TestCase):
                 receipt["sha"] = plan["sha"]
                 if index == rebucketed_shard:
                     receipt = copy.deepcopy(historical)
+                    receipt["shard"] = rebucketed_shard
                     receipt["plan_digest"] = plan["plan_digest"]
                 (directory / "baseline-shard-receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
             args = Namespace(artifacts=root, sha=historical["sha"], run_id=historical["run_id"], run_attempt=historical["run_attempt"], config_digest=config_digest(), inventory_digest="c" * 64, out=root / "baseline.json")
