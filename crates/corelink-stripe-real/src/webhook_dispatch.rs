@@ -1030,22 +1030,21 @@ impl WebhookDispatcher {
                 } else {
                     AuditOutcome::Dispatched
                 };
-                if self
-                    .emit_audit_and_sli(
-                        AuditRecord::new(
-                            "corelink.billing.stripe_event_processed.v1",
-                            context.env.id.clone(),
-                            context.canon,
-                            outcome,
-                            Some(context.token.to_hex()),
-                            context.now_ms,
-                            None,
-                        ),
+                if emit_audit(
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        context.env.id.clone(),
                         context.canon,
                         outcome,
-                        context.start,
-                    )
-                    .is_some()
+                        Some(context.token.to_hex()),
+                        context.now_ms,
+                        None,
+                    ),
+                    context.canon,
+                    outcome,
+                    context.start,
+                )
+                .is_some()
                     || !matches!(
                         context.inbox.commit_effect_with_context(
                             &claim,

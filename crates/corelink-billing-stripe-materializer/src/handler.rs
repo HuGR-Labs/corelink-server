@@ -526,9 +526,10 @@ impl D1SubscriptionStateHandler {
                 event_price_id,
                 current.as_deref(),
                 now_ms,
+                request_context,
             )?;
             if env.event_type == "customer.subscription.updated" && !runners_handled {
-                self.reconcile_tier(env, &tenant_id, &status, now_ms)?;
+                self.reconcile_tier(env, &tenant_id, &status, now_ms, request_context)?;
             } else if canceled && !runners_handled {
                 // `customer.subscription.deleted`. If the price is a Runners price,
                 // `reconcile_runners` revokes `runners_entitlement` (the `canceled`
@@ -544,7 +545,13 @@ impl D1SubscriptionStateHandler {
                 // contradictory active-free row (the signup-worker is the primary
                 // downgrade authority; this is the container's defense-in-depth
                 // convergent write).
-                self.persist_tier_downgrade(&tenant_id, TierKind::Free, env, now_ms)?;
+                self.persist_tier_downgrade(
+                    &tenant_id,
+                    TierKind::Free,
+                    env,
+                    now_ms,
+                    request_context,
+                )?;
             }
         }
 
@@ -596,6 +603,7 @@ impl D1SubscriptionStateHandler {
         event_price_id: &str,
         current: Option<&[crate::CurrentSubscription]>,
         now_ms: u64,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
     ) -> Result<bool, MaterializerError> {
         let Some(resolver) = self.runners_resolver.as_ref() else {
             return Ok(false); // dormant (no STRIPE_PRICE_ID_RUNNER_* wired)
@@ -754,6 +762,7 @@ impl D1SubscriptionStateHandler {
         tenant_id: &str,
         status: &str,
         now_ms: u64,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
     ) -> Result<(), MaterializerError> {
         let plan_id = extract_plan_id(env).ok_or_else(|| {
             MaterializerError::InvalidPayload(
@@ -791,7 +800,7 @@ impl D1SubscriptionStateHandler {
             return Ok(());
         }
 
-        self.persist_tier_change(tenant_id, new_tier, env, now_ms)
+        self.persist_tier_change(tenant_id, new_tier, env, now_ms, request_context)
     }
 
     fn persist_tier_change(
@@ -800,6 +809,7 @@ impl D1SubscriptionStateHandler {
         new_tier: TierKind,
         env: &StripeWebhookEnvelope,
         now_ms: u64,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
     ) -> Result<(), MaterializerError> {
         let current = self.d1.read_tier(tenant_id).map_err(d1_to_mat)?;
         let new_wire = new_tier.as_str();
@@ -853,6 +863,7 @@ impl D1SubscriptionStateHandler {
         new_tier: TierKind,
         env: &StripeWebhookEnvelope,
         now_ms: u64,
+        request_context: Option<&dyn DurableWebhookRequestContext>,
     ) -> Result<(), MaterializerError> {
         let current = self.d1.read_tier(tenant_id).map_err(d1_to_mat)?;
         let new_wire = new_tier.as_str();
@@ -1059,7 +1070,13 @@ impl D1SubscriptionStateHandler {
         if fully_refunded {
             match refunded_purchase {
                 Some(purchase) if purchase.product == crate::d1::RefundedProduct::Cache => {
-                    self.persist_tier_downgrade(&tenant_id, TierKind::Free, env, now_ms)?;
+                    self.persist_tier_downgrade(
+                        &tenant_id,
+                        TierKind::Free,
+                        env,
+                        now_ms,
+                        request_context,
+                    )?;
                 }
                 Some(purchase) if purchase.product == crate::d1::RefundedProduct::Runners => {
                     let snapshots = self

@@ -23,6 +23,7 @@ def main() -> None:
     checkout = (ROOT / "apps/signup-worker/src/webhooks/billing_checkout.ts").read_text()
     runner = (ROOT / "apps/signup-worker/src/webhooks/stripe_persistence_runner.ts").read_text()
     tests = (ROOT / "apps/signup-worker/tests/stripe.test.ts").read_text()
+    dispatcher = (ROOT / "crates/corelink-stripe-real/src/webhook_dispatch.rs").read_text()
 
     require("SQL_RECEIVE" in inbox and "StagingLoadTestResourceClass::WebhookInbox" in inbox,
             "Rust inbox writer is not mapped to webhook_inbox")
@@ -32,6 +33,10 @@ def main() -> None:
     require("SQL_REQUIRE_EXISTING_OWNERSHIP" in inbox and
             "commit_effect_with_ownership_context" in inbox,
             "Rust effect commit does not atomically require its reserved owner row")
+    durable_dispatch = dispatcher.split("fn process_durable(", 1)[1].split("fn quarantine_transient(", 1)[0]
+    require("if emit_audit(" in durable_dispatch and
+            ".emit_audit_and_sli(" not in durable_dispatch,
+            "Rust durable success audit bypasses the request ownership context")
     require("SQL_BILLING_AUDIT_INSERT" in audit and
             "StagingLoadTestResourceClass::BillingAudit" in audit and
             "StagingLoadTestDisposition::Retained" in audit,
