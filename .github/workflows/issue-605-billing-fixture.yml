@@ -1,0 +1,82 @@
+name: issue-605 billing fixture
+
+on:
+  pull_request:
+    paths:
+      - crates/corelink-container/Cargo.toml
+      - crates/corelink-container/src/bin/issue_605_billing_ingest_fixture.rs
+      - .github/workflows/issue-605-billing-fixture.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-605-billing-fixture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-fixture:
+    if: github.repository == 'HuGR-dev/corelink-server'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact server PR head without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+
+      - name: Cache Cargo
+        if: runner.environment == 'github-hosted'
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: '. -> target'
+          shared-key: issue-605-billing-fixture
+
+      - name: Check formatting and build the fixture
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path crates/corelink-container/Cargo.toml --check
+          cargo build --locked -p corelink-server --bin issue-605-billing-ingest-fixture
+
+      - name: Write exact server SHA receipt
+        env:
+          RECEIPT_PATH: ${{ runner.temp }}/issue-605-server-receipt.json
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          receipt = {
+              "issue": 605,
+              "repository": "HuGR-dev/corelink-server",
+              "server_sha": sha,
+              "result": "PASS",
+              "command": "cargo build --locked -p corelink-server --bin issue-605-billing-ingest-fixture",
+              "provider_credentials_used": False,
+              "run_url": os.environ["RUN_URL"],
+          }
+          Path(os.environ["RECEIPT_PATH"]).write_text(json.dumps(receipt, sort_keys=True) + "\n")
+          PY
+
+      - name: Upload exact-SHA receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: issue-605-server-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/issue-605-server-receipt.json
+          if-no-files-found: error
+          retention-days: 30
