@@ -1,0 +1,89 @@
+name: Issue 2582 signup ownership
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-2582-signup-ownership.yml
+      - apps/signup-worker/src/signup_writer_ownership.ts
+      - apps/signup-worker/src/webhooks/clerk.ts
+      - apps/signup-worker/src/webhooks/github_install_callback.ts
+      - apps/signup-worker/src/webhooks/github_provision.ts
+      - apps/signup-worker/src/staging_load_test_ownership.ts
+      - apps/signup-worker/src/lib/d1.ts
+      - apps/signup-worker/tests/signup_writer_ownership.test.ts
+      - crates/corelink-container/src/routes/signup.rs
+      - crates/corelink-container/src/routes/signup_support.rs
+      - crates/corelink-container/src/routes/signup_tests.rs
+      - crates/corelink-container/src/signup_d1_http.rs
+      - crates/corelink-container/src/storage/staging_load_test_admission.rs
+      - crates/corelink-container/src/storage/staging_load_test_ownership.rs
+      - migrations/d1/0147_staging_load_test_run_ownership.sql
+      - scripts/verify_issue_2582_signup_ownership.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2582-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  signup-ownership:
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact candidate and protected base
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXPECTED_BASE" "$EXPECTED_HEAD")" = "$EXPECTED_BASE"
+
+      - name: Verify signup writer census and change scope
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 -I scripts/verify_issue_2582_signup_ownership.py
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Install pinned Protobuf compiler
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+
+      - name: Check Rust formatting and focused signup writer
+        run: |
+          cargo fmt --all -- --check
+          cargo test --locked -p corelink-server --lib signup_d1_http::tests::happy_path_insert_returns_the_record -- --exact
+          cargo test --locked -p corelink-server --lib signup_d1_http::tests::duplicate_email_returns_the_original_row_not_the_new_one -- --exact
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install focused Worker dependencies
+        run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
+
+      - name: Typecheck and run focused signup ownership tests
+        run: |
+          pnpm --filter @corelink/signup-worker typecheck
+          pnpm --filter @corelink/signup-worker exec vitest run tests/signup_writer_ownership.test.ts

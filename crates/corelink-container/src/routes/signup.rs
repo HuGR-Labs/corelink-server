@@ -563,7 +563,9 @@ pub trait SignupStore: Send + Sync + core::fmt::Debug {
         record: PilotSignupRecord,
         context: crate::storage::staging_load_test_ownership::StagingLoadTestWriteContext<'_>,
     ) -> Result<PilotSignupRecord, &'static str> {
-        let _ = context;
+        if context.is_some() {
+            return Err("signup store: staging ownership requires durable D1");
+        }
         self.insert_or_existing(record)
     }
 }
@@ -633,6 +635,17 @@ impl SignupStore for InMemorySignupStore {
         }
         g.push(record.clone());
         Ok(record)
+    }
+
+    fn insert_or_existing_with_context(
+        &self,
+        record: PilotSignupRecord,
+        context: crate::storage::staging_load_test_ownership::StagingLoadTestWriteContext<'_>,
+    ) -> Result<PilotSignupRecord, &'static str> {
+        if context.is_some() {
+            return Err("signup store: staging ownership requires durable D1");
+        }
+        self.insert_or_existing(record)
     }
 }
 
