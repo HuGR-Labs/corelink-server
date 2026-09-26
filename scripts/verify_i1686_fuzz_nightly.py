@@ -6,6 +6,7 @@ proof still requires a scheduled or manual Actions run with its artifacts.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -13,6 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/fuzz-nightly.yml"
 WORKFLOW_PATH = ".github/workflows/fuzz-nightly.yml"
+EXPECTED_CARGO_FUZZ_VERSION = "0.13.2"
 EXPECTED_TARGETS = {
     ("corelink-byok", "wrapped_dek_parse"),
     ("corelink-byok", "envelope_roundtrip"),
@@ -132,9 +134,37 @@ def verify(document: dict, source: str = "") -> None:
         raise ContractError("nightly toolchain setup is missing")
 
     install = _step(job, "Install cargo-fuzz (isolated CARGO_HOME — never the shared one)")
-    if install.get("timeout-minutes") != 20 or "cargo-fuzz --locked --version =0.13.1" not in install.get("run", ""):
-        raise ContractError("cargo-fuzz pin or installer timeout drifted")
-    if 'CARGO_HOME="$TOOLS"' not in install.get("run", ""):
+    install_run = install.get("run", "")
+    if install.get("timeout-minutes") != 20:
+        raise ContractError("cargo-fuzz installer timeout drifted")
+    install_commands = [
+        line.strip()
+        for line in install_run.splitlines()
+        if "cargo install cargo-fuzz" in line
+    ]
+    install_pattern = re.compile(
+        r'CARGO_HOME="\$TOOLS" cargo install cargo-fuzz --locked '
+        r"--version =(\d+\.\d+\.\d+)"
+    )
+    if len(install_commands) != 1:
+        raise ContractError("cargo-fuzz install command is missing or ambiguous")
+    install_match = install_pattern.fullmatch(install_commands[0])
+    if install_match is None:
+        raise ContractError("cargo-fuzz install command or exact version pin is malformed")
+    if install_match.group(1) != EXPECTED_CARGO_FUZZ_VERSION:
+        raise ContractError("cargo-fuzz pin drifted")
+    version_check = (
+        f'if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | '
+        f"grep -Fx 'cargo-fuzz {EXPECTED_CARGO_FUZZ_VERSION}' >/dev/null; then"
+    )
+    checks = [
+        line.strip()
+        for line in install_run.splitlines()
+        if '"$TOOLS/bin/cargo-fuzz" --version' in line
+    ]
+    if checks != [version_check]:
+        raise ContractError("cargo-fuzz version check is missing, malformed, or mismatched")
+    if 'CARGO_HOME="$TOOLS"' not in install_run:
         raise ContractError("cargo-fuzz installer must keep its own Cargo home")
 
     restore = _step(job, "Restore fuzz corpus (warm-start across nightly runs)")

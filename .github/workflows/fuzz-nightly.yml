@@ -104,7 +104,7 @@ jobs:
           TOOLS="$HOME/.cargo-tools/${RUNNER_NAME:-default}"
           mkdir -p "$TOOLS/bin"
           echo "$TOOLS/bin" >> "$GITHUB_PATH"
-          if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | grep '0.13.2' >/dev/null; then
+          if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | grep -Fx 'cargo-fuzz 0.13.2' >/dev/null; then
             echo "cargo-fuzz 0.13.2 already in $TOOLS — no compile, no shared-registry write"
           else
             echo "compiling cargo-fuzz 0.13.2 into $TOOLS (isolated from ~/.cargo)"
