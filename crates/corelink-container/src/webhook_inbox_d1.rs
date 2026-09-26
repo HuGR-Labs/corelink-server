@@ -10,7 +10,7 @@ use corelink_billing::stripe::real::webhook_dispatch::{
     InboxClaim as DispatcherInboxClaim, InboxReceiveOutcome,
     InboxTerminalState as DispatcherInboxTerminalState,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::storage::{
@@ -154,11 +154,9 @@ impl D1WebhookInbox {
                 json!(event.event_type),
                 json!(event.raw_body_hex),
                 json!(event.payload_sha256),
-                json!(
-                    event
-                        .stripe_created_at_ms
-                        .map(|v| i64::try_from(v).unwrap_or(i64::MAX))
-                ),
+                json!(event
+                    .stripe_created_at_ms
+                    .map(|v| i64::try_from(v).unwrap_or(i64::MAX))),
                 json!(i64::try_from(now_ms).unwrap_or(i64::MAX)),
             ],
         );
@@ -194,11 +192,9 @@ impl D1WebhookInbox {
                     json!(event.event_type),
                     json!(event.raw_body_hex),
                     json!(event.payload_sha256),
-                    json!(
-                        event
-                            .stripe_created_at_ms
-                            .map(|v| i64::try_from(v).unwrap_or(i64::MAX))
-                    ),
+                    json!(event
+                        .stripe_created_at_ms
+                        .map(|v| i64::try_from(v).unwrap_or(i64::MAX))),
                     json!(i64::try_from(now_ms).unwrap_or(i64::MAX)),
                 ],
             )?
@@ -1164,58 +1160,42 @@ mod tests {
                     }
                 );
                 if request_index == 1 {
-                    assert!(
-                        statements[0]["sql"]
-                            .as_str()
-                            .unwrap()
-                            .contains("stripe_webhook_event_inbox")
-                    );
-                    assert!(
-                        statements[2]["sql"]
-                            .as_str()
-                            .unwrap()
-                            .contains("staging_load_test_resources")
-                    );
-                    assert!(
-                        statements[4]["sql"]
-                            .as_str()
-                            .unwrap()
-                            .contains("SELECT resource.receipt_ref")
-                    );
+                    assert!(statements[0]["sql"]
+                        .as_str()
+                        .unwrap()
+                        .contains("stripe_webhook_event_inbox"));
+                    assert!(statements[2]["sql"]
+                        .as_str()
+                        .unwrap()
+                        .contains("staging_load_test_resources"));
+                    assert!(statements[4]["sql"]
+                        .as_str()
+                        .unwrap()
+                        .contains("SELECT resource.receipt_ref"));
                 }
                 if request_index == 2 {
-                    assert!(
-                        statements[0]["sql"]
-                            .as_str()
-                            .unwrap()
-                            .contains("stripe_webhook_event_effects")
-                    );
-                    assert!(
-                        statements[2]["sql"]
-                            .as_str()
-                            .unwrap()
-                            .contains("staging_load_test_resources")
-                    );
+                    assert!(statements[0]["sql"]
+                        .as_str()
+                        .unwrap()
+                        .contains("stripe_webhook_event_effects"));
+                    assert!(statements[2]["sql"]
+                        .as_str()
+                        .unwrap()
+                        .contains("staging_load_test_resources"));
                 }
                 if request_index == 3 {
-                    assert!(
-                        statements[0]["sql"]
-                            .as_str()
-                            .unwrap()
-                            .contains("UPDATE stripe_webhook_event_effects")
-                    );
-                    assert!(
-                        statements[4]["sql"]
-                            .as_str()
-                            .unwrap()
-                            .contains("SELECT resource.receipt_ref")
-                    );
-                    assert!(
-                        statements[5]["sql"]
-                            .as_str()
-                            .unwrap()
-                            .contains("NOT EXISTS")
-                    );
+                    assert!(statements[0]["sql"]
+                        .as_str()
+                        .unwrap()
+                        .contains("UPDATE stripe_webhook_event_effects"));
+                    assert!(statements[4]["sql"]
+                        .as_str()
+                        .unwrap()
+                        .contains("SELECT resource.receipt_ref"));
+                    assert!(statements[5]["sql"]
+                        .as_str()
+                        .unwrap()
+                        .contains("NOT EXISTS"));
                 }
                 let results = (0..statements.len())
                     .map(|index| {
@@ -1328,19 +1308,17 @@ mod tests {
                 .expect("atomic effect reservation"),
             EffectReservation::Reserved
         );
-        assert!(
-            inbox
-                .commit_effect_with_ownership_context(
-                    &claim,
-                    "owner",
-                    &durable_event,
-                    "effect-key",
-                    "invoice.paid",
-                    12,
-                    Some(&context),
-                )
-                .expect("effect commit verifies prior ownership")
-        );
+        assert!(inbox
+            .commit_effect_with_ownership_context(
+                &claim,
+                "owner",
+                &durable_event,
+                "effect-key",
+                "invoice.paid",
+                12,
+                Some(&context),
+            )
+            .expect("effect commit verifies prior ownership"));
         server.join().expect("loopback D1 server");
     }
 }

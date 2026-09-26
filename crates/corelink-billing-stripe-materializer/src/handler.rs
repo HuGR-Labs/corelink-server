@@ -42,7 +42,7 @@ use corelink_billing_stripe_traits::{
 use corelink_tier_selection::tier::TierKind;
 
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
-use crate::clock::{MatClock, default_mat_clock};
+use crate::clock::{default_mat_clock, MatClock};
 use crate::current_subscription::CurrentSubscriptionAuthority;
 use crate::d1::{
     BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow,

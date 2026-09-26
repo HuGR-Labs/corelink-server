@@ -98,7 +98,7 @@ use sha2::{Digest, Sha256};
 
 use crate::dlq::{WebhookDlqRow, WebhookDlqStore};
 use crate::error::WebhookVerifyError;
-use crate::webhook::{DEFAULT_TOLERANCE_SECONDS, verify_webhook_signature};
+use crate::webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
 
 // =========================================================================
 // Wave-36 Trigger A: re-export the trait + type surface from the leaf
@@ -110,8 +110,8 @@ pub use corelink_billing_stripe_traits::{
     AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType, DispatchResponse,
     DurableWebhookEvent, DurableWebhookInbox, DurableWebhookRequestContext, EffectReservation,
     IdempotencyOutcome, IdempotencyStore, IdempotencyToken, InboxClaim, InboxReceiveOutcome,
-    InboxTerminalState, MaterializerError, SLI_BILLING_STRIPE_EVENT_SECONDS, SliObservation,
-    SliRecorder, StateMaterializer, StripeWebhookEnvelope,
+    InboxTerminalState, MaterializerError, SliObservation, SliRecorder, StateMaterializer,
+    StripeWebhookEnvelope, SLI_BILLING_STRIPE_EVENT_SECONDS,
 };
 
 // =========================================================================
