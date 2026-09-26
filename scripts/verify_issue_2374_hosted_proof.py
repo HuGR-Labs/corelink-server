@@ -249,8 +249,17 @@ def verify_baseline(candidate: Path, baseline: Path) -> None:
     new_coverage = (candidate / "scripts/coverage.sh").read_text(encoding="utf-8")
     unsupported = "cargo llvm-cov report --workspace --summary-only $COV_FLAGS"
     supported = "cargo llvm-cov report --summary-only $COV_FLAGS"
-    if old_coverage.count(unsupported) != 1 or new_coverage != old_coverage.replace(unsupported, supported, 1):
-        fail("scripts/coverage.sh must contain only the authorized supported report invocation fix")
+    nested_html_output = '--output-dir "$COV_OUT/html" $COV_FLAGS'
+    canonical_html_output = '--output-dir "$COV_OUT" $COV_FLAGS'
+    expected_coverage = old_coverage.replace(unsupported, supported, 1).replace(
+        nested_html_output, canonical_html_output, 1
+    )
+    if (
+        old_coverage.count(unsupported) != 1
+        or old_coverage.count(nested_html_output) != 1
+        or new_coverage != expected_coverage
+    ):
+        fail("scripts/coverage.sh must contain only the authorized report and canonical HTML output fixes")
 
     allowed_paths = set(FILES) | {
         ".github/workflows/issue-2374-hosted-policy-proof.yml",
