@@ -14,7 +14,7 @@ export type RouteKind =
   | "reapi_v2" | "customer_v1" | "devenv_v1" | "openapi" | "openapi_devenv"
   | "public_attestation" | "reapi_v1" | "bazel_v2" | "turbo_v8" | "signup"
   | "onboarding" | "session_exchange" | "tenant_lookup" | "token_exchange"
-  | "runner_mint" | "runner_authorize" | "runner_adopt" | "runner_close_generation" | "runner_revoke" | "auth_rotate" | "internal"
+  | "runner_mint" | "runner_authorize" | "runner_adopt" | "runner_close_generation" | "runner_revoke" | "auth_rotate" | "staging_synthetic_tenant" | "internal"
   | "health_container" | "health_container_authed" | "not_found";
 
 /**
@@ -339,6 +339,12 @@ export function matchRoute(url: URL): RouteMatch {
   // and from the runners FABRIC introspect secret above.
   if (path === "/internal/v1/auth/tenant/lookup") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "tenant_lookup" };
+  }
+
+  // Staging-only #2664 synthetic BYOK tenant provisioner. The Worker handles
+  // this before PAT auth and verifies the request-bound #2576 staging envelope.
+  if (path === "/internal/v1/staging/byok/synthetic-tenant") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "staging_synthetic_tenant" };
   }
 
   // githugr authz #1 — RFC 8693 token exchange. EXACT
