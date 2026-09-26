@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/staging-bootstrap.yml'
       - 'infra/staging/README.md'
+      - 'infra/staging/topology.json'
       - 'scripts/render_staging_wrangler.py'
       - 'scripts/staging_bootstrap_provider.py'
       - 'tests/test_render_staging_wrangler.py'
@@ -67,7 +68,8 @@ jobs:
       CLERK_WEBHOOK_SECRET: ${{ secrets.STAGING_CLERK_WEBHOOK_SECRET }}
       ERASURE_SALT_KEY: ${{ secrets.STAGING_ERASURE_SALT_KEY }}
       DSR_DLQ_REDRIVE_AUTH_KEY: ${{ secrets.STAGING_DSR_DLQ_REDRIVE_AUTH_KEY }}
-      PAGERDUTY_ROUTING_KEY: ${{ secrets.STAGING_PAGERDUTY_ROUTING_KEY }}
+      DSR_DLQ_ALERT_ENDPOINT: ${{ secrets.STAGING_DSR_DLQ_ALERT_ENDPOINT }}
+      DSR_DLQ_ALERT_AUTH_TOKEN: ${{ secrets.STAGING_DSR_DLQ_ALERT_AUTH_TOKEN }}
       PAGERDUTY_SYNTHETIC_ROUTING_KEY: ${{ secrets.STAGING_PAGERDUTY_SYNTHETIC_ROUTING_KEY }}
       PAGERDUTY_WEBHOOK_SECRET: ${{ secrets.STAGING_PAGERDUTY_WEBHOOK_SECRET }}
       R2_S3_ACCESS_KEY_ID: ${{ secrets.STAGING_R2_S3_ACCESS_KEY_ID }}
@@ -104,7 +106,8 @@ jobs:
           required=(
             STAGING_CF_API_TOKEN STAGING_CF_ACCOUNT_ID STAGING_CF_WORKER_API_TOKEN
             CF_ZONE_ID STAGING_R2_S3_ENDPOINT CLERK_ISSUER_URL CLERK_SECRET_KEY
-            CLERK_WEBHOOK_SECRET ERASURE_SALT_KEY DSR_DLQ_REDRIVE_AUTH_KEY PAGERDUTY_ROUTING_KEY
+            CLERK_WEBHOOK_SECRET ERASURE_SALT_KEY DSR_DLQ_REDRIVE_AUTH_KEY
+            DSR_DLQ_ALERT_ENDPOINT DSR_DLQ_ALERT_AUTH_TOKEN
             PAGERDUTY_SYNTHETIC_ROUTING_KEY PAGERDUTY_WEBHOOK_SECRET
             R2_S3_ACCESS_KEY_ID R2_S3_SECRET_ACCESS_KEY K6_STAGING_BYOK_CMK_ID
             K6_STAGING_MFA_STUB K6_STAGING_PAT K6_STAGING_STRIPE_WHSEC
@@ -120,6 +123,10 @@ jobs:
           fi
           if [[ "$STAGING_CF_API_TOKEN" == "$STAGING_CF_WORKER_API_TOKEN" ]]; then
             echo '::error::provider and Worker runtime Cloudflare tokens must be distinct'
+            exit 1
+          fi
+          if [[ ! "$DSR_DLQ_ALERT_ENDPOINT" =~ ^https://[^[:space:]]+$ ]]; then
+            echo '::error::DSR_DLQ_ALERT_ENDPOINT must be configured as HTTPS.'
             exit 1
           fi
           echo 'Required staging input names are present.'
@@ -208,7 +215,8 @@ jobs:
             "$signup:CLERK_WEBHOOK_SECRET:CLERK_WEBHOOK_SECRET" \
             "$signup:ERASURE_SALT_KEY:ERASURE_SALT_KEY" \
             "$signup:DSR_DLQ_REDRIVE_AUTH_KEY:DSR_DLQ_REDRIVE_AUTH_KEY" \
-            "$signup:PAGERDUTY_ROUTING_KEY:PAGERDUTY_ROUTING_KEY" \
+            "$signup:DSR_DLQ_ALERT_ENDPOINT:DSR_DLQ_ALERT_ENDPOINT" \
+            "$signup:DSR_DLQ_ALERT_AUTH_TOKEN:DSR_DLQ_ALERT_AUTH_TOKEN" \
             "$receiver:PAGERDUTY_SYNTHETIC_ROUTING_KEY:PAGERDUTY_SYNTHETIC_ROUTING_KEY" \
             "$receiver:PAGERDUTY_WEBHOOK_SECRET:PAGERDUTY_WEBHOOK_SECRET"; do
             IFS=: read -r config name variable <<< "$item"
@@ -222,7 +230,7 @@ jobs:
             diff -u "$RUNNER_TEMP/expected-secret-names.txt" "$RUNNER_TEMP/actual-secret-names.txt"
           }
           verify_names "$root" $'CF_API_TOKEN\nCLERK_ISSUER_URL\nCLERK_SECRET_KEY\nCLOUDFLARE_ACCOUNT_ID\nCORELINK_ADMIN_AUTH_KEY\nCORELINK_ERASE_AUTH_KEY\nCORELINK_INTERNAL_AUTH_KEY\nPAT_SIGNING_KEY\nR2_S3_ACCESS_KEY_ID\nR2_S3_SECRET_ACCESS_KEY'
-          verify_names "$signup" $'CLERK_SECRET_KEY\nCLERK_WEBHOOK_SECRET\nCORELINK_ERASE_AUTH_KEY\nCORELINK_INTERNAL_AUTH_KEY\nDSR_DLQ_REDRIVE_AUTH_KEY\nERASURE_SALT_KEY\nPAGERDUTY_ROUTING_KEY'
+          verify_names "$signup" $'CLERK_SECRET_KEY\nCLERK_WEBHOOK_SECRET\nCORELINK_ERASE_AUTH_KEY\nCORELINK_INTERNAL_AUTH_KEY\nDSR_DLQ_ALERT_AUTH_TOKEN\nDSR_DLQ_ALERT_ENDPOINT\nDSR_DLQ_REDRIVE_AUTH_KEY\nERASURE_SALT_KEY'
           verify_names "$receiver" $'PAGERDUTY_SYNTHETIC_ROUTING_KEY\nPAGERDUTY_WEBHOOK_SECRET'
 
       - name: Reconfirm exact staging bindings and empty routes before publication

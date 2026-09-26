@@ -51,12 +51,13 @@ head_sampling_rate = 1
 #   SLA_OBSERVATION_INGEST_KEY    — dedicated ≥32-character key for the
 #                                  provider-operated monthly SLO observation
 #                                  hand-off; never reuse a Stripe or worker key.
-#   PAGERDUTY_ROUTING_KEY         — canonical PagerDuty Events API v2 key for
-#                                  exhausted DSR dead-letter pages. The DLQ
-#                                  handler fails closed on delivery errors or
-#                                  missing runtime configuration: it retains the
-#                                  DLQ delivery for retry and never substitutes
-#                                  a console log for an accepted on-call page.
+#   DSR_DLQ_ALERT_ENDPOINT        — owner-approved HTTPS critical-alert sink.
+#                                  The DSR DLQ sender fails closed when the
+#                                  endpoint or its dedicated bearer credential
+#                                  is missing, invalid, rejected, or ambiguous.
+#   DSR_DLQ_ALERT_AUTH_TOKEN      — dedicated bearer credential for the
+#                                  configured critical-alert sink. The DLQ
+#                                  sender never logs the endpoint or token.
 #   DSR_DLQ_REDRIVE_AUTH_KEY       — dedicated >=32-character bearer key for
 #                                  the DSR DLQ redrive authority. There is no
 #                                  shared-key fallback; bind it before deploy.

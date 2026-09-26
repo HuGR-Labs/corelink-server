@@ -14,10 +14,11 @@ name: signup-worker — CF Worker deploy
 # RUNTIME secrets (CLERK_WEBHOOK_SECRET, CLERK_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
 # STRIPE_SECRET_KEY, CORELINK_INTERNAL_AUTH_KEY, CORELINK_PAT_MINT_AUTH_KEY,
 # CORELINK_ERASE_AUTH_KEY, ERASURE_SALT_KEY, …) are bound out-of-band via
-# `wrangler secret put`. The one exception is PAGERDUTY_ROUTING_KEY: this lane
-# synchronizes it from the identically named GitHub Actions secret before the
-# readback gate and deploy. The value travels only via a step-scoped environment
-# variable and Wrangler stdin; it is never placed in argv or printed.
+# `wrangler secret put`. The B-216 exception is the owner-approved critical
+# alert endpoint and bearer credential: this lane synchronizes both from
+# identically named GitHub Actions secrets before the readback gate and deploy.
+# Their values travel only via step-scoped environment variables and Wrangler
+# stdin; they are never placed in argv or printed.
 #
 # SHA-pinned per repo hard constraint; action bumps require review.
 
@@ -101,29 +102,33 @@ jobs:
         working-directory: .
         run: npm install -g wrangler@4.95.0
 
-      # B-216: the DLQ consumer cannot page without this route. Synchronize the
-      # repository-held secret before the name-only readback below. Keep the
-      # value out of argv and logs: a step-scoped env value is piped directly to
-      # Wrangler stdin, and the step fails closed before any deploy if it is
-      # absent or does not have the PagerDuty Events API v2 routing-key shape.
-      - name: Synchronize PagerDuty routing key
+      # B-216: the DLQ consumer cannot deliver an alert without an approved
+      # sink. Synchronize the owner-selected HTTPS endpoint and dedicated token
+      # before the name-only readback. Values stay in step env and Wrangler stdin.
+      - name: Synchronize critical alert sink configuration
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$PAGERDUTY_ROUTING_KEY" =~ ^[[:alnum:]]{32}$ ]]; then
-            echo "::error::PAGERDUTY_ROUTING_KEY is absent or malformed (expected a 32-character routing key)." >&2
+          if [[ ! "$DSR_DLQ_ALERT_ENDPOINT" =~ ^https://[^[:space:]]+$ ]]; then
+            echo "::error::DSR_DLQ_ALERT_ENDPOINT is absent or is not an HTTPS URL." >&2
             exit 1
           fi
-          printf '%s' "$PAGERDUTY_ROUTING_KEY" | wrangler secret put PAGERDUTY_ROUTING_KEY --config wrangler.toml
-          unset PAGERDUTY_ROUTING_KEY
+          if [[ -z "$DSR_DLQ_ALERT_AUTH_TOKEN" ]]; then
+            echo "::error::DSR_DLQ_ALERT_AUTH_TOKEN is absent." >&2
+            exit 1
+          fi
+          printf '%s' "$DSR_DLQ_ALERT_ENDPOINT" | wrangler secret put DSR_DLQ_ALERT_ENDPOINT --config wrangler.toml
+          printf '%s' "$DSR_DLQ_ALERT_AUTH_TOKEN" | wrangler secret put DSR_DLQ_ALERT_AUTH_TOKEN --config wrangler.toml
+          unset DSR_DLQ_ALERT_ENDPOINT DSR_DLQ_ALERT_AUTH_TOKEN
         env:
-          PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+          DSR_DLQ_ALERT_ENDPOINT: ${{ secrets.DSR_DLQ_ALERT_ENDPOINT }}
+          DSR_DLQ_ALERT_AUTH_TOKEN: ${{ secrets.DSR_DLQ_ALERT_AUTH_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 
       # The drain route is fail-closed on its dedicated erase key. `wrangler
       # deploy` preserves secrets, so read back deployed secret names after the
-      # PagerDuty sync and before shipping code; values are never listed/logged.
+      # critical-alert sync and before shipping code; values are never listed/logged.
       - name: Verify required runtime secrets
         run: bash ../../scripts/verify-signup-worker-secrets.sh
         env:
