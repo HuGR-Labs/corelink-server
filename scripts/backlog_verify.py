@@ -113,7 +113,7 @@ B057_C0_PREIMAGES = {
 B057_C0_TARGETS = {
     "scripts/verify_b057_sli.py": "cc19cdd2501c8eddbb99feffcdf7eb6466a5f9fe31bf3fb71d7d7b887918de2e",
     "tests/test_b057_sli_contract.py": "77c2ebfb5842e007ca096e2bcbbccb9fb4e1a8c51a13aa58ecfd2c0622fc7421",
-    ".github/workflows/issue-2414-b057-sli.yml": "cc16cd4698380c7ea0300c673e5765702d488082b53dba838f85f5418a735e1c",
+    ".github/workflows/issue-2414-b057-sli.yml": "feed9cf65ce17f8a11427db710ff0dbae26ad185ca38c1effeffdb94bfc09084",
 }
 
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
