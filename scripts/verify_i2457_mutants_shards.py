@@ -769,6 +769,13 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         "type: choice",
         "  - baseline",
         "  - campaign",
+        "prior_baseline_run_id:",
+        "prior_baseline_run_attempt:",
+        "name: verify retained prior baseline-only receipt",
+        "needs: [inventory, baseline-aggregate, prior-baseline]",
+        "name: Retain a baseline-only qualification marker",
+        "corelink.hosted-mutants-baseline-qualification.v1",
+        "prior baseline-only qualification does not bind this exact campaign",
         "inputs.execution_mode == 'campaign'",
         "inputs.execution_mode == 'baseline' || inputs.execution_mode == 'campaign'",
         "contents: read",
@@ -818,8 +825,10 @@ def command_verify_workflow(args: argparse.Namespace) -> None:
         raise VerificationError("workflow must retain each of the six bounded evidence artifacts for exactly 30 days")
     if text.count("inputs.execution_mode == 'baseline' || inputs.execution_mode == 'campaign'") != 4:
         raise VerificationError("baseline-only mode must gate every inventory and baseline job")
-    if text.count("inputs.execution_mode == 'campaign'") != 2:
-        raise VerificationError("only the mutation matrix and aggregate may require explicit campaign mode")
+    if text.count("inputs.execution_mode == 'campaign'") != 3:
+        raise VerificationError("prior-baseline validation, the mutation matrix, and aggregate must require explicit campaign mode")
+    if text.count("inputs.execution_mode == 'baseline'") != 5:
+        raise VerificationError("only baseline mode may retain the prior-campaign qualification marker")
     matrices = re.findall(r"(?ms)^      matrix:\n        shard: \[([^]]+)\]", text)
     expected_matrix = ", ".join(map(str, range(SHARD_COUNT)))
     if len(matrices) != 2 or any(matrix != expected_matrix for matrix in matrices):
