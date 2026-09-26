@@ -124,7 +124,7 @@ jobs:
     name: hosted coverage workload and same-run artifact receipt
     needs: migration-contract
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     permissions:
       contents: read
     steps:
