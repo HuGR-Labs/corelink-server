@@ -80,8 +80,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = billing_ingest_router(state).merge(fixture_controls);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let address: SocketAddr = listener.local_addr()?;
-    println!("http://{address}");
-    std::io::stdout().flush()?;
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+    writeln!(stdout, "http://{address}")?;
+    stdout.flush()?;
     axum::serve(listener, app).await?;
     Ok(())
 }
