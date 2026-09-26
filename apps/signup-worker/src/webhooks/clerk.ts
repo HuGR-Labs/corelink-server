@@ -709,7 +709,7 @@ export async function handleClerkWebhook(
             await writeSignupArtifactBatch(
               configDb,
               ownershipContext,
-              `${tenantId}:org-map`,
+              `${ownershipContext.requestId}:org-map`,
               [insertTenantOrgMapStatement(configDb, params)],
               nowMs,
             );
@@ -736,7 +736,7 @@ export async function handleClerkWebhook(
             await writeSignupArtifactBatch(
               configDb,
               ownershipContext,
-              `${tenantId}:entitlements`,
+              `${ownershipContext.requestId}:entitlements`,
               seedTenantEntitlementStatements(configDb, params),
               nowMs,
             );
@@ -864,7 +864,7 @@ export function defaultApiClient(
         await writeSignupArtifactBatch(
           env.CONFIG_DB,
           ownershipContext,
-          `${tenantId}:tenant`,
+          `${ownershipContext.requestId}:tenant`,
           [insertTenantStatement(env.CONFIG_DB, tenantParams)],
           nowMs,
         );
@@ -983,7 +983,7 @@ export function defaultApiClient(
           await writeSignupArtifactBatch(
             env.CONFIG_DB,
             ownershipContext,
-            `${tenantId}:pat:${mint.pat_id}`,
+            `${ownershipContext.requestId}:pat`,
             [patStatement],
             nowMs,
           );

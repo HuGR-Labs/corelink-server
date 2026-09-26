@@ -17,6 +17,28 @@ const OWNERSHIP_ENVELOPE_HEADER = "x-corelink-staging-ownership";
 const OWNERSHIP_REQUEST_ID_HEADER = "x-corelink-staging-request-id";
 const INVALID_OWNERSHIP = "staging ownership envelope is invalid";
 
+/**
+ * `ownershipInsertStatement` deliberately tolerates an exact replay with
+ * `ON CONFLICT DO NOTHING`. This follow-up statement turns that no-op into a
+ * constraint failure inside the same D1 transaction, so earlier domain
+ * statements in the batch roll back on a concurrent replay.
+ */
+function requireFreshOwnershipInsert(
+  db: D1Database,
+  opaqueHandle: string,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      "INSERT INTO staging_load_test_resources " +
+        "(run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms) " +
+        "SELECT run_id, scenario, resource_class, receipt_ref, opaque_handle, disposition, state, registered_at_ms " +
+        "FROM staging_load_test_resources " +
+        "WHERE resource_class = 'signup_artifact' AND opaque_handle = ?1 " +
+        "AND changes() = 0 LIMIT 1",
+    )
+    .bind(opaqueHandle);
+}
+
 /** Verify the optional worker envelope before any signup-owned write. */
 export async function signupOwnershipContext(
   request: Request,
@@ -70,6 +92,10 @@ export async function writeSignupArtifactBatch(
   );
   await runAtomicD1Batch(
     db as unknown as SignupD1Database,
-    [...statements, ownership as unknown as SignupPreparedStatement],
+    [
+      ...statements,
+      ownership as unknown as SignupPreparedStatement,
+      requireFreshOwnershipInsert(db, opaqueHandle) as unknown as SignupPreparedStatement,
+    ],
   );
 }

@@ -64,7 +64,7 @@ def verify_census() -> None:
             and "seedTenantEntitlementStatements(" in clerk,
         "GitHub provisioning maps and batches signup_artifact":
             "writeSignupArtifactBatch(" in github
-            and "map-and-repos" in github,
+            and ":github-installation`" in github,
         "Worker verifies request-bound signup envelopes":
             'verifyStagingOwnershipEnvelope(envelope, "signup", requestId' in adapter
             and 'environment !== "staging"' in adapter,
@@ -73,7 +73,16 @@ def verify_census() -> None:
             and "if (prior !== null) throw" in adapter,
         "Worker registration is appended to one atomic batch":
             "runAtomicD1Batch(" in adapter
-            and "[...statements, ownership" in adapter,
+            and "ownership as unknown as SignupPreparedStatement" in adapter
+            and "requireFreshOwnershipInsert(db, opaqueHandle)" in adapter
+            and "AND changes() = 0 LIMIT 1" in adapter,
+        "Clerk replay handles are stable and contain only the request identifier":
+            "`${ownershipContext.requestId}:tenant`" in clerk
+            and "`${ownershipContext.requestId}:pat`" in clerk
+            and "`${ownershipContext.requestId}:org-map`" in clerk
+            and "`${ownershipContext.requestId}:entitlements`" in clerk,
+        "GitHub replay handle is stable and contains only the request identifier":
+            "`${opts.ownershipContext.requestId}:github-installation`" in github,
         "Signup classification is the only registered resource class":
             adapter.count('"signup_artifact"') == 1
             and '"disposable"' in adapter,
@@ -99,4 +108,4 @@ except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
 
 print("issue-2582 signup ownership census: PASS")
 print("class map: signup pilot / Clerk tenant, PAT, org-map, entitlement / GitHub installation bundle -> signup_artifact (disposable)")
-print("excluded: Clerk provision locks/analytics, GitHub deprovision and audit outbox; sibling writer families remain untouched")
+print("excluded: Clerk provider-state mutation/publishUserMetadata (provider state is explicitly out of scope), provision locks/analytics, GitHub deprovision and audit outbox; sibling writer families remain untouched")

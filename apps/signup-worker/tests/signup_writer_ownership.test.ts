@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultApiClient } from "../src/webhooks/clerk.js";
-import {
-  writeInstallationProvision,
-} from "../src/webhooks/github_provision.js";
+import { writeInstallationProvision } from "../src/webhooks/github_provision.js";
 import {
   signupOwnershipContext,
   writeSignupArtifactBatch,
@@ -49,10 +47,20 @@ type Captured = { sql: string; values: unknown[] };
 function fakeDb(): {
   db: D1Database;
   batches: Captured[][];
+  domainRows: Set<string>;
+  synchronizeOwnershipPreflightReads(): void;
 } {
   const batches: Captured[][] = [];
   const registered = new Set<string>();
-  let tenantId: string | null = null;
+  const domainRows = new Set<string>();
+  const tenantByClerkId = new Map<string, string>();
+  let transactionTail: Promise<void> = Promise.resolve();
+  let ownershipReadCount = 0;
+  let releaseOwnershipReads: (() => void) | undefined;
+  const ownershipReadsBarrier = new Promise<void>((resolve) => {
+    releaseOwnershipReads = resolve;
+  });
+  let synchronizeOwnershipReads = false;
   const prepare = (sql: string) => {
     const captured: Captured = { sql, values: [] };
     const statement = {
@@ -64,19 +72,19 @@ function fakeDb(): {
         return this;
       },
       async run() {
-        if (sql.startsWith("INSERT OR IGNORE INTO tenant ")) {
-          tenantId = String(captured.values[0]);
-        }
-        if (sql.startsWith("INSERT INTO staging_load_test_resources ")) {
-          registered.add(String(captured.values[4]));
-        }
         return { success: true, meta: { changes: 1 } };
       },
       async first<T>() {
         if (sql.includes("FROM staging_load_test_resources")) {
+          if (synchronizeOwnershipReads) {
+            ownershipReadCount += 1;
+            if (ownershipReadCount === 2) releaseOwnershipReads?.();
+            await ownershipReadsBarrier;
+          }
           return (registered.has(String(captured.values[0])) ? { present: 1 } : null) as T | null;
         }
         if (sql.includes("FROM tenant WHERE clerk_user_id")) {
+          const tenantId = tenantByClerkId.get(String(captured.values[0])) ?? null;
           return (tenantId === null ? null : { tenant_id: tenantId }) as T | null;
         }
         return null;
@@ -87,16 +95,79 @@ function fakeDb(): {
   const db = {
     prepare,
     async batch(statements: D1PreparedStatement[]) {
-      const capturedBatch = statements.map((statement) => {
-        const candidate = statement as unknown as { sql?: string; values?: unknown[] };
-        return { sql: candidate.sql ?? "", values: candidate.values ?? [] };
-      });
-      batches.push(capturedBatch);
-      for (const statement of statements) await statement.run();
-      return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      const execute = async () => {
+        const capturedBatch = statements.map((statement) => {
+          const candidate = statement as unknown as { sql?: string; values?: unknown[] };
+          return { sql: candidate.sql ?? "", values: candidate.values ?? [] };
+        });
+        batches.push(capturedBatch);
+
+        const registeredBefore = new Set(registered);
+        const domainRowsBefore = new Set(domainRows);
+        const tenantByClerkIdBefore = new Map(tenantByClerkId);
+        let lastChanges = 0;
+        try {
+          for (const statement of statements) {
+            const candidate = statement as unknown as { sql?: string; values?: unknown[] };
+            const sql = candidate.sql ?? "";
+            const values = candidate.values ?? [];
+            if (sql.startsWith("INSERT INTO staging_load_test_resources ") && !sql.includes("SELECT run_id")) {
+              const handle = String(values[4]);
+              if (registered.has(handle)) {
+                lastChanges = 0;
+              } else {
+                registered.add(handle);
+                lastChanges = 1;
+              }
+            } else if (sql.includes("AND changes() = 0")) {
+              if (lastChanges === 0) {
+                throw new Error("UNIQUE constraint failed: staging_load_test_resources.opaque_handle");
+              }
+              lastChanges = 0;
+            } else if (sql.startsWith("INSERT OR IGNORE INTO tenant ")) {
+              const clerkId = String(values[3]);
+              if (tenantByClerkId.has(clerkId)) {
+                lastChanges = 0;
+              } else {
+                const tenantId = String(values[0]);
+                tenantByClerkId.set(clerkId, tenantId);
+                domainRows.add(`tenant:${clerkId}`);
+                lastChanges = 1;
+              }
+            } else if (sql.startsWith("INSERT OR IGNORE INTO ")) {
+              const key = `${sql}:${values.map(String).join(":")}`;
+              if (domainRows.has(key)) {
+                lastChanges = 0;
+              } else {
+                domainRows.add(key);
+                lastChanges = 1;
+              }
+            }
+          }
+        } catch (error) {
+          registered.clear();
+          for (const value of registeredBefore) registered.add(value);
+          domainRows.clear();
+          for (const value of domainRowsBefore) domainRows.add(value);
+          tenantByClerkId.clear();
+          for (const [key, value] of tenantByClerkIdBefore) tenantByClerkId.set(key, value);
+          throw error;
+        }
+        return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      };
+      const pending = transactionTail.then(execute);
+      transactionTail = pending.then(() => undefined, () => undefined);
+      return pending;
     },
   } as unknown as D1Database;
-  return { db, batches };
+  return {
+    db,
+    batches,
+    domainRows,
+    synchronizeOwnershipPreflightReads() {
+      synchronizeOwnershipReads = true;
+    },
+  };
 }
 
 describe("signup writer ownership", () => {
@@ -114,7 +185,13 @@ describe("signup writer ownership", () => {
     await expect(signupOwnershipContext(valid, "prod", KEY, NOW + 1)).rejects.toThrow(
       "staging ownership envelope is invalid",
     );
-    const mismatched = await requestWithOwnership("c".repeat(32));
+    const mismatchedRequestId = "c".repeat(32);
+    const mismatched = new Request("https://signup-worker.test/write", {
+      headers: {
+        "x-corelink-staging-ownership": await ownershipEnvelope(mismatchedRequestId),
+        "x-corelink-staging-request-id": REQUEST_ID,
+      },
+    });
     await expect(signupOwnershipContext(mismatched, "staging", KEY, NOW + 1)).rejects.toThrow(
       "staging ownership envelope is invalid",
     );
@@ -135,11 +212,12 @@ describe("signup writer ownership", () => {
     await api.createTenant("test-tenant", "user_test", "enam");
 
     expect(batches).toHaveLength(1);
-    expect(batches[0]).toHaveLength(2);
+    expect(batches[0]).toHaveLength(3);
     expect(batches[0]?.[0]?.sql).toContain("INSERT OR IGNORE INTO tenant");
     expect(batches[0]?.[1]?.sql).toContain("INSERT INTO staging_load_test_resources");
     expect(batches[0]?.[1]?.values[2]).toBe("signup_artifact");
-    expect(batches[0]?.[1]?.values[4]).toMatch(/^[0-9a-f-]{36}:tenant$/);
+    expect(batches[0]?.[1]?.values[4]).toBe(`${REQUEST_ID}:tenant`);
+    expect(batches[0]?.[2]?.sql).toContain("AND changes() = 0");
     expect(JSON.stringify(batches[0]?.[1]?.values)).not.toContain("user_test");
     expect(JSON.stringify(batches[0]?.[1]?.values)).not.toContain(KEY);
   });
@@ -157,10 +235,12 @@ describe("signup writer ownership", () => {
     });
 
     expect(batches).toHaveLength(1);
-    expect(batches[0]).toHaveLength(3);
+    expect(batches[0]).toHaveLength(4);
     expect(batches[0]?.[0]?.sql).toContain("tenant_gh_installation_map");
     expect(batches[0]?.[1]?.sql).toContain("runner_repo_allowlist");
     expect(batches[0]?.[2]?.sql).toContain("staging_load_test_resources");
+    expect(batches[0]?.[2]?.values[4]).toBe(`${REQUEST_ID}:github-installation`);
+    expect(batches[0]?.[3]?.sql).toContain("AND changes() = 0");
     expect(JSON.stringify(batches[0]?.[2]?.values)).not.toContain("org/private-repo");
 
     await expect(
@@ -173,6 +253,30 @@ describe("signup writer ownership", () => {
       }),
     ).rejects.toThrow("already registered");
     expect(batches).toHaveLength(1);
+  });
+
+  it("rolls back the entire batch when concurrent replays share one request claim", async () => {
+    const { db, batches, domainRows, synchronizeOwnershipPreflightReads } = fakeDb();
+    const context = await signupOwnershipContext(await requestWithOwnership(), "staging", KEY, NOW + 1);
+    if (context === null) throw new Error("verified context missing");
+    synchronizeOwnershipPreflightReads();
+
+    const write = () =>
+      writeInstallationProvision(db, {
+        installationId: "731",
+        tenantId: "tenant-opaque-id",
+        repos: ["org/private-repo"],
+        nowMs: NOW + 2,
+        ownershipContext: context,
+      });
+    const results = await Promise.allSettled([write(), write()]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(batches).toHaveLength(2);
+    expect(domainRows.size).toBe(2);
+    expect(batches[1]?.[2]?.sql).toContain("ON CONFLICT (run_id, scenario, resource_class, receipt_ref) DO NOTHING");
+    expect(batches[1]?.[3]?.sql).toContain("AND changes() = 0");
   });
 
   it("fails closed before domain writes when atomic D1 batches are unavailable", async () => {

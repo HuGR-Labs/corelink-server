@@ -310,7 +310,7 @@ export async function writeInstallationProvision(
     await writeSignupArtifactBatch(
       db,
       opts.ownershipContext,
-      `github-install:${opts.installationId}:map-and-repos`,
+      `${opts.ownershipContext.requestId}:github-installation`,
       statements,
       opts.nowMs,
     );
