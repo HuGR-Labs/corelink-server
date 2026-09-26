@@ -28,7 +28,34 @@ pub(super) fn load_script(name: &str) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|_| format!("{name} script must be readable"))
 }
 
+fn assert_initial_release_target_inventory(workflow: &str) {
+    let matrix = workflow
+        .split_once("      matrix:\n        target:\n")
+        .expect("release target matrix must be present")
+        .1
+        .split_once("\n    steps:")
+        .expect("release target matrix must end before job steps")
+        .0;
+    let mut targets: Vec<_> = matrix
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("- triple: "))
+        .collect();
+    targets.sort_unstable();
+    let mut expected = vec![
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-pc-windows-gnu",
+    ];
+    expected.sort_unstable();
+    assert_eq!(
+        targets,
+        expected,
+        "initial release matrix must contain exactly the Linux x86_64, Linux aarch64, and Windows x86_64 targets"
+    );
+}
+
 pub(super) fn assert_release_contract(workflow: &str) {
+    assert_initial_release_target_inventory(workflow);
     for required in [
         "description: \"Existing cli-vMAJOR.MINOR.PATCH tag to build and publish\"",
         "HuGR-Labs/corelink-cli",
@@ -37,11 +64,6 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "command -v cargo-zigbuild",
         "cargo-zigbuild --help >/dev/null",
         "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}",
-        "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu",
-        "x86_64-apple-darwin",
-        "aarch64-apple-darwin",
-        "x86_64-pc-windows-gnu",
         "- name: Enable Git long paths for Windows checkout",
         "run: git config --global core.longpaths true",
         "- name: Checkout",
@@ -51,7 +73,6 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "ARCHIVE_MEMBERS=\"$(unzip -Z1 \"$ARCHIVE_PATH\")\"",
         "Windows signer archive must contain exactly corelink.exe",
         "signer_name: corelink-linux-arm64",
-        "signer_name: corelink-darwin-arm64",
         "${TARGET_SIGNER_NAME}.tar.gz",
         "${TARGET_SIGNER_NAME}.zip",
         "(cd dist && shasum -a 256 -c \"$(basename \"$CHECKSUM\")\")",
@@ -77,10 +98,8 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "Verify complete authenticated inventory before publication",
         "gh release download \"${TAG}\" --repo HuGR-Labs/corelink-cli --dir \"${PUBLISHED}\" --clobber",
         "scripts/verify_cli_release_inventory.py",
-        "APPLE_NOTARIZATION_API_KEY",
         "uses: ./.github/workflows/sign-linux.yml",
         "uses: ./.github/workflows/sign-windows.yml",
-        "uses: ./.github/workflows/notarize-macos.yml",
         "tag: ${{ needs.release.outputs.validated_tag }}",
     ] {
         assert!(
