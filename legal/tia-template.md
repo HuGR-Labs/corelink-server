@@ -54,11 +54,11 @@ superseded_by: null
 Customer (Controller, EEA or Brazil)
   → CoreLink (Processor, multi-region)
     → Cloudflare R2/D1/DO/KV/Workers (Sub-processor, infrastructure)
-      [Data stored in tenant-pinned region per Section 7 of DPA]
+      [R2/DO tenant-pinned; D1 control-plane data is shared global]
 ```
 
 - **Transfer 1**: Customer → CoreLink (via HTTPS; TLS 1.2 floor, 1.3 negotiated). Personal Data enters CoreLink's processing environment.
-- **Transfer 2**: CoreLink → Cloudflare infrastructure (Workers runtime + R2/D1/DO storage). Data stored encrypted (BYOK, AES-256-GCM).
+- **Transfer 2**: CoreLink → Cloudflare infrastructure (Workers runtime + R2/D1/DO storage). R2/DO state follows the tenant residency posture; the shared D1 control plane is currently reported with a primary in ENAM, no D1 jurisdiction, and automatic read replication.
 - **Transfer direction**: EEA-originating data may be processed by Cloudflare infrastructure with US parent company jurisdiction (FISA 702 / EO 12333 / CLOUD Act risk scope).
 
 ### 1.3 Categories of Personal Data Transferred
@@ -186,7 +186,11 @@ Cloudflare participates in the EU-US Data Privacy Framework (as of 2023). Howeve
 
 #### 4.2.1 DPA Amendment — 4 Regions Enumerated
 
-**Measure**: DPA (`legal/dpa-residency-amendment.md`) explicitly commits to data localization in the 4 provisioned regions (WNAM/ENAM/WEUR/APAC) with failover restrictions; APAC tenants are pinned to Tokyo (`nrt`). `SAM` is not provisioned and is not promised. Customer informed of all data locations.
+**Prelaunch disclosure**: the DPA template distinguishes tenant-pinned R2/DO
+state from the shared global D1 control plane. The D1 primary is currently
+reported in ENAM with no D1 jurisdiction and automatic read replication. This
+template is pending legal review and does not itself approve a transfer basis
+or establish a customer commitment.
 
 **EDPB §84 alignment**: Transparency obligation; data exporter knows where data is processed.
 
@@ -220,9 +224,13 @@ Cloudflare participates in the EU-US Data Privacy Framework (as of 2023). Howeve
 
 #### 4.3.1 DPA + SCCs
 
-**Measure**: DPA Amendment (`legal/dpa-residency-amendment.md`) incorporating EU SCCs (GDPR Art. 46(2)(c)). Module 2 (Controller ↔ CoreLink Processor). Module 3 (CoreLink ↔ Cloudflare Sub-processor via Cloudflare DPA).
+**Prelaunch disclosure**: the repository describes the shared D1 control plane
+under SCC/TIA safeguards. The DPA amendment and this TIA remain pending legal
+review; neither document establishes an executed SCC arrangement or counsel
+approval for the D1 transfer posture.
 
-**EDPB §88 alignment**: Contractual transfer mechanism in place.
+**EDPB §88 alignment**: Counsel review is required before relying on a
+contractual transfer mechanism for this prelaunch D1 posture.
 
 #### 4.3.2 Sub-processor Agreement — Cloudflare
 

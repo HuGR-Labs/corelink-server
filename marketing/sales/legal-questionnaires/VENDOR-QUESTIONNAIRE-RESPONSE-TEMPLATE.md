@@ -155,7 +155,7 @@ These are the 12 highest-frequency answer blocks. Lift them verbatim when the pr
 
 #### 9. Tenant isolation
 
-> **A:** Cross-tenant blast radius is **zero**. Per-tenant R2 prefix, per-tenant D1 database, per-tenant DO instance, per-tenant Clerk namespace. `INV-TenantIsolation` is TLA+ model-checked and CI-gated. A request that reaches a region or tenant other than the binding is refused at the boundary — not load-balanced, not falling back.
+> **A:** Cross-tenant blast radius is **zero**. Tenant-scoped R2 prefixes, Durable Object instances, and Clerk namespaces isolate tenant access. The D1 control plane is one shared global database, not a per-tenant database; its primary is currently reported in ENAM with no D1 jurisdiction. `INV-TenantIsolation` is TLA+ model-checked and CI-gated. A request that reaches a region or tenant other than the binding is refused at the boundary — not load-balanced, not falling back.
 
 #### 10. Data residency
 
