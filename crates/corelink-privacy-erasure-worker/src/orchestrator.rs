@@ -221,6 +221,17 @@ pub trait ErasureWorker: Send + Sync + core::fmt::Debug {
         request: &ErasureRequest,
         now_ms: u64,
     ) -> Result<ErasureDecision, ErasureWorkerError>;
+
+    /// Process an erasure with optional immutable route context.
+    fn process_erasure_with_context(
+        &self,
+        request: &ErasureRequest,
+        now_ms: u64,
+        context: Option<&dyn crate::audit_emit::ErasureRequestContext>,
+    ) -> Result<ErasureDecision, ErasureWorkerError> {
+        let _ = context;
+        self.process_erasure(request, now_ms)
+    }
 }
 
 impl ErasureWorker for InMemoryErasureWorker {
@@ -228,6 +239,15 @@ impl ErasureWorker for InMemoryErasureWorker {
         &self,
         request: &ErasureRequest,
         now_ms: u64,
+    ) -> Result<ErasureDecision, ErasureWorkerError> {
+        self.process_erasure_with_context(request, now_ms, None)
+    }
+
+    fn process_erasure_with_context(
+        &self,
+        request: &ErasureRequest,
+        now_ms: u64,
+        context: Option<&dyn crate::audit_emit::ErasureRequestContext>,
     ) -> Result<ErasureDecision, ErasureWorkerError> {
         // F-001 closure: per-instance serial pipeline so audit-emit-
         // then-mutate is atomic from the caller's perspective.
@@ -275,20 +295,23 @@ impl ErasureWorker for InMemoryErasureWorker {
         //    fail-CLOSED so the inbound erasure is captured in the
         //    auditor evidence trail before ANY further work.
         let plan = ErasurePlan::canonical(request, now_ms);
-        self.audit.emit(Self::audit_record(
-            ErasureCloudEventType::Started,
-            request,
-            None,
-            None,
-            now_ms,
-            format!("plan_size={}", plan.entries.len()),
-        ))?;
+        self.audit.emit_with_context(
+            Self::audit_record(
+                ErasureCloudEventType::Started,
+                request,
+                None,
+                None,
+                now_ms,
+                format!("plan_size={}", plan.entries.len()),
+            ),
+            context,
+        )?;
 
         // 2. Per-backend fan-out (canonical order; sequential in the
         //    in-memory fake; production wiring at WI-S11-008 spawns
         //    bounded async parallel workers via worker::send_future).
         for entry in &plan.entries {
-            self.fanout_one(request, entry, now_ms)?;
+            self.fanout_one(request, entry, now_ms, context)?;
         }
 
         Ok(ErasureDecision::Started { plan })
@@ -304,6 +327,7 @@ impl InMemoryErasureWorker {
         request: &ErasureRequest,
         entry: &ErasurePlanEntry,
         now_ms: u64,
+        context: Option<&dyn crate::audit_emit::ErasureRequestContext>,
     ) -> Result<BackendCompletion, ErasureWorkerError> {
         let adapter = self
             .adapter(entry.backend)
@@ -350,17 +374,20 @@ impl InMemoryErasureWorker {
         // Audit `backend_completed.v1` BEFORE the canonical D1
         // tombstone insert. Audit failure → no tombstone, no replay
         // shortcut, the run aborts fail-CLOSED.
-        self.audit.emit(Self::audit_record(
-            ErasureCloudEventType::BackendCompleted,
-            request,
-            Some(entry.backend),
-            Some(outcome.clone()),
-            completed_at_ms,
-            format!(
-                "backend={} idempotency_key={} outcome={}",
-                entry.backend, entry.idempotency_key, outcome,
+        self.audit.emit_with_context(
+            Self::audit_record(
+                ErasureCloudEventType::BackendCompleted,
+                request,
+                Some(entry.backend),
+                Some(outcome.clone()),
+                completed_at_ms,
+                format!(
+                    "backend={} idempotency_key={} outcome={}",
+                    entry.backend, entry.idempotency_key, outcome,
+                ),
             ),
-        ))?;
+            context,
+        )?;
 
         // Tombstone insert via the canonical idempotency ledger.
         let completion = BackendCompletion {
@@ -379,7 +406,10 @@ impl InMemoryErasureWorker {
             retry_count: 0,
             verification_hash: [0u8; 32], // verification sweep populates
         };
-        match self.ledger.upsert(completion.clone())? {
+        match self
+            .ledger
+            .upsert_with_context(completion.clone(), context)?
+        {
             LedgerOutcome::Inserted | LedgerOutcome::Replayed { .. } => Ok(completion),
         }
     }
@@ -404,6 +434,16 @@ impl InMemoryErasureWorker {
         request: &ErasureRequest,
         now_ms: u64,
     ) -> Result<ErasureDecision, ErasureWorkerError> {
+        self.verify_erasure_with_context(request, now_ms, None)
+    }
+
+    /// Verify a completed erasure with optional immutable route context.
+    pub fn verify_erasure_with_context(
+        &self,
+        request: &ErasureRequest,
+        now_ms: u64,
+        context: Option<&dyn crate::audit_emit::ErasureRequestContext>,
+    ) -> Result<ErasureDecision, ErasureWorkerError> {
         let _guard = self.mutex.lock().map_err(|_| {
             ErasureWorkerError::Internal("erasure orchestrator mutex poisoned".to_string())
         })?;
@@ -418,18 +458,21 @@ impl InMemoryErasureWorker {
         // SlaBreached: now > deadline + at least one canonical
         // backend slot is unverified (snapshot incomplete).
         if now_ms > deadline && snapshot_count < BACKEND_COUNT {
-            self.audit.emit(Self::audit_record(
-                ErasureCloudEventType::VerificationFailed,
-                request,
-                None,
-                None,
-                now_ms,
-                format!(
-                    "sla_breached unverified={count} elapsed_ms={elapsed}",
-                    count = BACKEND_COUNT - snapshot_count,
-                    elapsed = now_ms.saturating_sub(request.queued_at_ms),
+            self.audit.emit_with_context(
+                Self::audit_record(
+                    ErasureCloudEventType::VerificationFailed,
+                    request,
+                    None,
+                    None,
+                    now_ms,
+                    format!(
+                        "sla_breached unverified={count} elapsed_ms={elapsed}",
+                        count = BACKEND_COUNT - snapshot_count,
+                        elapsed = now_ms.saturating_sub(request.queued_at_ms),
+                    ),
                 ),
-            ))?;
+                context,
+            )?;
             return Ok(ErasureDecision::SlaBreached {
                 unverified_count: BACKEND_COUNT - snapshot_count,
                 elapsed_ms: now_ms.saturating_sub(request.queued_at_ms),
@@ -530,29 +573,35 @@ impl InMemoryErasureWorker {
         } else {
             ErasureCloudEventType::VerificationFailed
         };
-        self.audit.emit(Self::audit_record(
-            event_type,
-            request,
-            None,
-            None,
-            now_ms,
-            format!(
-                "verification arm={} failed_count={failed_count} completions={count}",
+        self.audit.emit_with_context(
+            Self::audit_record(
                 event_type,
-                count = completions.len(),
-            ),
-        ))?;
-
-        // Terminal `completed.v1` only on the VerifiedComplete arm.
-        if matches!(decision, ErasureDecision::VerifiedComplete { .. }) {
-            self.audit.emit(Self::audit_record(
-                ErasureCloudEventType::Completed,
                 request,
                 None,
                 None,
                 now_ms,
-                "dsr_tickets.status -> completed".to_string(),
-            ))?;
+                format!(
+                    "verification arm={} failed_count={failed_count} completions={count}",
+                    event_type,
+                    count = completions.len(),
+                ),
+            ),
+            context,
+        )?;
+
+        // Terminal `completed.v1` only on the VerifiedComplete arm.
+        if matches!(decision, ErasureDecision::VerifiedComplete { .. }) {
+            self.audit.emit_with_context(
+                Self::audit_record(
+                    ErasureCloudEventType::Completed,
+                    request,
+                    None,
+                    None,
+                    now_ms,
+                    "dsr_tickets.status -> completed".to_string(),
+                ),
+                context,
+            )?;
         }
 
         Ok(decision)

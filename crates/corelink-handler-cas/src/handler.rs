@@ -9,7 +9,7 @@
 //! provable by composition rather than by inheritance.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::audit::{AuditEvent, AuditEventKind, AuditSink};
 use crate::error::{CasHandlerError, CasWriteFailure};
@@ -174,7 +174,7 @@ pub trait CasWriteHandler: Send + Sync + core::fmt::Debug {
     fn write_with_effect_and_context(
         &self,
         req: CasWriteRequest,
-        context: Option<&dyn CasWriteOperationContext>,
+        context: Option<Arc<dyn CasWriteOperationContext>>,
     ) -> Result<CasWriteResponse, CasWriteFailure> {
         let _ = context;
         self.write_with_effect(req)
@@ -189,6 +189,59 @@ pub trait CasWriteHandler: Send + Sync + core::fmt::Debug {
 pub trait CasWriteOperationContext: Send + Sync + core::fmt::Debug {
     /// Expose the concrete context only to its owning storage implementation.
     fn as_any(&self) -> &dyn core::any::Any;
+}
+
+/// Two independently owned operation contexts carried through one CAS write.
+///
+/// The data-plane slot preserves an existing BYOK operation pin. The request
+/// slot carries additional immutable request authority, such as a verified
+/// staging admission, without replacing that pin or creating process-global
+/// state. Concrete owners downcast only the slot they created.
+pub struct CasWriteContextBundle {
+    data_plane: Option<Arc<dyn CasWriteOperationContext>>,
+    request: Option<Arc<dyn CasWriteOperationContext>>,
+}
+
+impl CasWriteContextBundle {
+    /// Combine the optional data-plane and request contexts for one write.
+    #[must_use]
+    pub fn new(
+        data_plane: Option<Arc<dyn CasWriteOperationContext>>,
+        request: Option<Arc<dyn CasWriteOperationContext>>,
+    ) -> Self {
+        Self {
+            data_plane,
+            request,
+        }
+    }
+
+    /// Return the context owned by the data plane.
+    #[must_use]
+    pub fn data_plane(&self) -> Option<&dyn CasWriteOperationContext> {
+        self.data_plane.as_deref()
+    }
+
+    /// Return the context supplied by the request boundary.
+    #[must_use]
+    pub fn request(&self) -> Option<&dyn CasWriteOperationContext> {
+        self.request.as_deref()
+    }
+}
+
+impl core::fmt::Debug for CasWriteContextBundle {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("CasWriteContextBundle")
+            .field("data_plane", &self.data_plane.as_ref().map(|_| "[context]"))
+            .field("request", &self.request.as_ref().map(|_| "[context]"))
+            .finish()
+    }
+}
+
+impl CasWriteOperationContext for CasWriteContextBundle {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
 }
 
 /// Trait every concrete CAS delete handler implements (D-8).

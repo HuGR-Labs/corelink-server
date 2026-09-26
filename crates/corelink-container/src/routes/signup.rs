@@ -552,6 +552,20 @@ pub trait SignupStore: Send + Sync + core::fmt::Debug {
         &self,
         record: PilotSignupRecord,
     ) -> Result<PilotSignupRecord, &'static str>;
+
+    /// Insert one reservation while carrying optional verified staging context.
+    ///
+    /// Existing stores preserve ordinary behavior through this default. The
+    /// durable child implementation replaces it with one D1 batch containing
+    /// both the reservation and context-derived ownership statement.
+    fn insert_or_existing_with_context(
+        &self,
+        record: PilotSignupRecord,
+        context: crate::storage::staging_load_test_ownership::StagingLoadTestWriteContext<'_>,
+    ) -> Result<PilotSignupRecord, &'static str> {
+        let _ = context;
+        self.insert_or_existing(record)
+    }
 }
 
 /// In-memory pilot-signup store.
@@ -660,6 +674,10 @@ pub struct SignupRouteState {
     /// Activation URL base — production binds to
     /// [`DEFAULT_ACTIVATION_URL_BASE`], the live Clerk sign-up surface.
     pub activation_url_base: Arc<String>,
+    /// Staging-only request gate. A present credential is consumed before an
+    /// ownership-aware store boundary receives its immutable context.
+    pub staging_admission:
+        Option<Arc<crate::storage::staging_load_test_admission::StagingLoadTestAdmissionGate>>,
 }
 
 impl core::fmt::Debug for SignupRouteState {
@@ -712,6 +730,7 @@ pub fn build_state_with_key(token_key: Vec<u8>) -> SignupRouteState {
         store,
         wall_clock,
         activation_url_base: Arc::new(DEFAULT_ACTIVATION_URL_BASE.to_owned()),
+        staging_admission: None,
     }
 }
 
@@ -823,6 +842,10 @@ pub fn build_state_from_env() -> Option<SignupRouteState> {
         store,
         wall_clock,
         activation_url_base: Arc::new(DEFAULT_ACTIVATION_URL_BASE.to_owned()),
+        staging_admission:
+            crate::storage::staging_load_test_admission::StagingLoadTestAdmissionGate::from_env()
+                .ok()
+                .map(Arc::new),
     })
 }
 
@@ -845,6 +868,17 @@ async fn handle_pilot_signup(
     headers: HeaderMap,
     Json(body): Json<PilotSignupBody>,
 ) -> Response {
+    let admission =
+        match crate::storage::staging_load_test_admission::admit_staging_load_test_request(
+            state.staging_admission.as_deref(),
+            &headers,
+            crate::storage::staging_load_test_ownership::StagingLoadTestScenario::Signup,
+        )
+        .await
+        {
+            Ok(context) => context,
+            Err(_) => return (StatusCode::FORBIDDEN, "forbidden").into_response(),
+        };
     let now_ms = state.wall_clock.now_ms();
     let client_ip = extract_client_ip(&headers);
 
@@ -939,7 +973,10 @@ async fn handle_pilot_signup(
         token_id: parsed.token_id.clone(),
         state: "RESERVED".to_owned(),
     };
-    let stored = match state.store.insert_or_existing(record) {
+    let stored = match state
+        .store
+        .insert_or_existing_with_context(record, admission.as_deref())
+    {
         Ok(r) => r,
         Err(_) => {
             return (StatusCode::SERVICE_UNAVAILABLE, "signup store unavailable").into_response();

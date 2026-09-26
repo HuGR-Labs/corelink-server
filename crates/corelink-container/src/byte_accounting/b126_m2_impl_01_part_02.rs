@@ -312,6 +312,14 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         &self,
         req: corelink_handler_cas::CasWriteRequest,
     ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasWriteFailure> {
+        self.write_with_effect_and_context(req, None)
+    }
+
+    fn write_with_effect_and_context(
+        &self,
+        req: corelink_handler_cas::CasWriteRequest,
+        request_context: Option<Arc<dyn corelink_handler_cas::CasWriteOperationContext>>,
+    ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasWriteFailure> {
         use corelink_handler_cas::{CasHandlerError, CasWriteFailure};
         // Reject a forged physical/accounting pairing before touching the
         // quota ledger.  The inner handler repeats the gate (and emits the
@@ -427,12 +435,19 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                 format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
             )));
         }
-        let context = pin
+        let data_plane_context = pin
             .as_ref()
             .map(|pin| Arc::clone(pin) as Arc<dyn corelink_handler_cas::CasWriteOperationContext>);
+        let context = match (&data_plane_context, &request_context) {
+            (None, None) => None,
+            _ => Some(Arc::new(corelink_handler_cas::CasWriteContextBundle::new(
+                data_plane_context,
+                request_context,
+            )) as Arc<dyn corelink_handler_cas::CasWriteOperationContext>),
+        };
         match self
             .write_inner
-            .write_with_effect_and_context(req, context.as_deref())
+            .write_with_effect_and_context(req, context)
         {
             Ok(resp) => {
                 // An idempotent re-write stored NOTHING new (`durable == false`),

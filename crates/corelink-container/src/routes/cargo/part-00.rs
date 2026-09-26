@@ -67,11 +67,12 @@ use corelink_adapter_host::cargo::ports::{
 use corelink_adapter_host::cargo::translate::key_from_path;
 use corelink_adapter_host::cargo::{server, CargoAdapterConfig};
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
-use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
+use corelink_handler_cas::{CasReadHandler, CasWriteHandler, CasWriteOperationContext};
 
 use crate::adapter_cache::{MoatCache, MoatError, UrlMapStore};
 use crate::adapter_pat::{PatVerifier, VerifyError};
 use crate::scope::{requires_cache_read, requires_cache_write, SCOPE_HEADER};
+use crate::storage::staging_load_test_admission::StagingLoadTestAdmissionGate;
 
 /// Service principal recorded on adapter CAS operations. Identifies the
 /// adapter-host service, NOT the end-user PAT (which the resolver verified).
@@ -134,6 +135,16 @@ impl CasStore for CargoMoatStore {
     }
 
     async fn put(&self, tenant_id: &str, key: &str, bytes: Vec<u8>) -> Result<(), CasError> {
+        self.put_with_context(tenant_id, key, bytes, None).await
+    }
+
+    async fn put_with_context(
+        &self,
+        tenant_id: &str,
+        key: &str,
+        bytes: Vec<u8>,
+        context: Option<Arc<dyn corelink_handler_cas::CasWriteOperationContext>>,
+    ) -> Result<(), CasError> {
         // Routed requests already carry the Worker-authenticated cap. Reusing
         // it avoids a fresh D1 tier lookup on every PUT. The scoped `None`
         // value is intentional: absent or invalid trusted headers remain
@@ -148,7 +159,7 @@ impl CasStore for CargoMoatStore {
             },
         };
         self.moat
-            .put(tenant_id, key, bytes, storage_cap_bytes)
+            .put_with_context(tenant_id, key, bytes, storage_cap_bytes, context)
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => CasError::Backend(m),
@@ -213,11 +224,24 @@ pub fn resolver_from_verifier(verifier: Arc<PatVerifier>) -> SharedTenantResolve
 struct CargoGateState {
     quota: Option<crate::routes::QuotaGate>,
     resolver: SharedTenantResolver,
+    staging_admission: Option<Arc<StagingLoadTestAdmissionGate>>,
     /// The SAME per-tenant 2-level moat the adapter's [`CargoMoatStore`] wraps —
     /// held here so the gate can serve the WebDAV `PROPFIND` (stat) and `DELETE`
     /// (write-check cleanup) that opendal issues but axum's `MethodRouter` cannot
     /// route (a non-standard / unregistered method). Reused, not a second store.
     moat: Arc<MoatCache>,
+}
+
+/// Opaque admission carried across Cargo's async and blocking CAS bridges.
+#[derive(Debug)]
+struct StagingCargoWriteContext(
+    Arc<crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext>,
+);
+
+impl CasWriteOperationContext for StagingCargoWriteContext {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 /// Build the `/cargo/*` sub-router from shared CAS handlers + a PAT→tenant
 /// resolver. The SAME resolver backs both the adapter (tenant resolution) and
@@ -271,6 +295,7 @@ pub fn router(
     let gate_state = CargoGateState {
         quota,
         resolver,
+        staging_admission: StagingLoadTestAdmissionGate::from_env().ok().map(Arc::new),
         moat,
     };
     // The co-read hint layer is added LAST ⇒ it is the OUTERMOST layer, so the

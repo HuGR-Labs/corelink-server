@@ -212,6 +212,7 @@
         let state = CargoGateState {
             quota: None,
             resolver,
+            staging_admission: None,
             // MKCOL short-circuits before any moat access; a real (unused) store
             // keeps the state well-formed.
             moat: in_memory_moat(),
@@ -336,6 +337,7 @@
         let state = CargoGateState {
             quota: None,
             resolver,
+            staging_admission: None,
             moat,
         };
         Router::new()
@@ -356,6 +358,7 @@
         let state = CargoGateState {
             quota: None,
             resolver,
+            staging_admission: None,
             moat: in_memory_moat(),
         };
         let app = Router::new()

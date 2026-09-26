@@ -177,6 +177,27 @@ async fn cargo_gate(
         }
     }
 
+    // A supplied staging credential is never ignored. The carrier is inserted
+    // only after the normal PAT gate succeeds and then follows the typed CAS
+    // context path through the adapter's blocking bridge.
+    if is_write {
+        let admission = match crate::storage::staging_load_test_admission::admit_staging_load_test_request(
+            state.staging_admission.as_deref(),
+            req.headers(),
+            crate::storage::staging_load_test_ownership::StagingLoadTestScenario::B103CargoWrite,
+        )
+        .await
+        {
+            Ok(context) => context,
+            Err(_) => return (StatusCode::FORBIDDEN, "invalid staging admission").into_response(),
+        };
+        if let Some(context) = admission {
+            req.extensions_mut().insert(server::GateCasWriteContext(
+                Arc::new(StagingCargoWriteContext(context)),
+            ));
+        }
+    }
+
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1): charge the
     // flat per-op cost AFTER the scope gate, BEFORE the adapter runs PAT auth +
     // CAS. 402 over-ceiling / 503 fail-CLOSED.

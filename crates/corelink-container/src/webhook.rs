@@ -50,7 +50,26 @@ use axum::{
     routing::post,
     Router,
 };
-use corelink_billing::stripe::real::webhook_dispatch::{DispatchResponse, WebhookDispatcher};
+use corelink_billing::stripe::real::webhook_dispatch::{
+    DispatchResponse, DurableWebhookRequestContext, WebhookDispatcher,
+};
+
+use crate::storage::{
+    staging_load_test_admission::{
+        admit_staging_load_test_request, StagingLoadTestAdmissionContext,
+        StagingLoadTestAdmissionGate,
+    },
+    staging_load_test_ownership::StagingLoadTestScenario,
+};
+
+#[derive(Debug)]
+struct StagingWebhookRequestContext(Arc<StagingLoadTestAdmissionContext>);
+
+impl DurableWebhookRequestContext for StagingWebhookRequestContext {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+}
 
 /// HTTP route path for the webhook endpoint.
 pub const STRIPE_WEBHOOK_ROUTE: &str = "/v1/billing/stripe-webhook";
@@ -71,13 +90,27 @@ pub struct WebhookState {
     /// The single canonical dispatcher driving signature verify →
     /// idempotency → 10-event dispatch → audit → SLI.
     pub dispatcher: Arc<WebhookDispatcher>,
+    staging_admission: Option<Arc<StagingLoadTestAdmissionGate>>,
 }
 
 impl WebhookState {
     /// Construct a state wrapping the supplied [`WebhookDispatcher`].
     #[must_use]
     pub const fn new(dispatcher: Arc<WebhookDispatcher>) -> Self {
-        Self { dispatcher }
+        Self {
+            dispatcher,
+            staging_admission: None,
+        }
+    }
+
+    /// Attach the staging-only request gate at server construction.
+    #[must_use]
+    pub fn with_staging_admission(
+        mut self,
+        staging_admission: Option<Arc<StagingLoadTestAdmissionGate>>,
+    ) -> Self {
+        self.staging_admission = staging_admission;
+        self
     }
 }
 
@@ -102,8 +135,23 @@ pub async fn stripe_webhook_handler(
     let sig_header = headers
         .get("stripe-signature")
         .and_then(|v| v.to_str().ok());
-    let resp = state.dispatcher.process(&body, sig_header);
-    dispatch_response_to_axum(resp)
+    let admission = match admit_staging_load_test_request(
+        state.staging_admission.as_deref(),
+        &headers,
+        StagingLoadTestScenario::Webhook,
+    )
+    .await
+    {
+        Ok(context) => context,
+        Err(_) => return (StatusCode::FORBIDDEN, "forbidden").into_response(),
+    };
+    let request_context = admission.map(|context| {
+        Arc::new(StagingWebhookRequestContext(context)) as Arc<dyn DurableWebhookRequestContext>
+    });
+    let resp = state
+        .dispatcher
+        .process_with_context(&body, sig_header, request_context.as_deref());
+    dispatch_response_to_axum(resp).into_response()
 }
 
 /// Map a canonical [`DispatchResponse`] to an axum response tuple.

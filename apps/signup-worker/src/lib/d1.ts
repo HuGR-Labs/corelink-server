@@ -10,7 +10,7 @@
 
 // Minimal local D1 types — we don't import @cloudflare/workers-types here
 // to keep the unit-test surface independent of the runtime types package.
-interface D1PreparedStatement {
+export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   run(): Promise<{
     success: boolean;
@@ -21,6 +21,19 @@ interface D1PreparedStatement {
 }
 export interface D1Database {
   prepare(query: string): D1PreparedStatement;
+  /** D1 executes this statement list as one transaction. */
+  batch?(statements: D1PreparedStatement[]): Promise<unknown[]>;
+}
+
+/** Run a required same-transaction mutation batch or fail closed. */
+export async function runAtomicD1Batch(
+  db: D1Database,
+  statements: D1PreparedStatement[],
+): Promise<unknown[]> {
+  if (typeof db.batch !== "function") {
+    throw new Error("D1 batch unavailable");
+  }
+  return db.batch(statements);
 }
 
 /** Result of a tenant lookup by Clerk user id. */
@@ -52,6 +65,51 @@ export interface InsertPatParams {
   nowMs: number;
 }
 
+/** Build, but do not execute, the tenant insert used by Clerk provisioning. */
+export function insertTenantStatement(
+  db: D1Database,
+  params: InsertTenantParams,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      "INSERT OR IGNORE INTO tenant " +
+        "(tenant_id, primary_region, tenant_state, email_hash, clerk_user_id, " +
+        " created_at_ms, updated_at_ms, created_ms, updated_ms) " +
+        "VALUES (?1, ?2, 'active', ?3, ?4, ?5, ?5, ?5, ?5)",
+    )
+    .bind(
+      params.tenantId,
+      params.primaryRegion,
+      params.emailHash,
+      params.clerkUserId,
+      params.nowMs,
+    );
+}
+
+/** Build, but do not execute, the PAT insert used by Clerk provisioning. */
+export function insertPatStatement(
+  db: D1Database,
+  params: InsertPatParams,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      "INSERT OR IGNORE INTO pat " +
+        "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
+        " shown_once_token, shown_once_consumed, created_ms) " +
+        "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
+    )
+    .bind(
+      params.patId,
+      params.tenantId,
+      params.patHash,
+      params.scope,
+      params.expiresMs,
+      params.tokenId,
+      params.shownOnceToken,
+      params.nowMs,
+    );
+}
+
 /**
  * Look up a tenant by Clerk user id. Returns the existing tenant row
  * or null if not found (idempotency check at webhook entry).
@@ -81,21 +139,7 @@ export async function insertTenant(
   db: D1Database,
   params: InsertTenantParams,
 ): Promise<void> {
-  await db
-    .prepare(
-      "INSERT OR IGNORE INTO tenant " +
-        "(tenant_id, primary_region, tenant_state, email_hash, clerk_user_id, " +
-        " created_at_ms, updated_at_ms, created_ms, updated_ms) " +
-        "VALUES (?1, ?2, 'active', ?3, ?4, ?5, ?5, ?5, ?5)",
-    )
-    .bind(
-      params.tenantId,
-      params.primaryRegion,
-      params.emailHash,
-      params.clerkUserId,
-      params.nowMs,
-    )
-    .run();
+  await insertTenantStatement(db, params).run();
 }
 
 /**
@@ -113,24 +157,7 @@ export async function insertPat(
   db: D1Database,
   params: InsertPatParams,
 ): Promise<void> {
-  await db
-    .prepare(
-      "INSERT OR IGNORE INTO pat " +
-        "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
-        " shown_once_token, shown_once_consumed, created_ms) " +
-        "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
-    )
-    .bind(
-      params.patId,
-      params.tenantId,
-      params.patHash,
-      params.scope,
-      params.expiresMs,
-      params.tokenId,
-      params.shownOnceToken,
-      params.nowMs,
-    )
-    .run();
+  await insertPatStatement(db, params).run();
 }
 
 /**
@@ -156,13 +183,20 @@ export async function insertTenantOrgMap(
   db: D1Database,
   params: { clerkOrgId: string; tenantId: string; nowMs: number },
 ): Promise<void> {
-  await db
+  await insertTenantOrgMapStatement(db, params).run();
+}
+
+/** Build, but do not execute, the tenant/org identity-map insert. */
+export function insertTenantOrgMapStatement(
+  db: D1Database,
+  params: { clerkOrgId: string; tenantId: string; nowMs: number },
+): D1PreparedStatement {
+  return db
     .prepare(
       "INSERT OR IGNORE INTO tenant_org_map " +
         "(clerk_org_id, tenant_id, created_at_ms) VALUES (?1, ?2, ?3)",
     )
-    .bind(params.clerkOrgId, params.tenantId, params.nowMs)
-    .run();
+    .bind(params.clerkOrgId, params.tenantId, params.nowMs);
 }
 
 /**
@@ -193,6 +227,28 @@ const FREE_MONTHLY_BUDGET_USD_MICROS = 1_000_000_000_000;
 export interface SeedEntitlementsParams {
   tenantId: string;
   nowMs: number;
+}
+
+/** Build the free-tier entitlement statements for an atomic caller batch. */
+export function seedTenantEntitlementStatements(
+  db: D1Database,
+  params: SeedEntitlementsParams,
+): D1PreparedStatement[] {
+  return [
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO tier_selections " +
+          "(tenant_id, tier, subscription_state, schema_version, correlation_id, subscription_started_at_ms) " +
+          "VALUES (?1, 'free', 'active', 1, ?2, ?3)",
+      )
+      .bind(params.tenantId, `clerk-signup:${params.tenantId}`, params.nowMs),
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO tenant_quota " +
+          "(tenant_id, monthly_budget_usd_micros) VALUES (?1, ?2)",
+      )
+      .bind(params.tenantId, FREE_MONTHLY_BUDGET_USD_MICROS),
+  ];
 }
 
 /**

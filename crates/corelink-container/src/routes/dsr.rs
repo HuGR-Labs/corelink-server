@@ -47,7 +47,9 @@ use serde::Deserialize;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-use corelink_privacy_erasure_worker::audit_emit::{ErasureAuditSink, InMemoryErasureAuditSink};
+use corelink_privacy_erasure_worker::audit_emit::{
+    ErasureAuditSink, ErasureRequestContext, InMemoryErasureAuditSink,
+};
 use corelink_privacy_erasure_worker::backends::{
     BackendErasureAdapter, InMemoryBackendErasureAdapter,
 };
@@ -120,6 +122,22 @@ pub struct DsrRouteState {
     /// signer then withholds the attestation (fail-CLOSED; never a dangling
     /// `r2_key`).
     r2_audit: Option<Arc<crate::storage::r2_s3::R2S3Client>>,
+    /// Optional staging-only gate. Ordinary requests do not carry this header
+    /// and continue through the legacy `None` path.
+    staging_admission:
+        Option<Arc<crate::storage::staging_load_test_admission::StagingLoadTestAdmissionGate>>,
+}
+
+/// Opaque carrier from the route admission gate into the shared DSR seams.
+#[derive(Debug)]
+struct StagingDsrRequestContext(
+    Arc<crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext>,
+);
+
+impl ErasureRequestContext for StagingDsrRequestContext {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl std::fmt::Debug for DsrRouteState {
@@ -130,6 +148,7 @@ impl std::fmt::Debug for DsrRouteState {
             .field("worker", &self.worker)
             .field("d1", &self.d1.as_ref().map(|_| "[D1HttpClient]"))
             .field("r2_audit", &self.r2_audit.as_ref().map(|_| "[R2S3Client]"))
+            .field("staging_admission", &self.staging_admission.is_some())
             .finish()
     }
 }
@@ -434,6 +453,10 @@ pub fn build_state_from_env() -> Option<DsrRouteState> {
         worker: Arc::new(worker),
         d1,
         r2_audit,
+        staging_admission:
+            crate::storage::staging_load_test_admission::StagingLoadTestAdmissionGate::from_env()
+                .ok()
+                .map(Arc::new),
     })
 }
 
@@ -708,7 +731,24 @@ async fn handle_erase(
             return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
         }
     };
-    match state.worker.process_erasure(&request, now_ms()) {
+    let admission =
+        match crate::storage::staging_load_test_admission::admit_staging_load_test_request(
+            state.staging_admission.as_deref(),
+            &headers,
+            crate::storage::staging_load_test_ownership::StagingLoadTestScenario::Dsr,
+        )
+        .await
+        {
+            Ok(context) => context,
+            Err(_) => return (StatusCode::FORBIDDEN, "invalid staging admission").into_response(),
+        };
+    let request_context = admission.map(|context| {
+        Arc::new(StagingDsrRequestContext(context)) as Arc<dyn ErasureRequestContext>
+    });
+    match state
+        .worker
+        .process_erasure_with_context(&request, now_ms(), request_context.as_deref())
+    {
         // rt-nuclear #18/#19 tenant legitimacy pre-check rejected this
         // request: no `dsr_requested` row matches (dsr_id, tenant_id), OR
         // the D1 legitimacy lookup faulted (fail-CLOSED). A forged
@@ -755,7 +795,24 @@ async fn handle_verify(
             return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
         }
     };
-    match state.worker.verify_erasure(&request, now_ms()) {
+    let admission =
+        match crate::storage::staging_load_test_admission::admit_staging_load_test_request(
+            state.staging_admission.as_deref(),
+            &headers,
+            crate::storage::staging_load_test_ownership::StagingLoadTestScenario::Dsr,
+        )
+        .await
+        {
+            Ok(context) => context,
+            Err(_) => return (StatusCode::FORBIDDEN, "invalid staging admission").into_response(),
+        };
+    let request_context = admission.map(|context| {
+        Arc::new(StagingDsrRequestContext(context)) as Arc<dyn ErasureRequestContext>
+    });
+    match state
+        .worker
+        .verify_erasure_with_context(&request, now_ms(), request_context.as_deref())
+    {
         Ok(decision) => {
             // G3 / Artifact 1: on a fully-verified erasure, sign + persist a
             // REAL Ed25519 attestation (non-blocking — the erasure is already

@@ -108,10 +108,10 @@ use crate::webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
 
 pub use corelink_billing_stripe_traits::{
     AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType, DispatchResponse,
-    DurableWebhookEvent, DurableWebhookInbox, EffectReservation, IdempotencyOutcome,
-    IdempotencyStore, IdempotencyToken, InboxClaim, InboxReceiveOutcome, InboxTerminalState,
-    MaterializerError, SliObservation, SliRecorder, StateMaterializer, StripeWebhookEnvelope,
-    SLI_BILLING_STRIPE_EVENT_SECONDS,
+    DurableWebhookEvent, DurableWebhookInbox, DurableWebhookRequestContext, EffectReservation,
+    IdempotencyOutcome, IdempotencyStore, IdempotencyToken, InboxClaim, InboxReceiveOutcome,
+    InboxTerminalState, MaterializerError, SliObservation, SliRecorder, StateMaterializer,
+    StripeWebhookEnvelope, SLI_BILLING_STRIPE_EVENT_SECONDS,
 };
 
 // =========================================================================
@@ -492,6 +492,7 @@ struct DurableDispatchContext<'a> {
     token: &'a IdempotencyToken,
     now_ms: u64,
     start: u64,
+    request_context: Option<&'a dyn corelink_billing_stripe_traits::DurableWebhookRequestContext>,
 }
 
 impl fmt::Debug for WebhookDispatcher {
@@ -574,6 +575,21 @@ impl WebhookDispatcher {
     ///   `None` if the header was missing/non-ascii — yields
     ///   [`DispatchResponse::BadRequest400`]).
     pub fn process(&self, body: &[u8], signature_header: Option<&str>) -> DispatchResponse {
+        self.process_with_context(body, signature_header, None)
+    }
+
+    /// Process one Stripe delivery while carrying optional request authority to
+    /// the durable inbox.
+    ///
+    /// The dispatcher never interprets this opaque value. It is retained only
+    /// for the D1 inbox boundary, preserving request isolation across every
+    /// shared dispatcher call.
+    pub fn process_with_context(
+        &self,
+        body: &[u8],
+        signature_header: Option<&str>,
+        request_context: Option<&dyn corelink_billing_stripe_traits::DurableWebhookRequestContext>,
+    ) -> DispatchResponse {
         let start = self.clock.start_marker();
         let now_seconds = self.clock.now_seconds();
         let now_ms = self.clock.now_ms();
@@ -657,6 +673,7 @@ impl WebhookDispatcher {
                 token: &token,
                 now_ms,
                 start,
+                request_context,
             });
         }
 
@@ -877,7 +894,10 @@ impl WebhookDispatcher {
             payload_sha256: hex::encode(Sha256::digest(context.body)),
             stripe_created_at_ms: context.env.created.saturating_mul(1_000),
         };
-        match context.inbox.receive(&event, context.now_ms) {
+        match context
+            .inbox
+            .receive_with_context(&event, context.now_ms, context.request_context)
+        {
             Ok(InboxReceiveOutcome::Terminal) => {
                 self.emit_audit_and_sli(
                     AuditRecord::new(
