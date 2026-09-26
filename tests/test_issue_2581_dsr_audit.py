@@ -25,6 +25,32 @@ class Issue2581DsrAuditTests(unittest.TestCase):
         self.assertNotIn("nonce_digest", VERIFY.CENSUS)
         self.assertNotIn("personal email", VERIFY.CENSUS.lower())
 
+    def test_rectification_keeps_retained_audit_before_domain_update(self):
+        (
+            audit_precedes_update,
+            _,
+            returns_updated_rows,
+        ) = VERIFY.rectification_contract(VERIFY.ACCESS)
+        self.assertTrue(audit_precedes_update)
+        self.assertTrue(returns_updated_rows)
+
+    def test_rectification_guard_rejects_disposable_batch_registration(self):
+        unsafe = (
+            "pub(super) fn run_rectification(\n"
+            "    audit_dsr_event(d1);\n"
+            "    D1BatchStatement::new(&plan.sql, params);\n"
+            "    StagingLoadTestResourceClass::DsrArtifact;\n"
+            "}\n\n#[cfg(test)]\n#[allow("
+        )
+        (
+            audit_precedes_update,
+            no_disposable_batch,
+            returns_updated_rows,
+        ) = VERIFY.rectification_contract(unsafe)
+        self.assertFalse(audit_precedes_update)
+        self.assertFalse(no_disposable_batch)
+        self.assertFalse(returns_updated_rows)
+
 
 if __name__ == "__main__":
     unittest.main()
