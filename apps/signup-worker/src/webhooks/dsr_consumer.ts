@@ -175,7 +175,6 @@ export type DsrDlqBody = DsrQueuedV1 & { _dlq_requeue?: number };
 
 const MAX_DLQ_REQUEUES = 1;
 const MAX_DLQ_PAGING_ATTEMPTS = 3;
-const PAGERDUTY_EVENTS_V2_URL = "https://events.pagerduty.com/v2/enqueue";
 const DLQ_EVENT_NAME = "dsr.erasure.dead_letter";
 
 type DlqReceiptStatus =
@@ -420,8 +419,9 @@ async function dlqEventId(body: DsrDlqBody, requeueCount: number): Promise<strin
 
 export interface DsrDlqEnv {
   DSR_QUEUE?: { send(message: unknown): Promise<void> };
-  PAGERDUTY_ROUTING_KEY?: string;
-  PAGERDUTY_FETCH?: typeof fetch;
+  DSR_DLQ_ALERT_ENDPOINT?: string;
+  DSR_DLQ_ALERT_AUTH_TOKEN?: string;
+  DSR_DLQ_ALERT_FETCH?: typeof fetch;
   CONFIG_DB?: D1ReceiptDatabase;
   DSR_DLQ_RECEIPTS?: DsrDlqReceiptStore;
   DSR_DLQ_REDRIVE_AUTH_KEY?: string;
@@ -435,54 +435,74 @@ function isRedriveStore(value: unknown): value is RedriveStore {
     && typeof (value as RedriveStore).claim === "function";
 }
 
-type PagingResult =
-  | { status: "delivered" }
-  | { status: "not_configured" }
-  | { status: "failed"; error: "http_rejected" | "transport_error" };
+export interface DeliveryReceipt {
+  eventId: string;
+  acceptedAtMs: number;
+  statusCode: number;
+}
 
-/** Deliver one critical DLQ page through the canonical PagerDuty procedure. */
-async function pageDlqEvent(
-  body: DsrDlqBody,
+export interface DsrCriticalAlertEnvelope {
+  schema_version: 1;
+  event: typeof DLQ_EVENT_NAME;
+  severity: "critical";
+  component: "dsr-erasure-dlq";
+  event_id: string;
+  exhausted: true;
+  requeue_count: number;
+}
+
+type AlertSendResult =
+  | { status: "delivered"; receipt: DeliveryReceipt }
+  | { status: "not_configured" }
+  | { status: "failed"; error: "invalid_endpoint" | "http_rejected" | "transport_error" };
+
+/** Send one closed, privacy-minimized critical alert to the configured sink. */
+async function sendDlqCriticalAlert(
   eventId: string,
   requeueCount: number,
   env: DsrDlqEnv,
-): Promise<PagingResult> {
-  const routingKey = env.PAGERDUTY_ROUTING_KEY?.trim();
-  if (!routingKey) return { status: "not_configured" };
+): Promise<AlertSendResult> {
+  const endpointValue = env.DSR_DLQ_ALERT_ENDPOINT?.trim();
+  const authToken = env.DSR_DLQ_ALERT_AUTH_TOKEN?.trim();
+  if (!endpointValue || !authToken) return { status: "not_configured" };
 
-  const fetcher = env.PAGERDUTY_FETCH ?? fetch;
+  let endpoint: URL;
   try {
-    const response = await fetcher(PAGERDUTY_EVENTS_V2_URL, {
+    endpoint = new URL(endpointValue);
+  } catch {
+    return { status: "failed", error: "invalid_endpoint" };
+  }
+  if (endpoint.protocol !== "https:" || !endpoint.hostname || endpoint.username || endpoint.password || endpoint.hash) {
+    return { status: "failed", error: "invalid_endpoint" };
+  }
+
+  const envelope: DsrCriticalAlertEnvelope = {
+    schema_version: 1,
+    event: DLQ_EVENT_NAME,
+    severity: "critical",
+    component: "dsr-erasure-dlq",
+    event_id: eventId,
+    exhausted: true,
+    requeue_count: requeueCount,
+  };
+  const fetcher = env.DSR_DLQ_ALERT_FETCH ?? fetch;
+  try {
+    const response = await fetcher(endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        routing_key: routingKey,
-        event_action: "trigger",
-        dedup_key: eventId,
-        payload: {
-          summary: "DSR erasure dead-letter exhausted",
-          source: "corelink-signup-worker",
-          severity: "critical",
-          custom_details: {
-            event_id: eventId,
-            exhausted: true,
-            requeue_count: requeueCount,
-          },
-        },
-      }),
+      headers: { authorization: `Bearer ${authToken}`, "content-type": "application/json" },
+      body: JSON.stringify(envelope),
+      redirect: "error",
     });
-    // PagerDuty Events API v2 acknowledges an accepted trigger with 202.  A
-    // generic 2xx (for example a proxy-generated 200 page) is not delivery
-    // evidence and must not let us consume the DLQ copy.
-    if (response.status !== 202) {
-      // Do not copy provider response text/status into logs: the response can
-      // contain arbitrary data and must never become an operator-log sink.
+    if (!response.ok) {
+      // Do not copy a response body or transport detail into operator logs.
       return { status: "failed", error: "http_rejected" };
     }
-    return { status: "delivered" };
+    return {
+      status: "delivered",
+      receipt: { eventId, acceptedAtMs: Date.now(), statusCode: response.status },
+    };
   } catch {
-    // The provider/transport exception is intentionally not logged. It may
-    // include URLs, credentials, or arbitrary upstream response text.
+    // The sink/transport exception may contain credentials or response data.
     return { status: "failed", error: "transport_error" };
   }
 }
@@ -497,7 +517,7 @@ type ReceiptBoundaryFailure = "not_configured" | "malformed" | "storage_error";
 
 /**
  * A receipt boundary failure must not become a silent platform discard when
- * the DLQ's bounded delivery budget is exhausted. No PagerDuty or requeue side
+ * the DLQ's bounded delivery budget is exhausted. No notification or requeue side
  * effect is safe without a receipt claim, so emit a redacted terminal alert.
  */
 function retryReceiptBoundaryFailure(
@@ -594,7 +614,7 @@ export async function handleErasureDlqBatch(
           level: "alert", severity: "critical", event: DLQ_EVENT_NAME,
           component: "dsr-erasure-dlq", event_id: eventId, exhausted: true,
           requeue_count: priorRequeues, action: "paging_ambiguous",
-          note: "PagerDuty delivery has an ambiguous durable claim; manual operator disposition required",
+          note: "critical notification has an ambiguous durable claim; manual operator disposition required",
         });
         m.ack();
         continue;
@@ -605,7 +625,10 @@ export async function handleErasureDlqBatch(
     }
     const canRequeue = priorRequeues < MAX_DLQ_REQUEUES && !!env.DSR_QUEUE;
 
-    const paging = await pageDlqEvent(body, eventId, priorRequeues, env);
+    const paging = await sendDlqCriticalAlert(eventId, priorRequeues, env);
+    const deliveryEvidence = paging.status === "delivered"
+      ? { delivery_receipt: paging.receipt }
+      : {};
     if (paging.status !== "delivered") {
       if (paging.status === "failed" && paging.error === "transport_error") {
         try {
@@ -619,7 +642,7 @@ export async function handleErasureDlqBatch(
           component: "dsr-erasure-dlq", event_id: eventId, exhausted: true,
           requeue_count: priorRequeues, action: "paging_ambiguous",
           paging_status: paging.status, paging_error: paging.error,
-          note: "PagerDuty transport outcome is ambiguous; durable operator disposition required",
+          note: "critical notification transport outcome is ambiguous; durable operator disposition required",
         });
         m.ack();
         continue;
@@ -643,8 +666,8 @@ export async function handleErasureDlqBatch(
         paging_status: paging.status,
         paging_error: paging.status === "failed" ? paging.error : "route_not_configured",
         note: exhausted
-          ? "PagerDuty delivery retry budget exhausted; durable operator disposition required"
-          : "PagerDuty did not accept the exhausted DSR alert; retaining the DLQ copy for delivery retry",
+          ? "critical notification retry budget exhausted; durable operator disposition required"
+          : "critical notification sink did not accept the exhausted DSR alert; retaining the DLQ copy for delivery retry",
       });
       if (exhausted) m.ack(); else m.retry();
       continue;
@@ -671,6 +694,7 @@ export async function handleErasureDlqBatch(
         recovered,
         paging_status: paging.status,
         paging_configured: true,
+        ...deliveryEvidence,
         note: "GDPR Art.17 erasure dead after bounded re-enqueue — MANUAL operator action required",
       });
       try {
@@ -691,6 +715,7 @@ export async function handleErasureDlqBatch(
           requeue_count: priorRequeues, action: "requeue_ambiguous",
           recovered,
           paging_status: paging.status, paging_configured: true,
+          ...deliveryEvidence,
           note: "A bounded DSR re-enqueue has an ambiguous durable claim; manual operator disposition required",
         });
         m.ack();
@@ -710,6 +735,7 @@ export async function handleErasureDlqBatch(
           requeue_count: priorRequeues, action: "requeue_ambiguous",
           recovered,
           paging_status: paging.status, paging_configured: true,
+          ...deliveryEvidence,
           note: "The durable redrive envelope could not be fenced for the bounded re-enqueue; manual reconciliation required",
         });
         m.ack();
@@ -730,6 +756,7 @@ export async function handleErasureDlqBatch(
         recovered,
         paging_status: paging.status,
         paging_configured: true,
+        ...deliveryEvidence,
         note: "GDPR Art.17 erasure exhausted main-queue retries — re-enqueued for ONE bounded final attempt",
       });
       m.ack(); // handed back to the main queue; consume the DLQ copy
@@ -755,6 +782,7 @@ export async function handleErasureDlqBatch(
         recovered,
         paging_status: paging.status,
         paging_configured: true,
+        ...deliveryEvidence,
         requeue_error: "transport_error",
         note: "Bounded DSR re-enqueue is ambiguous; durable operator disposition required",
       });

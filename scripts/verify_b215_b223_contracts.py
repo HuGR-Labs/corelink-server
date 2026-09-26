@@ -379,12 +379,26 @@ def check_b216(root: Path) -> None:
         "m.retry();",
     ):
         _require(body, marker, lane)
-    _require(consumer, "PAGERDUTY_ROUTING_KEY", lane)
     _require(consumer, 'const DLQ_EVENT_NAME = "dsr.erasure.dead_letter"', lane)
-    _require(consumer, 'error: "http_rejected" | "transport_error"', lane)
+    _require(consumer, 'error: "invalid_endpoint" | "http_rejected" | "transport_error"', lane)
     _require(consumer, 'return { status: "failed", error: "transport_error" };', lane)
-    paging = _function(consumer, "async function pageDlqEvent(", lane)
-    _require(paging, "response.status !== 202", lane)
+    alert_sender = _function(consumer, "async function sendDlqCriticalAlert(", lane)
+    for marker in (
+        "DSR_DLQ_ALERT_ENDPOINT",
+        "DSR_DLQ_ALERT_AUTH_TOKEN",
+        'endpoint.protocol !== "https:"',
+        'authorization: `Bearer ${authToken}`',
+        'redirect: "error"',
+        "if (!response.ok)",
+        "receipt: { eventId, acceptedAtMs: Date.now(), statusCode: response.status }",
+    ):
+        _require(alert_sender, marker, lane)
+    _require(consumer, "export interface DeliveryReceipt", lane)
+    _require(consumer, "export interface DsrCriticalAlertEnvelope", lane)
+    _require(consumer, "delivery_receipt: paging.receipt", lane)
+    for forbidden in ("PagerDuty", "PAGERDUTY", "pagerduty", "events.pagerduty.com"):
+        if forbidden in consumer:
+            raise ContractError(f"{lane}: provider-specific dependency remains: {forbidden}")
     _require(body, 'paging.status !== "delivered"', lane)
     _require(body, 'paging.status === "failed" ? paging.error : "route_not_configured"', lane)
     _require_active(
@@ -554,11 +568,11 @@ def verify(root: Path = ROOT, lane: str | None = None) -> dict[str, str]:
     return {item: "pass" for item in selected}
 
 
-def self_test(root: Path = ROOT) -> None:
+def self_test(root: Path = ROOT, selected: str | None = None) -> None:
     """Remove one load-bearing marker per lane, including bait variants."""
     mutations = {
         "B-215": ("if (AFR.has(c)) return \"afr\";", "if (AFR.has(c)) return \"enam\";", "apps/signup-worker/src/webhooks/clerk_identity.ts"),
-        "B-216": ('const DLQ_EVENT_NAME = "dsr.erasure.dead_letter"', 'const DLQ_EVENT_NAME = "dsr.erasure.removed"', "apps/signup-worker/src/webhooks/dsr_consumer.ts"),
+            "B-216": ('const DLQ_EVENT_NAME = "dsr.erasure.dead_letter"', 'const DLQ_EVENT_NAME = "dsr.erasure.removed"', "apps/signup-worker/src/webhooks/dsr_consumer.ts"),
         "B-217": ("!isValidClerkUserId(parsed.data?.id)", "false", "apps/signup-worker/src/webhooks/clerk.ts"),
         "B-218": ("export const MIN_INTERNAL_AUTH_KEY_LEN = 32;", "export const MIN_INTERNAL_AUTH_KEY_LEN = 16;", "apps/signup-worker/src/webhooks/clerk_erasure.ts"),
         "B-219": ("recomputed != attestation.canonical_payload_jcs", "recomputed == attestation.canonical_payload_jcs", "crates/corelink-erasure-attestation/src/verify.rs"),
@@ -743,10 +757,10 @@ def self_test(root: Path = ROOT) -> None:
                 "apps/signup-worker/src/webhooks/dsr_consumer.ts",
             ),
             (
-                "B-216-accept-any-2xx",
-                "B-216",
-                "response.status !== 202",
-                "!response.ok",
+            "B-216-accept-any-2xx",
+            "B-216",
+                "if (!response.ok)",
+                "if (response.status !== 202)",
                 "apps/signup-worker/src/webhooks/dsr_consumer.ts",
             ),
             (
@@ -797,6 +811,8 @@ def self_test(root: Path = ROOT) -> None:
     with tempfile.TemporaryDirectory(prefix="b215-b223-contract-") as tmp:
         temp_root = Path(tmp)
         for label, lane, needle, replacement, relative, suffix in cases:
+            if selected is not None and lane != selected:
+                continue
             paths = paths_by_lane[lane]
             for item in paths:
                 destination = temp_root / item
@@ -811,6 +827,8 @@ def self_test(root: Path = ROOT) -> None:
                 continue
             raise ContractError(f"{label}: adversarial mutation did not turn the contract red")
         for label, lane, needle, replacement, relative, anchor, bait in in_function_baits:
+            if selected is not None and lane != selected:
+                continue
             paths = paths_by_lane[lane]
             for item in paths:
                 destination = temp_root / item
@@ -845,13 +863,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = verify(ROOT, args.id)
         if args.self_test:
-            self_test(ROOT)
+            self_test(ROOT, args.id)
     except (ContractError, OSError, UnicodeError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
     print("PASS: " + ", ".join(result))
     if args.self_test:
-        print("PASS: adversarial mutations rejected for every lane")
+        print("PASS: adversarial mutations rejected for " + (args.id or "every lane"))
     return 0
 
 

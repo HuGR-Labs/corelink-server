@@ -22,6 +22,10 @@ The source consumer persists privacy-minimized D1 lifecycle receipts (opaque
 event digest, categorical status, and transition time) before its queue
 dispositions. Those receipts prevent a DLQ retry-budget exhaustion from being a
 silent platform drop; they do not prove that an external alert was delivered.
+The repository alert contract is vendor-neutral and documented in
+`docs/internal/b216-critical-alert-contract.md`; an owner must explicitly select
+and provision a compatible HTTPS sink before any runtime alert exercise. A sink
+acceptance receipt does not prove on-call reachability.
 
 Attach the three redacted records below to the evidence bundle:
 
@@ -34,9 +38,10 @@ Attach the three redacted records below to the evidence bundle:
 
 The bounded operational investigation captured in
 `reports/owner-actions/b216-operational-blocker.json` is diagnostic only. It
-records the exact secret-name readback, the unavailable PagerDuty credential,
-the expired Stripe CLI authorization, and the read-only health/queue topology.
-It does not satisfy any of the three closure records above. The verifier
+records an earlier provider-specific secret-name readback and unavailable
+credential, the expired Stripe CLI authorization, and the read-only
+health/queue topology. It predates the provider-neutral contract and does not
+satisfy any of the three closure records above. The verifier
 reports this receipt as a pointer while keeping B-216 `OWNER_BLOCKED` until
 the alert-delivery and exhausted-observation records are attached.
 

@@ -5577,13 +5577,7 @@ acceptance: "Evidence for DD-068: a code or documented owner decision at the cit
 verify: |
   python3 scripts/verify_b101_proposals.py --id B-216
 verify-means: |
-  parked — owner packet `docs/internal/b215-b230-runtime-owner-actions.md` remains: focused source tests and mutation gates prove the DLQ consumer accepts
-  only PagerDuty HTTP 202 as delivery, retains the DLQ delivery when paging is
-  missing/rejected, records privacy-minimized durable lifecycle receipts before
-  queue disposition, redacts transport errors, and permits only one main-queue
-  re-enqueue. Verify the deployed
-  consumer, an accepted on-call delivery, and one controlled exhausted-message
-  observation. Local source evidence is not production delivery evidence.
+  parked — linked child #2643 owns the provider-neutral HTTPS sink/receipt contract and exact-head repository proof. Keep B-216 external until fresh evidence proves the deployed worker plus D1 schema, a configured sink acceptance reaching the approved response path, and a controlled exhausted-message final disposition. Local source evidence and a sink HTTP receipt alone do not prove human reachability.
 last-verified: 2026-09-09
 ```
 
