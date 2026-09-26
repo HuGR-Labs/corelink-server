@@ -68,6 +68,7 @@
 #![deny(missing_debug_implementations)]
 
 use core::fmt;
+use std::any::Any;
 
 use serde::Deserialize;
 
@@ -346,6 +347,16 @@ pub enum EffectReservation {
     Applied,
 }
 
+/// Opaque, immutable request authority carried through the webhook pipeline.
+///
+/// This leaf crate deliberately knows no container admission type. The native
+/// container creates this context only after verified, durable staging
+/// admission; the D1 inbox implementation downcasts it at its owned boundary.
+pub trait DurableWebhookRequestContext: fmt::Debug + Send + Sync {
+    /// Expose the concrete request context only to its owning adapter.
+    fn as_any(&self) -> &dyn Any;
+}
+
 /// Restart-safe persistence and ownership seam for authenticated webhooks.
 pub trait DurableWebhookInbox: fmt::Debug + Send + Sync {
     /// Persist an authenticated event before any effect occurs.
@@ -354,6 +365,21 @@ pub trait DurableWebhookInbox: fmt::Debug + Send + Sync {
         event: &DurableWebhookEvent,
         now_ms: u64,
     ) -> Result<InboxReceiveOutcome, String>;
+
+    /// Persist one authenticated event with optional request-scoped authority.
+    ///
+    /// The default keeps ordinary and legacy callers source-compatible. A
+    /// concrete ownership-aware inbox overrides it to consume the opaque
+    /// context in the same durable mutation as its domain record.
+    fn receive_with_context(
+        &self,
+        event: &DurableWebhookEvent,
+        now_ms: u64,
+        context: Option<&dyn DurableWebhookRequestContext>,
+    ) -> Result<InboxReceiveOutcome, String> {
+        let _ = context;
+        self.receive(event, now_ms)
+    }
     /// Claim or reclaim an expired event lease. `None` is not an acknowledgement.
     fn claim(
         &self,

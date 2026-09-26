@@ -23,6 +23,7 @@ use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
+use crate::audit_emit::ErasureRequestContext;
 use crate::error::ErasureIdempotencyError;
 use crate::event::{BackendCompletion, BackendKind};
 
@@ -70,6 +71,16 @@ pub trait ErasureIdempotencyLedger: Send + Sync + core::fmt::Debug {
         completion: BackendCompletion,
     ) -> Result<LedgerOutcome, ErasureIdempotencyError>;
 
+    /// Persist `completion` with an optional immutable request context.
+    fn upsert_with_context(
+        &self,
+        completion: BackendCompletion,
+        context: Option<&dyn ErasureRequestContext>,
+    ) -> Result<LedgerOutcome, ErasureIdempotencyError> {
+        let _ = context;
+        self.upsert(completion)
+    }
+
     /// Look up the canonical tombstone for `(dsr_id, backend)`.
     /// Returns `None` if the slot is empty.
     ///
@@ -114,6 +125,17 @@ pub trait ErasureIdempotencyLedger: Send + Sync + core::fmt::Debug {
         _outcome_json: &str,
     ) -> Result<(), ErasureIdempotencyError> {
         Ok(())
+    }
+
+    /// Persist an outcome snapshot with an optional immutable request context.
+    fn set_outcome_snapshot_with_context(
+        &self,
+        dsr_id: Uuid,
+        outcome_json: &str,
+        context: Option<&dyn ErasureRequestContext>,
+    ) -> Result<(), ErasureIdempotencyError> {
+        let _ = context;
+        self.set_outcome_snapshot(dsr_id, outcome_json)
     }
 
     /// Wave-19: read the canonical `outcome_json` snapshot column for

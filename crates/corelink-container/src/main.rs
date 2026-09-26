@@ -828,7 +828,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .with_durable_inbox(webhook_inbox)
             .with_dlq(webhook_dlq),
         );
-        let state = Arc::new(WebhookState::new(dispatcher));
+        let staging_admission =
+            corelink_server::storage::staging_load_test_admission::StagingLoadTestAdmissionGate::from_env()
+                .ok()
+                .map(Arc::new);
+        let state =
+            Arc::new(WebhookState::new(dispatcher).with_staging_admission(staging_admission));
         info!(
             route = corelink_server::webhook::STRIPE_WEBHOOK_ROUTE,
             "Stripe webhook route mounted on the data-plane listener"

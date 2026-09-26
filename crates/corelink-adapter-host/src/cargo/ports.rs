@@ -44,6 +44,21 @@ pub trait CasStore: Send + Sync + Debug {
     /// is presumed at the caller via the BLAKE3 key).
     async fn put(&self, tenant_id: &str, digest_hex: &str, bytes: Vec<u8>) -> Result<(), CasError>;
 
+    /// Store bytes while carrying optional immutable request authority.
+    ///
+    /// The default preserves legacy stores. Ownership-aware implementations
+    /// forward this opaque value across async and blocking bridge boundaries.
+    async fn put_with_context(
+        &self,
+        tenant_id: &str,
+        digest_hex: &str,
+        bytes: Vec<u8>,
+        context: Option<std::sync::Arc<dyn corelink_handler_cas::CasWriteOperationContext>>,
+    ) -> Result<(), CasError> {
+        let _ = context;
+        self.put(tenant_id, digest_hex, bytes).await
+    }
+
     /// Cheap existence probe for `HEAD /<key>` (sccache HTTP backend) —
     /// MUST NOT download or rehash the blob.
     ///

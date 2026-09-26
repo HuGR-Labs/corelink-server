@@ -90,6 +90,17 @@ impl CasStore for CargoCasBridge {
     }
 
     async fn put(&self, tenant_id: &str, digest_hex: &str, bytes: Vec<u8>) -> Result<(), CasError> {
+        self.put_with_context(tenant_id, digest_hex, bytes, None)
+            .await
+    }
+
+    async fn put_with_context(
+        &self,
+        tenant_id: &str,
+        digest_hex: &str,
+        bytes: Vec<u8>,
+        context: Option<Arc<dyn corelink_handler_cas::CasWriteOperationContext>>,
+    ) -> Result<(), CasError> {
         let handler = Arc::clone(&self.write_handler);
         let req = CasWriteRequest::new(
             tenant_id,
@@ -99,9 +110,11 @@ impl CasStore for CargoCasBridge {
             tenant_id,
             unix_ms_now(),
         );
-        let result = tokio::task::spawn_blocking(move || handler.write(req))
-            .await
-            .map_err(|e| CasError::Backend(format!("spawn_blocking join: {e}")))?;
+        let result = tokio::task::spawn_blocking(move || {
+            handler.write_with_effect_and_context(req, context)
+        })
+        .await
+        .map_err(|e| CasError::Backend(format!("spawn_blocking join: {e}")))?;
         result
             .map(|_| ())
             .map_err(|e| CasError::Backend(format!("handler: {e:?}")))

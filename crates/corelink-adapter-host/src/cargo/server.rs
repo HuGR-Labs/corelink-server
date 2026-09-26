@@ -88,6 +88,19 @@ impl std::fmt::Debug for CargoRouterState {
 #[derive(Debug, Clone)]
 pub struct GateResolvedTenant(pub String);
 
+/// Opaque write authority attached by an authenticated upstream route gate.
+#[derive(Clone)]
+pub struct GateCasWriteContext(pub Arc<dyn corelink_handler_cas::CasWriteOperationContext>);
+
+impl std::fmt::Debug for GateCasWriteContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("GateCasWriteContext")
+            .field(&"[context]")
+            .finish()
+    }
+}
+
 /// Hash a value to a short, stable hex correlation handle for logging
 /// (INV-NO-PII-IN-LOGS). First 8 bytes of SHA-256, hex-encoded —
 /// consistent with the `hash_for_log` convention in `internal_pat.rs`
@@ -273,6 +286,8 @@ async fn handle_put(
         }
     };
 
+    let request_context = request.extensions().get::<GateCasWriteContext>().cloned();
+
     // Collect body with size enforcement.
     let bytes = match collect_body(request, state.body_size_limit_bytes).await {
         Ok(b) => b,
@@ -287,7 +302,16 @@ async fn handle_put(
         return err.into_response();
     }
 
-    match state.cas.put(&tenant_id, &key, bytes).await {
+    match state
+        .cas
+        .put_with_context(
+            &tenant_id,
+            &key,
+            bytes,
+            request_context.map(|context| context.0),
+        )
+        .await
+    {
         Ok(()) => {
             tracing::debug!(tenant_hash = %hash_for_log(&tenant_id), key = %key, "cargo CAS put");
             StatusCode::OK.into_response()

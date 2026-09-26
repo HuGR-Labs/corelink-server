@@ -11,6 +11,7 @@ use crate::byok_transition_fence::{
 };
 use crate::customer_d1::{ByokActivation, ByokState, ByokWriteError};
 use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
+use crate::storage::staging_load_test_ownership::StagingLoadTestWriteContext;
 
 const TRANSITION_LEASE: Duration = Duration::from_secs(60);
 const ACTIVATION_DEADLINE_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
@@ -162,6 +163,19 @@ impl D1ByokControl {
         .await
     }
 
+    /// Carry optional request-scoped staging authority to the owned activation
+    /// writer boundary. The current control transition remains behaviorally
+    /// identical until the BYOK writer child appends its registration statement.
+    pub async fn prepare_activation_with_context(
+        &self,
+        activation: &ByokActivation,
+        now_ms: i64,
+        context: StagingLoadTestWriteContext<'_>,
+    ) -> Result<(), ByokWriteError> {
+        let _ = context;
+        self.prepare_activation(activation, now_ms).await
+    }
+
     /// Cancel only an unpublished activation. A retry after cancellation has
     /// restored the preceding active generation (or the initial inactive
     /// state) is authorized exclusively by the latest durable control
@@ -198,6 +212,17 @@ impl D1ByokControl {
             from: state_for_error(snapshot.config_state),
             to: ByokState::Inactive,
         })
+    }
+
+    /// Carry optional request-scoped staging authority to cancellation.
+    pub async fn cancel_activation_with_context(
+        &self,
+        tenant_id: &str,
+        now_ms: i64,
+        context: StagingLoadTestWriteContext<'_>,
+    ) -> Result<(), ByokWriteError> {
+        let _ = context;
+        self.cancel_activation(tenant_id, now_ms).await
     }
 
     /// Deliberately crypto-shred a published/active tenant. Pending copy work
@@ -242,6 +267,17 @@ impl D1ByokControl {
             .map_err(map_fence)?;
         self.commit_status_transition(&fence, "shred", None, now_ms)
             .await
+    }
+
+    /// Carry optional request-scoped staging authority to the shred boundary.
+    pub async fn shred_with_context(
+        &self,
+        tenant_id: &str,
+        now_ms: i64,
+        context: StagingLoadTestWriteContext<'_>,
+    ) -> Result<(), ByokWriteError> {
+        let _ = context;
+        self.shred(tenant_id, now_ms).await
     }
 
     async fn latest_completed_action(

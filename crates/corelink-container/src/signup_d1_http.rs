@@ -69,7 +69,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::routes::signup::{PilotSignupRecord, SignupStore};
-use crate::storage::d1_http::{D1HttpClient, D1Row};
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
 
 /// Idempotency lookup — same email OR same token_id returns the existing
 /// row verbatim. Binds (?1..?2): email, token_id.
@@ -99,6 +99,15 @@ pub trait SignupD1: Send + Sync + core::fmt::Debug {
     ///
     /// Returns `Err(String)` on any D1 transport, HTTP, or decode failure.
     fn query(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<D1Row>, String>;
+
+    /// Execute the reservation and ownership statements in one D1 transaction.
+    ///
+    /// Legacy implementations do not claim batch atomicity. An ownership-aware
+    /// store must fail closed when it receives `Some(context)` and this seam is
+    /// unavailable.
+    fn batch(&self, _statements: Vec<D1BatchStatement>) -> Result<Vec<Vec<D1Row>>, String> {
+        Err("signup store: D1 batch unavailable".to_owned())
+    }
 }
 
 /// Production [`SignupD1`] over the CF D1 REST API. Single documented
@@ -136,6 +145,14 @@ impl SignupD1 for D1HttpSignupDb {
         tokio::task::block_in_place(move || {
             tokio::runtime::Handle::current().block_on(async move { d1.query(&sql, &binds).await })
         })
+    }
+
+    fn batch(&self, statements: Vec<D1BatchStatement>) -> Result<Vec<Vec<D1Row>>, String> {
+        let d1 = Arc::clone(&self.d1);
+        tokio::task::block_in_place(move || {
+            tokio::runtime::Handle::current().block_on(async move { d1.batch(statements).await })
+        })
+        .map_err(|error| format!("signup store: D1 batch failed: {}", error.message))
     }
 }
 

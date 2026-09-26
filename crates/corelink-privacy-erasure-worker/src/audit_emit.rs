@@ -34,12 +34,21 @@
 //!   `dsr_tickets.status` → `completed`. Audit fires BEFORE the status
 //!   transition + R2 evidence-dsr signed URL email.
 
+use std::any::Any;
 use std::sync::Mutex;
 
 use uuid::Uuid;
 
 use crate::error::ErasureAuditSinkError;
 use crate::event::{BackendErasureOutcome, BackendKind, ErasureCloudEventType};
+
+/// Immutable request-bound context carried from an authenticated route to the
+/// audit and idempotency seams. Implementors may downcast this opaque carrier
+/// to their admission context; the worker never derives identity from it.
+pub trait ErasureRequestContext: Send + Sync + core::fmt::Debug {
+    /// Expose the concrete carrier for a bounded downstream downcast.
+    fn as_any(&self) -> &dyn Any;
+}
 
 /// Typed erasure audit record. Production wiring serializes via a
 /// CloudEvents 1.0 envelope (mirrors the audit-chain S-09 inheritance
@@ -93,6 +102,20 @@ pub trait ErasureAuditSink: Send + Sync + core::fmt::Debug {
     /// Returns [`ErasureAuditSinkError::Store`] on any backend
     /// failure.
     fn emit(&self, record: ErasureAuditRecord) -> Result<(), ErasureAuditSinkError>;
+
+    /// Persist `record` with an optional immutable request context.
+    ///
+    /// The compatibility default deliberately preserves existing sinks until a
+    /// writer is ready to consume the context. Route-mounted traffic supplies
+    /// a verified carrier; ordinary traffic supplies `None`.
+    fn emit_with_context(
+        &self,
+        record: ErasureAuditRecord,
+        context: Option<&dyn ErasureRequestContext>,
+    ) -> Result<(), ErasureAuditSinkError> {
+        let _ = context;
+        self.emit(record)
+    }
 }
 
 /// In-memory test audit sink. Cloning shares the underlying buffer so

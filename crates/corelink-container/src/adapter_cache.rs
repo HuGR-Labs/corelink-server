@@ -24,7 +24,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use corelink_handler_cas::{
-    CasHandlerError, CasReadHandler, CasReadRequest, CasWriteHandler, CasWriteRequest,
+    CasHandlerError, CasReadHandler, CasReadRequest, CasWriteHandler, CasWriteOperationContext,
+    CasWriteRequest,
 };
 
 use crate::storage::d1_http::D1HttpClient;
@@ -356,8 +357,29 @@ impl MoatCache {
         bytes: Vec<u8>,
         storage_quota_bytes: Option<i64>,
     ) -> Result<(), MoatError> {
-        self.put_for_tenant(namespace, namespace, url_hash, bytes, storage_quota_bytes)
+        self.put_with_context(namespace, url_hash, bytes, storage_quota_bytes, None)
             .await
+    }
+
+    /// Store bytes while preserving optional immutable request authority through
+    /// the blocking CAS handler bridge.
+    pub async fn put_with_context(
+        &self,
+        namespace: &str,
+        url_hash: &str,
+        bytes: Vec<u8>,
+        storage_quota_bytes: Option<i64>,
+        context: Option<Arc<dyn CasWriteOperationContext>>,
+    ) -> Result<(), MoatError> {
+        self.put_for_tenant_with_context(
+            namespace,
+            namespace,
+            url_hash,
+            bytes,
+            storage_quota_bytes,
+            context,
+        )
+        .await
     }
 
     /// Store a shared/public mapping while charging the authenticated tenant.
@@ -372,12 +394,34 @@ impl MoatCache {
         bytes: Vec<u8>,
         storage_quota_bytes: Option<i64>,
     ) -> Result<(), MoatError> {
+        self.put_for_tenant_with_context(
+            namespace,
+            accounting_namespace,
+            url_hash,
+            bytes,
+            storage_quota_bytes,
+            None,
+        )
+        .await
+    }
+
+    /// Store a shared/public mapping with optional request authority.
+    pub async fn put_for_tenant_with_context(
+        &self,
+        namespace: &str,
+        accounting_namespace: &str,
+        url_hash: &str,
+        bytes: Vec<u8>,
+        storage_quota_bytes: Option<i64>,
+        context: Option<Arc<dyn CasWriteOperationContext>>,
+    ) -> Result<(), MoatError> {
         self.put_untimed(
             namespace,
             accounting_namespace,
             url_hash,
             bytes,
             storage_quota_bytes,
+            context,
         )
         .await
     }
@@ -390,6 +434,7 @@ impl MoatCache {
         url_hash: &str,
         bytes: Vec<u8>,
         storage_quota_bytes: Option<i64>,
+        context: Option<Arc<dyn CasWriteOperationContext>>,
     ) -> Result<(), MoatError> {
         let content_hash = (self.hasher)(&bytes);
         let content_len = bytes.len() as u64;
@@ -440,7 +485,7 @@ impl MoatCache {
         let ledger = crate::origin_timing::current_ledger();
         let result = tokio::task::spawn_blocking(move || {
             let _scope = crate::origin_timing::PhaseScope::with_ledger(ledger);
-            handler.write(req)
+            handler.write_with_effect_and_context(req, context)
         })
         .await
         .map_err(|e| MoatError::Backend(format!("cas write join: {e}")))?;

@@ -171,6 +171,16 @@ impl R2CasHandler {
         context: Option<&dyn corelink_handler_cas::CasWriteOperationContext>,
     ) -> Result<Option<ByokDataGuard>, CasHandlerError> {
         if let Some(context) = context {
+            let context = match context
+                .as_any()
+                .downcast_ref::<corelink_handler_cas::CasWriteContextBundle>()
+            {
+                Some(bundle) => match bundle.data_plane() {
+                    Some(context) => context,
+                    None => return Ok(None),
+                },
+                None => context,
+            };
             let pin = context
                 .as_any()
                 .downcast_ref::<crate::storage::byok_cas::ByokOperationPin>()

@@ -53,6 +53,10 @@ use serde::Deserialize;
 use crate::byok_control_transition::D1ByokControl;
 use crate::customer_d1::{ByokActivation, ByokCryptoMode, ByokMode, ByokWriteError};
 use crate::routes::admin::internal_auth_ok;
+use crate::storage::{
+    staging_load_test_admission::{admit_staging_load_test_request, StagingLoadTestAdmissionGate},
+    staging_load_test_ownership::StagingLoadTestScenario,
+};
 use crate::wall_clock::{SystemWallClock, WallClock};
 
 /// Canonical activation route path (matchit `:name` grammar — braces are the
@@ -71,6 +75,9 @@ pub struct ByokAdminRouteState {
     /// Operator-only shared secret for the `x-corelink-internal-auth` gate.
     /// `None` when unset at boot → every route fails CLOSED (403).
     pub internal_auth_key: Option<Arc<str>>,
+    /// Staging-only immutable request admission. A supplied credential is
+    /// rejected when this gate is absent or cannot be verified and consumed.
+    pub staging_admission: Option<Arc<StagingLoadTestAdmissionGate>>,
 }
 
 impl core::fmt::Debug for ByokAdminRouteState {
@@ -93,6 +100,7 @@ impl ByokAdminRouteState {
         Self {
             writer,
             internal_auth_key: crate::routes::admin::internal_auth_key_from_env(),
+            staging_admission: StagingLoadTestAdmissionGate::from_env().ok().map(Arc::new),
         }
     }
 }
@@ -240,6 +248,16 @@ async fn handle_activate(
         );
         return (StatusCode::FORBIDDEN, "forbidden").into_response();
     }
+    let admission = match admit_staging_load_test_request(
+        state.staging_admission.as_deref(),
+        &headers,
+        StagingLoadTestScenario::Byok,
+    )
+    .await
+    {
+        Ok(context) => context,
+        Err(_) => return (StatusCode::FORBIDDEN, "forbidden").into_response(),
+    };
     // Parse and validate the wire shape before touching KMS or D1. This keeps
     // malformed/unknown provider input a deterministic 400 with no audit or
     // mutation side effect.
@@ -332,7 +350,10 @@ async fn handle_activate(
             .into_response();
     }
     let now_ms = i64::try_from(SystemWallClock.now_ms()).unwrap_or(i64::MAX);
-    match writer.prepare_activation(&activation, now_ms).await {
+    match writer
+        .prepare_activation_with_context(&activation, now_ms, admission.as_deref())
+        .await
+    {
         Ok(()) => (StatusCode::ACCEPTED, "activation_pending_backfill").into_response(),
         Err(e) => map_write_err(&e),
     }
@@ -351,6 +372,16 @@ async fn handle_deactivate(
         );
         return (StatusCode::FORBIDDEN, "forbidden").into_response();
     }
+    let admission = match admit_staging_load_test_request(
+        state.staging_admission.as_deref(),
+        &headers,
+        StagingLoadTestScenario::Byok,
+    )
+    .await
+    {
+        Ok(context) => context,
+        Err(_) => return (StatusCode::FORBIDDEN, "forbidden").into_response(),
+    };
     let parsed: ByokDeactivateBody = match serde_json::from_slice(&body) {
         Ok(b) => b,
         Err(e) => {
@@ -364,8 +395,16 @@ async fn handle_deactivate(
     };
     let now_ms = i64::try_from(SystemWallClock.now_ms()).unwrap_or(i64::MAX);
     let result = match parsed.action {
-        ByokDeactivateAction::Cancel => writer.cancel_activation(&parsed.tenant, now_ms).await,
-        ByokDeactivateAction::Shred => writer.shred(&parsed.tenant, now_ms).await,
+        ByokDeactivateAction::Cancel => {
+            writer
+                .cancel_activation_with_context(&parsed.tenant, now_ms, admission.as_deref())
+                .await
+        }
+        ByokDeactivateAction::Shred => {
+            writer
+                .shred_with_context(&parsed.tenant, now_ms, admission.as_deref())
+                .await
+        }
     };
     match result {
         Ok(()) => match parsed.action {
@@ -397,6 +436,7 @@ mod tests {
         ByokAdminRouteState {
             writer: None,
             internal_auth_key: key.map(Arc::from),
+            staging_admission: None,
         }
     }
 

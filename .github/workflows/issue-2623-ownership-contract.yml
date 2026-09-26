@@ -5,9 +5,33 @@ on:
     branches: [main]
     paths:
       - .github/workflows/issue-2623-ownership-contract.yml
+      - crates/corelink-adapter-host/src/cargo/bridge.rs
+      - crates/corelink-adapter-host/src/cargo/ports.rs
+      - crates/corelink-adapter-host/src/cargo/server.rs
+      - crates/corelink-billing-stripe-traits/src/lib.rs
+      - crates/corelink-handler-cas/src/handler.rs
+      - crates/corelink-handler-cas/src/lib.rs
+      - crates/corelink-privacy-erasure-worker/src/audit_emit.rs
+      - crates/corelink-privacy-erasure-worker/src/idempotency.rs
+      - crates/corelink-privacy-erasure-worker/src/orchestrator.rs
+      - crates/corelink-stripe-real/src/webhook_dispatch.rs
+      - crates/corelink-container/src/adapter_cache.rs
+      - crates/corelink-container/src/byok_control_transition.rs
+      - crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs
+      - crates/corelink-container/src/main.rs
+      - crates/corelink-container/src/routes/byok_admin.rs
+      - crates/corelink-container/src/routes/cargo/part-00.rs
+      - crates/corelink-container/src/routes/cargo/part-00-01.rs
+      - crates/corelink-container/src/routes/cargo/tests-00-00.rs
+      - crates/corelink-container/src/routes/dsr.rs
+      - crates/corelink-container/src/routes/signup.rs
+      - crates/corelink-container/src/signup_d1_http.rs
+      - crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs
+      - crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs
       - crates/corelink-container/src/storage/staging_load_test_admission.rs
       - crates/corelink-container/src/storage/staging_load_test_ownership.rs
       - apps/signup-worker/src/staging_load_test_ownership.ts
+      - apps/signup-worker/src/lib/d1.ts
       - apps/signup-worker/tests/staging_load_test_ownership.test.ts
       - migrations/d1/0149_staging_load_test_r2_intents.sql
       - scripts/verify_issue_2623_ownership_contract.py
@@ -80,6 +104,8 @@ jobs:
       - name: Run focused Rust contract tests
         run: |
           cargo test --locked -p corelink-server --lib storage::staging_load_test_admission::tests::worker_ownership_envelope_is_domain_separated_bounded_and_request_bound -- --exact
+          cargo test --locked -p corelink-server --lib storage::staging_load_test_admission::tests::loopback_store_consumes_a_verified_claim_in_the_real_d1_batch_shape -- --exact
+          cargo test --locked -p corelink-server --lib storage::staging_load_test_admission::tests::present_admission_header_fails_closed_when_the_gate_is_not_configured -- --exact
           cargo test --locked -p corelink-server --lib storage::staging_load_test_ownership::tests::d1_and_r2_contracts_accept_only_bounded_canonical_inputs -- --exact
 
       - name: Typecheck and test focused Worker envelope

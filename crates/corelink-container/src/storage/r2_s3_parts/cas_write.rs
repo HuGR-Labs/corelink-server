@@ -407,9 +407,9 @@ impl CasWriteHandler for R2CasHandler {
     fn write_with_effect_and_context(
         &self,
         req: CasWriteRequest,
-        context: Option<&dyn corelink_handler_cas::CasWriteOperationContext>,
+        context: Option<Arc<dyn corelink_handler_cas::CasWriteOperationContext>>,
     ) -> Result<CasWriteResponse, corelink_handler_cas::CasWriteFailure> {
-        self.write_with_byok_operation_context(req, context)
+        self.write_with_byok_operation_context(req, context.as_deref())
             .map_err(corelink_handler_cas::CasWriteFailure::unknown)
     }
 }

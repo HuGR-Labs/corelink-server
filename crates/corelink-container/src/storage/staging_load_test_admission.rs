@@ -8,6 +8,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
+use std::sync::Arc;
 
 use super::{
     d1_http::{D1BatchStatement, D1HttpClient},
@@ -19,6 +20,13 @@ const NONCE_DOMAIN: &[u8] = b"corelink/staging-load-admission-nonce/v1\0";
 const MAX_CLAIM_LIFETIME_MS: i64 = 15 * 60 * 1_000;
 const SQL_INSERT_RUN: &str = "INSERT INTO staging_load_test_runs (run_id, scenario, target_environment, target_deployment_sha, state, admitted_at_ms) VALUES (?1, ?2, 'staging', ?3, 'open', ?4)";
 const SQL_INSERT_NONCE: &str = "INSERT INTO staging_load_test_admission_nonces (nonce_digest, run_id, scenario, target_environment, target_deployment_sha, issued_at_ms, expires_at_ms, admitted_at_ms) VALUES (?1, ?2, ?3, 'staging', ?4, ?5, ?6, ?7)";
+
+/// Header carrying an untrusted, signed staging-admission credential.
+///
+/// A request never receives an admitted context merely because this header is
+/// present. [`StagingLoadTestAdmissionGate`] verifies the credential and
+/// durably consumes its nonce before returning one.
+pub const STAGING_LOAD_TEST_ADMISSION_HEADER: &str = "x-corelink-staging-load-admission";
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -355,6 +363,18 @@ impl StagingLoadTestAdmissionStore {
             .map_err(|_| StagingLoadTestAdmissionError::PersistenceUnavailable)
     }
 
+    /// Construct the restricted store over an already constrained D1 client.
+    ///
+    /// This exists for in-crate loopback tests. Production construction remains
+    /// [`Self::from_d1_env`], which obtains the narrow ownership writer from
+    /// process configuration. The client still has to execute the same atomic
+    /// run-plus-nonce batch, so this constructor cannot fabricate an admission
+    /// context or bypass durable consumption.
+    #[cfg(test)]
+    pub(crate) fn from_d1_client_for_test(d1: D1HttpClient) -> Self {
+        Self { d1 }
+    }
+
     /// Validate, then submit run creation and digest-only nonce persistence in one batch.
     pub async fn consume_verified_admission(
         &self,
@@ -399,6 +419,100 @@ impl StagingLoadTestAdmissionStore {
             target_deployment_sha: admission.target_deployment_sha,
             admitted_at_ms: now_ms,
         })
+    }
+}
+
+/// Server-side, request-scoped admission gate shared by writer mounts.
+///
+/// The gate owns neither a route nor writer behavior. It turns an optional
+/// wire credential into an optional immutable context exactly once per
+/// request. A missing header is ordinary traffic; a present malformed,
+/// mismatched, expired, or replayed header is an error and callers must fail
+/// closed instead of treating it as absence.
+#[derive(Clone, Debug)]
+pub struct StagingLoadTestAdmissionGate {
+    verifier: Arc<StagingLoadTestAdmissionVerifier>,
+    store: Arc<StagingLoadTestAdmissionStore>,
+}
+
+impl StagingLoadTestAdmissionGate {
+    /// Construct the staging-only gate from server configuration.
+    pub fn from_env() -> Result<Self, StagingLoadTestAdmissionError> {
+        Ok(Self {
+            verifier: Arc::new(StagingLoadTestAdmissionVerifier::from_env()?),
+            store: Arc::new(StagingLoadTestAdmissionStore::from_d1_env()?),
+        })
+    }
+
+    /// Admit a supplied credential for one fixed writer scenario.
+    pub async fn admit(
+        &self,
+        credential: Option<&str>,
+        expected_scenario: StagingLoadTestScenario,
+    ) -> Result<Option<Arc<StagingLoadTestAdmissionContext>>, StagingLoadTestAdmissionError> {
+        let Some(credential) = credential else {
+            return Ok(None);
+        };
+        let now_ms = unix_time_ms()?;
+        let admission = self.verifier.verify(credential, now_ms)?;
+        if admission.scenario != expected_scenario {
+            return Err(StagingLoadTestAdmissionError::MismatchedIdentity);
+        }
+        // The expectation deliberately mirrors only verifier-authenticated
+        // fields. Keep owned copies so the verified claim can move into the
+        // durable consume operation that returns the immutable context.
+        let run_id = admission.run_id.clone();
+        let target_environment = admission.target_environment.clone();
+        let target_deployment_sha = admission.target_deployment_sha.clone();
+        let expected = StagingLoadTestAdmissionExpectation {
+            run_id: &run_id,
+            scenario: expected_scenario,
+            target_environment: &target_environment,
+            target_deployment_sha: &target_deployment_sha,
+        };
+        self.store
+            .consume_verified_admission(expected, admission)
+            .await
+            .map(|context| Some(Arc::new(context)))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_parts_for_test(
+        verifier: StagingLoadTestAdmissionVerifier,
+        store: StagingLoadTestAdmissionStore,
+    ) -> Self {
+        Self {
+            verifier: Arc::new(verifier),
+            store: Arc::new(store),
+        }
+    }
+}
+
+/// Read the optional staging admission header and run its mandatory gate.
+///
+/// Routes use this helper so an unconfigured gate still accepts ordinary
+/// requests without the header, while a supplied credential cannot silently
+/// fall back to `None`.
+pub async fn admit_staging_load_test_request(
+    gate: Option<&StagingLoadTestAdmissionGate>,
+    headers: &axum::http::HeaderMap,
+    expected_scenario: StagingLoadTestScenario,
+) -> Result<Option<Arc<StagingLoadTestAdmissionContext>>, StagingLoadTestAdmissionError> {
+    let header = headers.get(STAGING_LOAD_TEST_ADMISSION_HEADER);
+    match (gate, header) {
+        (None, None) => Ok(None),
+        (None, Some(_)) => Err(StagingLoadTestAdmissionError::InvalidCredential),
+        (Some(gate), None) => gate.admit(None, expected_scenario).await,
+        (Some(gate), Some(value)) => {
+            gate.admit(
+                value
+                    .to_str()
+                    .map_err(|_| StagingLoadTestAdmissionError::InvalidCredential)
+                    .map(Some)?,
+                expected_scenario,
+            )
+            .await
+        }
     }
 }
 
@@ -685,6 +799,123 @@ mod tests {
         assert_eq!(
             validate_claim(&expected, &claim, 150),
             Err(StagingLoadTestAdmissionError::Expired)
+        );
+    }
+
+    #[tokio::test]
+    async fn loopback_store_consumes_a_verified_claim_in_the_real_d1_batch_shape() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("loopback listener");
+        let endpoint = format!(
+            "http://{}",
+            listener.local_addr().expect("loopback address")
+        );
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("loopback connection");
+            let mut bytes = Vec::new();
+            loop {
+                let mut buffer = [0_u8; 4096];
+                let read = stream.read(&mut buffer).expect("request read");
+                bytes.extend_from_slice(&buffer[..read]);
+                let Some(headers_end) = bytes.windows(4).position(|part| part == b"\r\n\r\n")
+                else {
+                    continue;
+                };
+                let headers = std::str::from_utf8(&bytes[..headers_end]).expect("headers utf8");
+                let length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.strip_prefix("content-length: ")
+                            .or_else(|| line.strip_prefix("Content-Length: "))
+                    })
+                    .expect("content length")
+                    .parse::<usize>()
+                    .expect("content length number");
+                if bytes.len() >= headers_end + 4 + length {
+                    break;
+                }
+            }
+            let body_start = bytes
+                .windows(4)
+                .position(|part| part == b"\r\n\r\n")
+                .expect("headers")
+                + 4;
+            let request: serde_json::Value =
+                serde_json::from_slice(&bytes[body_start..]).expect("D1 batch JSON");
+            let batch = request["batch"].as_array().expect("D1 batch");
+            assert_eq!(batch.len(), 2);
+            assert!(batch[0]["sql"]
+                .as_str()
+                .is_some_and(|sql| sql == SQL_INSERT_RUN));
+            assert!(batch[1]["sql"]
+                .as_str()
+                .is_some_and(|sql| sql == SQL_INSERT_NONCE));
+            let body = serde_json::json!({
+                "result": [
+                    { "results": [], "success": true },
+                    { "results": [], "success": true }
+                ],
+                "success": true,
+                "errors": []
+            })
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("response write");
+        });
+
+        let env = crate::storage::StorageEnv {
+            r2_endpoint: "https://localhost:1".to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        };
+        let store = StagingLoadTestAdmissionStore::from_d1_client_for_test(
+            D1HttpClient::new_for_loopback_test(&env, &endpoint).expect("loopback D1 client"),
+        );
+        let verifier = verifier();
+        let now_ms = unix_time_ms().expect("clock");
+        let credential = verifier.sign_for_test(
+            "123",
+            StagingLoadTestScenario::Cas,
+            SHA,
+            now_ms - 1,
+            now_ms + 60_000,
+            NONCE,
+        );
+        let gate = StagingLoadTestAdmissionGate::from_parts_for_test(verifier, store);
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            STAGING_LOAD_TEST_ADMISSION_HEADER,
+            credential.parse().expect("credential header"),
+        );
+        let context =
+            admit_staging_load_test_request(Some(&gate), &headers, StagingLoadTestScenario::Cas)
+                .await
+                .expect("verified durable consume")
+                .expect("context");
+        assert_eq!(context.run_id(), "123");
+        server.join().expect("loopback server");
+    }
+
+    #[tokio::test]
+    async fn present_admission_header_fails_closed_when_the_gate_is_not_configured() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            STAGING_LOAD_TEST_ADMISSION_HEADER,
+            axum::http::HeaderValue::from_static("forged"),
+        );
+        assert_eq!(
+            admit_staging_load_test_request(None, &headers, StagingLoadTestScenario::Cas).await,
+            Err(StagingLoadTestAdmissionError::InvalidCredential)
         );
     }
 }
