@@ -28,7 +28,7 @@ on:
   # `synchronize` dropped 2026-08-03: this job posts a one-time greeting on a
   # contributor's FIRST issue/PR — a later push to the same PR cannot make its
   # author a first-time contributor, so re-running on every force-push only
-  # re-queued work on the self-hosted mac (54 runs in a 12 h sample). `opened` +
+  # re-queued work on the self-hosted Mac (54 runs in a 12 h sample). `opened` +
   # `reopened` is the whole meaningful surface. This workflow is a greeter, not a
   # gate: it has no assertion and cannot fail a PR, so nothing is left uncovered.
   pull_request_target:
@@ -41,14 +41,14 @@ permissions:
 concurrency:
   group: welcome-${{ github.event.issue.number || github.event.pull_request.number }}
   # A superseded greeting run has nothing to protect — the newer run posts the
-  # same comment. Cancelling frees the self-hosted mac immediately.
+  # same comment. Cancelling frees the hosted runner immediately.
   cancel-in-progress: true
 
 jobs:
   welcome:
     name: Post welcome comment
     # Native `gh` implementation (no container action), retained for first-time
-    # contributors on the zero-hosted Mac pool.
+    # contributors on an isolated GitHub-hosted runner.
     #
     # This lane deliberately has no actor allowlist because its purpose is to
     # greet first-time contributors. The Mac placement above is the boundary:
@@ -56,7 +56,7 @@ jobs:
     #
     # The Mac watcher handles queued jobs in this separate pool; the timeout
     # below bounds running work only.
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Greet first-time contributor

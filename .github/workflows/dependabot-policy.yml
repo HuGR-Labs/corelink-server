@@ -33,9 +33,9 @@ name: dependabot-policy (license + status-check enforcement)
 # SHA-pinned per HIGH_RISK lane FF-HR-005.
 
 # ============================================================================
-# SECURITY SENTINEL — pull_request_target + self-hosted runner
+# SECURITY SENTINEL — pull_request_target + GitHub-hosted runner
 #
-# This workflow uses pull_request_target on the corelink runner. It checks out
+# This workflow uses pull_request_target on GitHub-hosted Ubuntu. It checks out
 # PR-HEAD content via refs/pull/N/merge into _pr-data, then checks out the base
 # into _base. Every executable step is explicitly rooted in _base; selected
 # manifests are copied as data to an isolated temporary tree.
@@ -74,9 +74,8 @@ jobs:
     name: dependabot-policy sentinel
     # This no-op sentinel is still needed as a required check for ordinary PRs,
     # but it must not allocate the ephemeral fabric for an untrusted actor.
-    # Keep it on the watched Mac pool; the actual Dependabot gate below remains
-    # actor-gated on `corelink`.
-    runs-on: [self-hosted, mac, corelink-builder]
+    # Keep the non-Dependabot sentinel on the isolated GitHub-hosted runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 1
     if: github.actor != 'dependabot[bot]'
     steps:
@@ -89,8 +88,8 @@ jobs:
   # -----------------------------------------------------------------------
   policy-gate:
     name: Dependabot policy gate
-    # zero-hosted (WP-CI): gh + cargo-deny assados; e o merge-ref do PR passa a ser avaliado em microVM descartável, não no Mac do owner
-    runs-on: corelink
+    # The PR merge-ref is inspected as data only; every executed script uses the trusted base checkout.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
 
@@ -192,24 +191,8 @@ jobs:
       # so an unparseable SPDX (e.g., `SEE LICENSE IN <file>`) fails the
       # gate and forces human review.
       # ---------------------------------------------------------------------
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
-      #
-      # ⚠️ `HOST_TRIPLE` is set EXPLICITLY, and that is what keeps this PR
-      # independent of merge order. The script on `main` today resolves the
-      # triple as `HOST_TRIPLE="${HOST_TRIPLE:-x86_64-apple-darwin}"` — a default
-      # from when the only self-hosted fleet was the owner's Macs. On this job's
-      # new Linux host it would look for
-      # `$HOME/.rustup/toolchains/<channel>-x86_64-apple-darwin`, not find it,
-      # and exit 1: this PR alone on `main` would break the Dependabot
-      # supply-chain gate. #1501 teaches the script to detect the triple from
-      # `uname`, but naming it here costs two lines and removes the coupling
-      # entirely — correct whether #1501 lands first, later, or never.
+      # The trusted base checkout reads its pinned channel from
+      # rust-toolchain.toml; rustup provisions it on first use.
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         working-directory: _base
         if: hashFiles('_pr-data/Cargo.toml') != ''

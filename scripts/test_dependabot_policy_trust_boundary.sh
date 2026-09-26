@@ -54,7 +54,7 @@ mutate path-filter .github/workflows/dependabot-policy-trust-boundary.yml \
 mutate permission .github/workflows/dependabot-policy-trust-boundary.yml \
   "  contents: read" "  contents: write"
 mutate runner .github/workflows/dependabot-policy-trust-boundary.yml \
-  "    runs-on: corelink" "    runs-on: ubuntu-latest"
+  "    runs-on: ubuntu-24.04" "    runs-on: corelink"
 mutate timeout .github/workflows/dependabot-policy-trust-boundary.yml \
   "    timeout-minutes: 10" "    timeout-minutes: 0"
 mutate pr-path .github/workflows/dependabot-policy.yml \

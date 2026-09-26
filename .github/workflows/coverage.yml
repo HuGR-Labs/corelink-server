@@ -1,14 +1,10 @@
 name: coverage (R7-1 supply-quality rollup)
 
-# B-110: this heavy link runs on CoreLink's ephemeral Linux runner. The former
-# GitHub-hosted 4-core label was billing-blocked; CoreLink supplies the same
-# measured 4-vCPU/12.5-GB shape without hosted Actions minutes.
+# B-110 coverage workload now runs on the GitHub-hosted Ubuntu runner.
 
 concurrency:
-  # Shared with cas_foundation.yml: workspace and coverage builds must never
-  # compile concurrently against the same heavy-build resource class. A
-  # literal group queues dispatches across refs and non-cancelling preserves
-  # every result.
+  # Keep the existing shared serialization group with cas_foundation.yml and
+  # preserve queued runs.
   group: "corelink-heavy-cargo-build"
   cancel-in-progress: false
 
@@ -56,24 +52,18 @@ on:
 permissions:
   contents: read
 
-# Serialize the heavy release/coverage cargo builds across the self-hosted
-# mac fleet so two never compile against the SAME checkout `target/` dir at
-# once. The group name is a SHARED LITERAL (intentionally NOT
-# `${{ github.workflow }}`) so this workflow serializes AGAINST
-# cas_foundation.yml's heavy build legs too: when both land on the same
-# `corelink-builder-N` runner they race `target/**/deps/*.d` and fail
-# intermittently with "No such file or directory" / "rustc never executed".
-# `cancel-in-progress: false` queues the second run (no lost coverage); these
-# are nightly crons hours apart so the queue is effectively never >1 deep.
-# Keep this group name in lockstep with cas_foundation.yml.
+# Preserve the existing shared literal concurrency group with
+# cas_foundation.yml; changing its value would alter dispatch behavior.
 jobs:
   coverage:
     name: cargo-llvm-cov (workspace HTML + summary)
-    runs-on: corelink  # 4-vCPU/12.5-GB ephemeral Linux box; 2-core links OOM
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain (stable + llvm-tools-preview)
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
