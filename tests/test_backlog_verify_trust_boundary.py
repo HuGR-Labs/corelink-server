@@ -101,6 +101,7 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         (outside / "untracked.py").write_text("must not be traversed", encoding="utf-8")
         for root in (trusted, candidate):
             (root / ".github" / "outside-link").symlink_to(outside, target_is_directory=True)
+            (root / ".git").symlink_to(outside, target_is_directory=True)
 
         with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
             backlog_verify, "B057_C0_TARGETS", targets
@@ -111,6 +112,8 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             self.assertEqual(trusted_entries[".github/actionlint.yaml"][2], "../.actionlint.yaml")
             self.assertIn(".github/outside-link", candidate_entries)
             self.assertNotIn(".github/outside-link/untracked.py", candidate_entries)
+            self.assertIn(".git", candidate_entries)
+            self.assertNotIn(".git/untracked.py", candidate_entries)
             self.assertTrue(backlog_verify._preauthorized_b057_c0(candidate, trusted))
 
     def test_b057_c0_rejects_added_deleted_and_mutated_symlinks(self) -> None:
@@ -120,7 +123,7 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             backlog_verify, "B057_C0_TARGETS", targets
         ):
             self.assertTrue(backlog_verify._preauthorized_b057_c0(candidate, trusted))
-            for mutation in ("mutated", "deleted", "added"):
+            for mutation in ("mutated", "deleted", "added", "git-directory"):
                 with self.subTest(mutation=mutation):
                     mutated = Path(tempfile.mkdtemp())
                     self.addCleanup(shutil.rmtree, mutated)
@@ -131,8 +134,12 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
                         (mutated_candidate / link).symlink_to("../different.yaml")
                     elif mutation == "deleted":
                         (mutated_candidate / link).unlink()
-                    else:
+                    elif mutation == "added":
                         (mutated_candidate / ".github" / "extra-link").symlink_to("../.actionlint.yaml")
+                    else:
+                        git_target = mutated / "git-metadata"
+                        git_target.mkdir()
+                        (mutated_candidate / ".git").symlink_to(git_target, target_is_directory=True)
                     self.assertFalse(backlog_verify._preauthorized_b057_c0(mutated_candidate, trusted))
 
     def test_b057_c0_rejects_symlinks_at_every_pinned_target(self) -> None:

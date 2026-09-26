@@ -539,14 +539,14 @@ def _candidate_tree_entries(root: Path) -> dict[str, tuple[str, int, str]]:
         current_path = Path(current)
         walk_directories: list[str] = []
         for name in directories:
-            if name == ".git":
-                continue
             path = current_path / name
             relative = path.relative_to(root).as_posix()
             try:
                 mode = path.lstat().st_mode
             except OSError as exc:
                 raise RuntimeError(f"candidate tree entry unavailable: {relative}: {exc}") from exc
+            if name == ".git" and stat.S_ISDIR(mode):
+                continue
             if stat.S_ISLNK(mode):
                 entries[relative] = ("symlink", stat.S_IMODE(mode), os.readlink(path))
             elif stat.S_ISDIR(mode):
