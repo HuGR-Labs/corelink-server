@@ -14,8 +14,8 @@ use axum::{
 use corelink_handler_cas::{
     CasDeleteHandler, CasDeleteRequest, CasDeleteResponse, CasHandlerError, CasListHandler,
     CasListRequest, CasListResponse, CasReadHandler, CasReadRequest, CasReadResponse,
-    CasWriteHandler, CasWriteRequest, CasWriteResponse, InMemoryAuditSink, InMemoryCasHandler,
-    InMemorySliObserver,
+    CasWriteHandler, CasWriteOperationContext, CasWriteRequest, CasWriteResponse,
+    InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
 };
 use http_body::Frame;
 use http_body_util::StreamBody;
@@ -35,6 +35,38 @@ type CasRequestAuth = (
     crate::scope::CacheScope,
     axum::http::HeaderMap,
 );
+
+/// Admit an optional synthetic CAS write claim. Ordinary requests avoid
+/// constructing a D1 client; a supplied claim always goes through signature
+/// verification and one-time durable consumption before a writer is called.
+async fn staging_cas_write_context(
+    headers: &axum::http::HeaderMap,
+) -> Result<Option<Arc<dyn CasWriteOperationContext>>, ()> {
+    use crate::storage::staging_load_test_admission::{
+        admit_staging_load_test_request, StagingLoadTestAdmissionGate,
+        STAGING_LOAD_TEST_ADMISSION_HEADER,
+    };
+    use crate::storage::staging_load_test_ownership::StagingLoadTestScenario;
+
+    if !headers.contains_key(STAGING_LOAD_TEST_ADMISSION_HEADER) {
+        return Ok(None);
+    }
+    let gate = StagingLoadTestAdmissionGate::from_env().map_err(|_| ())?;
+    let admission = admit_staging_load_test_request(
+        Some(&gate),
+        headers,
+        StagingLoadTestScenario::Cas,
+    )
+    .await
+    .map_err(|_| ())?;
+    admission
+        .map(|context| {
+            Arc::new(crate::storage::cas_write_fence::StagingCasWriteContext::new(context))
+                as Arc<dyn CasWriteOperationContext>
+        })
+        .ok_or(())
+        .map(Some)
+}
 
 /// Canonical CAS list route path — `GET /v1/cas/:tenant` (D-8).
 pub const CAS_LIST_ROUTE: &str = "/v1/cas/{tenant}";

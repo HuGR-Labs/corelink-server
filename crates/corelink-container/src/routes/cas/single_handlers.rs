@@ -165,6 +165,10 @@ async fn handle_write(
     if let Some(resp) = pat_gate_reject_write(&state, &auth.0, &headers).await {
         return resp;
     }
+    let staging_context = match staging_cas_write_context(&headers).await {
+        Ok(context) => context,
+        Err(()) => return (StatusCode::FORBIDDEN, "invalid staging admission").into_response(),
+    };
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) — see
     // `handle_read`. AFTER the scope gate, BEFORE storage.
     if let Some(gate) = state.quota.as_ref() {
@@ -195,7 +199,10 @@ async fn handle_write(
     // over-cap or accounting-fault write surfaces here as a sentinel-tagged
     // `Internal` error that `map_err` maps to 402 / 503. The route no longer
     // accrues (that would double-count through the decorated handler).
-    match state.write.write(req) {
+    match state
+        .write
+        .write_with_effect_and_context(req, staging_context)
+    {
         Ok(resp) => {
             // usage-metering-roi: write (both fresh 201 and idempotent 200 are a
             // WRITE op) — fire-and-forget, no await/I/O on the hot path.
@@ -209,6 +216,6 @@ async fn handle_write(
             };
             (code, resp.content_hash).into_response()
         }
-        Err(e) => map_err(e),
+        Err(failure) => map_err(failure.cause),
     }
 }
