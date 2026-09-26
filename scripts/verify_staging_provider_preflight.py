@@ -9,14 +9,34 @@ from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/staging-provider-preflight.yml")
 PROVIDER = Path("scripts/staging_bootstrap_provider.py")
+RENDERER = Path("scripts/render_staging_wrangler.py")
+# Exact source pins from canonical main@b295292f. Any provider/renderer source
+# drift must receive explicit preflight safety review and updated pins.
+CANONICAL_PROVIDER_SOURCE_SHA256 = (
+    "9a64166a2ebeb5832c48a7ee8b62bb2356c5365d8412fbef8aa4f690b3bd5773"
+)
+CANONICAL_RENDERER_SOURCE_SHA256 = (
+    "1cc4fcd4af0bcaa720a6b3f55d739091d77c117941d82bcc77332a3f3dff3b5e"
+)
 # Exact source pin for get() in canonical main@b295292f. This binds request
 # construction, all intervening statements, and urlopen send behavior.
-CANONICAL_GET_SOURCE_SHA256 = "1a919cdf4974c3d7f2e102dd889c8f59fef5a63447874d690f13531ae55f8a32"
+CANONICAL_GET_SOURCE_SHA256 = (
+    "1a919cdf4974c3d7f2e102dd889c8f59fef5a63447874d690f13531ae55f8a32"
+)
 
 
 def main() -> int:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     provider = PROVIDER.read_text(encoding="utf-8")
+    source_pins = (
+        (PROVIDER, CANONICAL_PROVIDER_SOURCE_SHA256),
+        (RENDERER, CANONICAL_RENDERER_SOURCE_SHA256),
+    )
+    for path, expected in source_pins:
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise SystemExit(
+                f"{path} changed from the reviewed preflight source; review and update the pin explicitly"
+            )
     required_workflow = (
         "github.repository == 'HuGR-dev/corelink-server'",
         "github.ref == 'refs/heads/main' && github.ref_protected",
