@@ -8,17 +8,17 @@ from scripts import plan_staging_provider as plan
 
 
 class StagingPlanTests(unittest.TestCase):
-    def test_canonical_dns_presence_is_exact_and_proxied(self) -> None:
+    def test_any_exact_canonical_dns_record_blocks_quarantined_bootstrap(self) -> None:
         self.assertFalse(plan.canonical_dns_present([]))
         self.assertFalse(plan.canonical_dns_present([{
-            "name": plan.HOSTNAME,
-            "proxied": False,
-            "type": "CNAME",
+            "name": "other.humangr.com",
+            "proxied": True,
+            "type": "A",
         }]))
         self.assertTrue(plan.canonical_dns_present([{
             "name": plan.HOSTNAME,
-            "proxied": True,
-            "type": "CNAME",
+            "proxied": False,
+            "type": "TXT",
         }]))
 
     def test_any_canonical_route_blocks_quarantined_bootstrap(self) -> None:

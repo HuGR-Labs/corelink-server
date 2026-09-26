@@ -92,12 +92,7 @@ def result_items(result: Any) -> list[dict[str, Any]]:
 
 
 def canonical_dns_present(result: Any) -> bool:
-    return any(
-        item.get("name") == HOSTNAME
-        and item.get("proxied") is True
-        and item.get("type") in {"A", "AAAA", "CNAME"}
-        for item in result_items(result)
-    )
+    return any(item.get("name") == HOSTNAME for item in result_items(result))
 
 
 def canonical_route_present(result: Any) -> bool:
