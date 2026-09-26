@@ -147,7 +147,7 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
             backlog_verify, "B057_C0_TARGETS", targets
         ):
-            for relative, contents in targets.items():
+            for relative in targets:
                 with self.subTest(target=relative):
                     mutated = Path(tempfile.mkdtemp())
                     self.addCleanup(shutil.rmtree, mutated)
@@ -156,7 +156,7 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
                     link = mutated_candidate / relative
                     link.unlink()
                     external = mutated / "pinned-bytes"
-                    external.write_bytes(contents)
+                    external.write_bytes((candidate / relative).read_bytes())
                     link.symlink_to(external)
                     self.assertFalse(backlog_verify._preauthorized_b057_c0(mutated_candidate, trusted))
 
