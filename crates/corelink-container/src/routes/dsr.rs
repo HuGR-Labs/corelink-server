@@ -140,6 +140,31 @@ impl ErasureRequestContext for StagingDsrRequestContext {
     }
 }
 
+/// Recover only this route's typed, verified request context from the shared
+/// erasure seam. An unrelated or forged carrier fails closed instead of being
+/// treated as ordinary traffic.
+pub(super) fn staging_admission_context(
+    context: Option<&dyn ErasureRequestContext>,
+) -> Result<
+    Option<&crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext>,
+    &'static str,
+> {
+    let Some(context) = context else {
+        return Ok(None);
+    };
+    let context = context
+        .as_any()
+        .downcast_ref::<StagingDsrRequestContext>()
+        .ok_or("DSR staging ownership context is invalid")?;
+    context
+        .0
+        .require_ownership_scenario(
+            crate::storage::staging_load_test_ownership::StagingLoadTestScenario::Dsr,
+        )
+        .map_err(|_| "DSR staging ownership context is invalid")?;
+    Ok(Some(&context.0))
+}
+
 impl std::fmt::Debug for DsrRouteState {
     // Redact the internal-auth secret; never let it reach a log/Debug sink.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -151,6 +176,22 @@ impl std::fmt::Debug for DsrRouteState {
             .field("staging_admission", &self.staging_admission.is_some())
             .finish()
     }
+}
+
+async fn admit_request(
+    state: &DsrRouteState,
+    headers: &HeaderMap,
+) -> Result<
+    Option<Arc<crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext>>,
+    Response,
+> {
+    crate::storage::staging_load_test_admission::admit_staging_load_test_request(
+        state.staging_admission.as_deref(),
+        headers,
+        crate::storage::staging_load_test_ownership::StagingLoadTestScenario::Dsr,
+    )
+    .await
+    .map_err(|_| (StatusCode::FORBIDDEN, "invalid staging admission").into_response())
 }
 
 /// Constant-time internal-auth check. Mirrors
@@ -521,10 +562,20 @@ async fn handle_access(
             return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
         }
     };
+    let admission = match admit_request(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return response,
+    };
     let Some(d1) = state.d1.as_ref() else {
         return (StatusCode::SERVICE_UNAVAILABLE, "storage unconfigured").into_response();
     };
-    match access::run_access(d1, &msg.dsr_id, &msg.tenant_id, now_ms()) {
+    match access::run_access(
+        d1,
+        &msg.dsr_id,
+        &msg.tenant_id,
+        now_ms(),
+        admission.as_deref(),
+    ) {
         Ok(export) => (
             StatusCode::OK,
             Json(serde_json::json!({ "ok": true, "dsr_id": msg.dsr_id, "export": export })),
@@ -555,6 +606,10 @@ async fn handle_portability(
             return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
         }
     };
+    let admission = match admit_request(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return response,
+    };
     let Some(d1) = state.d1.as_ref() else {
         return (StatusCode::SERVICE_UNAVAILABLE, "storage unconfigured").into_response();
     };
@@ -564,6 +619,7 @@ async fn handle_portability(
         &msg.dsr_id,
         &msg.tenant_id,
         now_ms(),
+        admission.as_deref(),
     ) {
         Ok((export, receipt)) => (
             StatusCode::OK,
@@ -604,6 +660,10 @@ async fn handle_rectification(
             return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
         }
     };
+    let admission = match admit_request(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return response,
+    };
     let Some(d1) = state.d1.as_ref() else {
         return (StatusCode::SERVICE_UNAVAILABLE, "storage unconfigured").into_response();
     };
@@ -615,6 +675,7 @@ async fn handle_rectification(
         &msg.field,
         &msg.new_value,
         now_ms(),
+        admission.as_deref(),
     ) {
         // Applied.
         Ok(Ok(result)) => (
@@ -731,19 +792,12 @@ async fn handle_erase(
             return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
         }
     };
-    let admission =
-        match crate::storage::staging_load_test_admission::admit_staging_load_test_request(
-            state.staging_admission.as_deref(),
-            &headers,
-            crate::storage::staging_load_test_ownership::StagingLoadTestScenario::Dsr,
-        )
-        .await
-        {
-            Ok(context) => context,
-            Err(_) => return (StatusCode::FORBIDDEN, "invalid staging admission").into_response(),
-        };
-    let request_context = admission.map(|context| {
-        Arc::new(StagingDsrRequestContext(context)) as Arc<dyn ErasureRequestContext>
+    let admission = match admit_request(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return response,
+    };
+    let request_context = admission.as_ref().map(|context| {
+        Arc::new(StagingDsrRequestContext(Arc::clone(context))) as Arc<dyn ErasureRequestContext>
     });
     match state
         .worker
@@ -795,19 +849,12 @@ async fn handle_verify(
             return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
         }
     };
-    let admission =
-        match crate::storage::staging_load_test_admission::admit_staging_load_test_request(
-            state.staging_admission.as_deref(),
-            &headers,
-            crate::storage::staging_load_test_ownership::StagingLoadTestScenario::Dsr,
-        )
-        .await
-        {
-            Ok(context) => context,
-            Err(_) => return (StatusCode::FORBIDDEN, "invalid staging admission").into_response(),
-        };
-    let request_context = admission.map(|context| {
-        Arc::new(StagingDsrRequestContext(context)) as Arc<dyn ErasureRequestContext>
+    let admission = match admit_request(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return response,
+    };
+    let request_context = admission.as_ref().map(|context| {
+        Arc::new(StagingDsrRequestContext(Arc::clone(context))) as Arc<dyn ErasureRequestContext>
     });
     match state
         .worker
@@ -832,6 +879,7 @@ async fn handle_verify(
                         &msg.tenant_id,
                         now_ms(),
                         completions,
+                        admission.as_deref(),
                     );
                 }
             }

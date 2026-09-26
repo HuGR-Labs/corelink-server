@@ -67,7 +67,7 @@ use corelink_adapter_host::cargo::ports::{
 use corelink_adapter_host::cargo::translate::key_from_path;
 use corelink_adapter_host::cargo::{server, CargoAdapterConfig};
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
-use corelink_handler_cas::{CasReadHandler, CasWriteHandler, CasWriteOperationContext};
+use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
 
 use crate::adapter_cache::{MoatCache, MoatError, UrlMapStore};
 use crate::adapter_pat::{PatVerifier, VerifyError};
@@ -232,17 +232,6 @@ struct CargoGateState {
     moat: Arc<MoatCache>,
 }
 
-/// Opaque admission carried across Cargo's async and blocking CAS bridges.
-#[derive(Debug)]
-struct StagingCargoWriteContext(
-    Arc<crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext>,
-);
-
-impl CasWriteOperationContext for StagingCargoWriteContext {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
 /// Build the `/cargo/*` sub-router from shared CAS handlers + a PAT→tenant
 /// resolver. The SAME resolver backs both the adapter (tenant resolution) and
 /// the gate's two-layer write enforcement (F27) — one PAT verification, not two.

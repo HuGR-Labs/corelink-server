@@ -69,7 +69,13 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::routes::signup::{PilotSignupRecord, SignupStore};
-use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
+use crate::storage::{
+    d1_http::{D1BatchStatement, D1HttpClient, D1Row},
+    staging_load_test_ownership::{
+        StagingLoadTestDisposition, StagingLoadTestResourceClass, StagingLoadTestScenario,
+        StagingLoadTestWriteContext,
+    },
+};
 
 /// Idempotency lookup — same email OR same token_id returns the existing
 /// row verbatim. Binds (?1..?2): email, token_id.
@@ -335,6 +341,62 @@ impl SignupStore for D1HttpSignupStore {
                 Err("signup store: D1 insert failed")
             }
         }
+    }
+
+    fn insert_or_existing_with_context(
+        &self,
+        record: PilotSignupRecord,
+        context: StagingLoadTestWriteContext<'_>,
+    ) -> Result<PilotSignupRecord, &'static str> {
+        let Some(context) = context else {
+            return self.insert_or_existing(record);
+        };
+        context
+            .require_ownership_scenario(StagingLoadTestScenario::Signup)
+            .map_err(|_| "signup store: staging ownership context rejected")?;
+
+        // Synthetic retries must not reuse an existing reservation as a new
+        // successful write. The ordinary `None` path retains its historical
+        // idempotent lookup behavior above.
+        if self
+            .lookup_existing(&record.email, &record.token_id)?
+            .is_some()
+        {
+            return Err("signup store: duplicate staging signup rejected");
+        }
+
+        let opaque_handle = record.id.to_string();
+        let registration = context
+            .ownership_registration(
+                StagingLoadTestResourceClass::SignupArtifact,
+                StagingLoadTestDisposition::Disposable,
+                &opaque_handle,
+            )
+            .map_err(|_| "signup store: staging ownership registration rejected")?;
+        let registered_at_ms = i64::try_from(record.signed_up_at_ms)
+            .map_err(|_| "signup store: staging ownership timestamp rejected")?;
+        let ownership = registration
+            .d1_statement(registered_at_ms)
+            .map_err(|_| "signup store: staging ownership registration rejected")?;
+
+        let insert_binds = vec![
+            json!(record.id.to_string()),
+            json!(record.tenant_id.to_string()),
+            json!(record.email.clone()),
+            json!(record.company_name.clone()),
+            json!(record.tier_hint.clone()),
+            json!(record.expected_use_case.clone()),
+            json!(registered_at_ms),
+            json!(record.state.clone()),
+            json!(record.token_id.clone()),
+        ];
+        self.db
+            .batch(vec![
+                D1BatchStatement::new(SQL_INSERT, insert_binds),
+                ownership,
+            ])
+            .map_err(|_| "signup store: staging signup batch failed")?;
+        Ok(record)
     }
 }
 

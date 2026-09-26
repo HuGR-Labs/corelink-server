@@ -46,6 +46,21 @@ import {
 } from "./clerk_identity.js";
 import type { AnalyticsEmitter, ApiClient, MacroRegion } from "./clerk_identity.js";
 import { isProductionEnvironment } from "../../../../config/production_environment.js";
+import {
+  insertPatStatement,
+  insertTenantStatement,
+  insertTenantOrgMapStatement,
+  insertTenant,
+  insertTenantOrgMap,
+  seedTenantEntitlementStatements,
+  seedTenantEntitlements,
+} from "../lib/d1.js";
+import {
+  signupArtifactHandle,
+  signupOwnershipContext,
+  writeSignupArtifactBatch,
+} from "../signup_writer_ownership.js";
+import type { StagingOwnershipContext } from "../staging_load_test_ownership.js";
 export {
   d1AnalyticsEmitter,
   emailHashCandidates,
@@ -68,11 +83,6 @@ export {
   isValidClerkUserId,
 } from "./clerk_erasure.js";
 export type { ClerkUserDeletedEvent, DsrQueuedV1 } from "./clerk_erasure.js";
-import {
-  insertTenant,
-  insertTenantOrgMap,
-  seedTenantEntitlements,
-} from "../lib/d1.js";
 
 export interface ClerkUserCreatedEvent {
   type: "user.created";
@@ -167,6 +177,9 @@ export interface AutoProvisionEnv {
    * are present before driving GDPR erasure. Bound via `[vars]` in wrangler.toml.
    */
   ENVIRONMENT?: string;
+
+  /** Staging-only key shared with the container admission verifier. */
+  CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY?: string;
 
   /**
    * Server-held salt for the CTRL-PRIV-001 `email_hash` pseudonym (secrets
@@ -453,7 +466,7 @@ export async function autoProvisionFromClerkEvent(input: {
 export async function handleClerkWebhook(
   request: Request,
   env: AutoProvisionEnv,
-  apiFactory: (env: AutoProvisionEnv) => ApiClient,
+  apiFactory: (env: AutoProvisionEnv, context?: StagingOwnershipContext | null) => ApiClient,
 ): Promise<Response> {
   if (request.method !== "POST") {
     return new Response("method_not_allowed", { status: 405 });
@@ -530,6 +543,17 @@ export async function handleClerkWebhook(
     );
   }
 
+  let ownershipContext: StagingOwnershipContext | null;
+  try {
+    ownershipContext = await signupOwnershipContext(
+      request,
+      env.ENVIRONMENT,
+      env.CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY,
+    );
+  } catch {
+    return new Response("invalid_staging_ownership", { status: 403 });
+  }
+
   // RESIDENCY SOURCE — do NOT derive the tenant region from this webhook's
   // `cf.colo`. A Clerk webhook is delivered by SVIX (server-to-server), so
   // `request.cf.colo` is SVIX's sender PoP, NOT the end-user's location. Deriving
@@ -565,6 +589,9 @@ export async function handleClerkWebhook(
         .bind(event.data.id)
         .first<{ tenant_id: string }>();
       if (existing !== null) {
+        if (ownershipContext !== null) {
+          return new Response("duplicate_staging_signup", { status: 409 });
+        }
         // A tenant row is NOT proof of complete provisioning — require a live
         // (non-expired) PAT before treating the signup as done.
         const livePat = await env.CONFIG_DB
@@ -671,11 +698,23 @@ export async function handleClerkWebhook(
     const configDb = env.CONFIG_DB;
     const writeOrgMap = configDb
       ? async (clerkOrgId: string, tenantId: string): Promise<void> => {
-          await insertTenantOrgMap(configDb, {
+          const nowMs = Date.now();
+          const params = {
             clerkOrgId,
             tenantId,
-            nowMs: Date.now(),
-          });
+            nowMs,
+          };
+          if (ownershipContext === null) {
+            await insertTenantOrgMap(configDb, params);
+          } else {
+            await writeSignupArtifactBatch(
+              configDb,
+              ownershipContext,
+              await signupArtifactHandle("clerk-org-map", clerkOrgId),
+              [insertTenantOrgMapStatement(configDb, params)],
+              nowMs,
+            );
+          }
         }
       : undefined;
 
@@ -687,10 +726,22 @@ export async function handleClerkWebhook(
     // below maps it to 500 and Svix retries; these rows are load-bearing.
     const seedEntitlements = configDb
       ? async (tenantId: string): Promise<void> => {
-          await seedTenantEntitlements(configDb, {
+          const nowMs = Date.now();
+          const params = {
             tenantId,
-            nowMs: Date.now(),
-          });
+            nowMs,
+          };
+          if (ownershipContext === null) {
+            await seedTenantEntitlements(configDb, params);
+          } else {
+            await writeSignupArtifactBatch(
+              configDb,
+              ownershipContext,
+              await signupArtifactHandle("clerk-entitlements", tenantId),
+              seedTenantEntitlementStatements(configDb, params),
+              nowMs,
+            );
+          }
         }
       : undefined;
 
@@ -698,7 +749,7 @@ export async function handleClerkWebhook(
       event,
       colo,
       svixId,
-      api: apiFactory(env),
+      api: apiFactory(env, ownershipContext),
       analytics: d1AnalyticsEmitter(env.ANALYTICS_DB),
       writeOrgMap,
       seedEntitlements,
@@ -757,7 +808,10 @@ export async function handleClerkWebhook(
  *   - All D1 queries are parameterized.
  *   - Internal auth header uses the CORELINK_INTERNAL_AUTH_KEY binding.
  */
-export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
+export function defaultApiClient(
+  env: AutoProvisionEnv,
+  ownershipContext: StagingOwnershipContext | null = null,
+): ApiClient {
   const nowMs = Date.now();
   // Per-year TTL for auto-provisioned PATs (365 days).
   const patTtlSeconds = 365 * 24 * 60 * 60;
@@ -774,6 +828,9 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
     ): Promise<{ id: string }> {
       const tenantId = crypto.randomUUID();
       if (!env.CONFIG_DB) {
+        if (ownershipContext !== null) {
+          throw new Error("staging signup D1 is unavailable");
+        }
         // Dev/CI without D1 binding — return a stable fake.
         return { id: tenantId };
       }
@@ -789,14 +846,30 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
       // backlog #29: use the PARAMETERIZED insertTenant helper (it threads the
       // chosen `primary_region` instead of the old hardcoded 'enam' inline
       // INSERT). insertTenant is INSERT OR IGNORE — same race-safety as before.
-      await insertTenant(env.CONFIG_DB, {
+      const tenantParams = {
         tenantId,
         primaryRegion: region,
         tenantSlug: name,
         emailHash,
         clerkUserId: ownerUserId,
         nowMs,
-      });
+      };
+      if (ownershipContext === null) {
+        await insertTenant(env.CONFIG_DB, tenantParams);
+      } else {
+        const prior = await env.CONFIG_DB
+          .prepare("SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1")
+          .bind(ownerUserId)
+          .first<{ tenant_id: string }>();
+        if (prior !== null) throw new Error("duplicate staging signup rejected");
+        await writeSignupArtifactBatch(
+          env.CONFIG_DB,
+          ownershipContext,
+          await signupArtifactHandle("clerk-tenant", ownerUserId),
+          [insertTenantStatement(env.CONFIG_DB, tenantParams)],
+          nowMs,
+        );
+      }
 
       // Read back the WINNING tenant by clerk_user_id. Under concurrent
       // duplicate Clerk delivery, INSERT OR IGNORE may have skipped our row
@@ -895,23 +968,27 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
 
       // Insert the PAT row to D1 CONFIG_DB.
       if (env.CONFIG_DB) {
-        await env.CONFIG_DB.prepare(
-          "INSERT OR IGNORE INTO pat " +
-            "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
-            " shown_once_token, shown_once_consumed, created_ms) " +
-            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
-        )
-          .bind(
-            mint.pat_id,
-            tenantId,
-            mint.hash,
-            scope, // persist the caller-requested scope (read-write), NOT admin
-            mint.expires_ms,
-            mint.token_id,
-            crypto.randomUUID(), // shown_once_token (pre-consumed)
+        const patStatement = insertPatStatement(env.CONFIG_DB, {
+          patId: mint.pat_id,
+          tenantId,
+          patHash: mint.hash,
+          scope, // persist the caller-requested scope (read-write), NOT admin
+          expiresMs: mint.expires_ms,
+          tokenId: mint.token_id,
+          shownOnceToken: crypto.randomUUID(), // shown_once_token (pre-consumed)
+          nowMs,
+        });
+        if (ownershipContext === null) {
+          await patStatement.run();
+        } else {
+          await writeSignupArtifactBatch(
+            env.CONFIG_DB,
+            ownershipContext,
+            await signupArtifactHandle("clerk-initial-pat", tenantId),
+            [patStatement],
             nowMs,
-          )
-          .run();
+          );
+        }
       }
 
       // Return plaintext — NEVER log this value.
