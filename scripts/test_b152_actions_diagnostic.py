@@ -275,6 +275,7 @@ class B152DiagnosticTests(unittest.TestCase):
 
     def test_startup_failure_is_retained_as_runner_outcome(self):
         startup = run(99, "2026-08-31T00:00:00Z", conclusion="startup_failure")
+        startup.update(workflow_id=9, path=".github/workflows/other.yml")
         with patch.object(diag, "collect_runs", return_value=[startup]), \
              patch.object(diag, "collect_jobs", return_value=[]):
             report = diag.collect_evidence(
@@ -319,6 +320,11 @@ class B152DiagnosticTests(unittest.TestCase):
             {"workflow_id": 9, "path": "BuildFailed"},
             {"workflow_id": "303501160", "path": "BuildFailed"},
             {"workflow_id": 303501160, "path": None},
+            {"workflow_id": "bad", "path": "other.yml"},
+            {"workflow_id": 9, "path": ""},
+            {"workflow_id": 9},
+            {"path": "other.yml"},
+            {},
         )
         for identity in candidates:
             with self.subTest(identity=identity), self.assertRaises(diag.EvidenceUnavailable):

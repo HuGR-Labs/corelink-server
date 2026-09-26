@@ -989,49 +989,46 @@ def test_toolchain_path_in_run_remains_banned(tmp_path: pathlib.Path) -> None:
 
 
 def test_live_repo_reach_is_not_vacuous() -> None:
-    """
-    Guards against the other half of the defect: a parser break that inspects
-    nothing would otherwise print a cheerful OK. The script has its own
-    zero-check; this pins a floor well above zero so a large silent shrink is a
-    test failure rather than a quieter success message.
-    """
+    """Pin the live inspected runner population to a reviewable exact census."""
     import io
     from contextlib import redirect_stdout
+    import os
+
+    # #2617 moved the former policy/coverage population to GitHub-hosted runners,
+    # so the old 188-job floor no longer describes protected main. Keep the
+    # current identities explicit: a job addition, removal, or rename requires
+    # deliberate review of the hosted census and this contract. The release
+    # matrix is counted conservatively because its nested runner expression is
+    # unresolved by the validator, even though its current matrix values are
+    # GitHub-hosted.
+    expected = {
+        ("container-build-push-prod.yml", "build-push"),
+        ("okf-autoreconcile.yml", "autoreconcile"),
+        ("okf_nightly.yml", "okf-nightly"),
+        ("release-cli.yml", "build"),
+    }
+    workflow_root = REPO_ROOT / vnsrm.WORKFLOWS
+
+    actual = {
+        (path.name, job.name)
+        for path in workflow_root.glob("*.yml")
+        for job in vnsrm._load_jobs(path)
+        if vnsrm.job_is_self_hosted(job)
+    }
+    assert actual == expected, (
+        "the self-hosted workflow/job inventory changed; review the current "
+        f"runner census before updating this contract: {sorted(actual)!r}"
+    )
 
     buf = io.StringIO()
     cwd = pathlib.Path.cwd()
-    import os
-
     os.chdir(REPO_ROOT)
     try:
         with redirect_stdout(buf):
-            vnsrm.main()
+            rc = vnsrm.main([])
     finally:
         os.chdir(cwd)
     out = buf.getvalue()
     inspected = int(out.split("self-hosted job(s)")[0].split()[-1])
-    # The floor must sit ABOVE the reach of the defect this PR exists to close,
-    # or the anti-vacuity check cannot see that class at all. The relation is
-    # what matters, and it is the only thing stated as fact here:
-    #
-    #     mutant reach  <  188  <=  live reach
-    #
-    # where "mutant" is `_strip_trailing_comment` reverted to `runs_on.strip()`
-    # — i.e. the bug. A floor of 150 sits BELOW the mutant reach, so the mutation
-    # passed it: the assertion was decorative for the very regression it guards.
-    #
-    # Deliberately NOT pinned to an absolute live count, because that count is a
-    # property of the tree you measure, not of the guard: it moves whenever a
-    # workflow gains or loses a self-hosted job, so a number written here is
-    # already two off by the time someone reads it a month from now. Reproduce
-    # the current pair instead of trusting a literal:
-    #
-    #     python3 scripts/validate_no_shared_rustup_mutation.py          # live
-    #     # then revert structural loading and re-run                    # mutant
-    #
-    # Snapshot 2026-09-01 on this tree: live=197. The old line matcher would
-    # inspect fewer jobs; 188 remains above that mutant reach and below live
-    # reach with room for ordinary workflow churn. If a legitimate change drops
-    # live reach below the floor, RAISE the floor deliberately with the newly
-    # measured pair — never lower it to make the suite pass.
-    assert inspected >= 188, f"guard reach collapsed to {inspected}: {out!r}"
+    assert inspected == len(actual) > 0, f"guard census diverged: {out!r}"
+    assert rc == 0, f"live validator reported a violation: {out!r}"

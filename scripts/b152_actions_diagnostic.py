@@ -89,15 +89,18 @@ def classify_run_outcome(run: dict[str, Any], run_conclusion: str) -> str:
 
     workflow_id = run.get("workflow_id")
     workflow_path = run.get("path")
-    claims_b250_identity = workflow_id == B250_WORKFLOW_ID or workflow_path == B250_WORKFLOW_PATH
-    if not claims_b250_identity:
-        return classification
     if (
         isinstance(workflow_id, bool)
         or not isinstance(workflow_id, int)
-        or workflow_id != B250_WORKFLOW_ID
-        or workflow_path != B250_WORKFLOW_PATH
+        or workflow_id <= 0
+        or not isinstance(workflow_path, str)
+        or not workflow_path.strip()
     ):
+        raise EvidenceUnavailable("startup_failure has malformed workflow identity")
+    claims_b250_identity = workflow_id == B250_WORKFLOW_ID or workflow_path == B250_WORKFLOW_PATH
+    if not claims_b250_identity:
+        return classification
+    if workflow_id != B250_WORKFLOW_ID or workflow_path != B250_WORKFLOW_PATH:
         raise EvidenceUnavailable("startup_failure has incomplete or conflicting B-250 workflow identity")
     return B250_RUN_CLASSIFICATION
 
