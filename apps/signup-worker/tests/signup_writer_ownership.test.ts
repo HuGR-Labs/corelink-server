@@ -125,7 +125,11 @@ describe("signup writer ownership", () => {
     const context = await signupOwnershipContext(await requestWithOwnership(), "staging", KEY, NOW + 1);
     if (context === null) throw new Error("verified context missing");
     const api = defaultApiClient(
-      { CONFIG_DB: db, CORELINK_API_BASE: "https://api.test" },
+      {
+        CONFIG_DB: db,
+        CORELINK_API_BASE: "https://api.test",
+        CLERK_WEBHOOK_SECRET: "test-secret",
+      },
       context,
     );
     await api.createTenant("test-tenant", "user_test", "enam");
