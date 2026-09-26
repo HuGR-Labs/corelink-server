@@ -96,9 +96,13 @@ use corelink_erasure_attestation::{
 use corelink_privacy_erasure_worker::backends::CANONICAL_EMPTY_TENANT_HASH;
 use corelink_privacy_erasure_worker::event::{BackendCompletion, BACKEND_COUNT};
 
-use super::d1util::{clamp_ms, d1_query_blocking};
-use crate::storage::d1_http::D1HttpClient;
+use super::d1util::{clamp_ms, d1_batch_blocking, d1_query_blocking};
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient};
 use crate::storage::r2_s3::R2S3Client;
+use crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext;
+use crate::storage::staging_load_test_ownership::{
+    StagingLoadTestDisposition, StagingLoadTestResourceClass,
+};
 
 /// `kms_provider` recorded in the attestation — truthful: CoreLink's launch
 /// erasure is a D1/R2/Stripe delete-set, not a BYOK KMS crypto-erase.
@@ -214,9 +218,22 @@ fn verified_evidence_segments(completions: &[BackendCompletion]) -> Option<Vec<S
 /// network clients; no production code path constructs anything else.
 trait AttestationSinks {
     /// PUT the signed bundle JSON under `key` in the region's R2 audit bucket.
-    fn put_audit_object(&self, key: &str, bytes: Vec<u8>) -> Result<(), String>;
+    fn put_audit_object(
+        &self,
+        key: &str,
+        bytes: Vec<u8>,
+        ownership_context: Option<&StagingLoadTestAdmissionContext>,
+        now_ms: u64,
+    ) -> Result<(), String>;
     /// Execute one parameterised D1 statement (the index / public-key upsert).
-    fn exec_d1(&self, sql: &str, params: Vec<Value>) -> Result<(), String>;
+    fn exec_d1(
+        &self,
+        sql: &str,
+        params: Vec<Value>,
+        ownership_context: Option<&StagingLoadTestAdmissionContext>,
+        resource_handle: &str,
+        now_ms: u64,
+    ) -> Result<(), String>;
 }
 
 /// Live sinks: the regional R2 audit-bucket client + the D1 HTTP client.
@@ -226,14 +243,54 @@ struct LiveAttestationSinks<'a> {
 }
 
 impl AttestationSinks for LiveAttestationSinks<'_> {
-    fn put_audit_object(&self, key: &str, bytes: Vec<u8>) -> Result<(), String> {
+    fn put_audit_object(
+        &self,
+        key: &str,
+        bytes: Vec<u8>,
+        ownership_context: Option<&StagingLoadTestAdmissionContext>,
+        now_ms: u64,
+    ) -> Result<(), String> {
+        if let Some(context) = ownership_context {
+            return super::access::persist_owned_r2(
+                self.r2,
+                self.d1,
+                context,
+                StagingLoadTestResourceClass::AuditEvidence,
+                StagingLoadTestDisposition::Retained,
+                key,
+                bytes,
+                now_ms,
+            );
+        }
         // Same async→sync bridge as `d1util::d1_query_blocking`: we are always
         // called from the verify handler running on the multi-thread runtime.
         let handle = tokio::runtime::Handle::current();
         tokio::task::block_in_place(|| handle.block_on(self.r2.put(key, bytes)))
     }
 
-    fn exec_d1(&self, sql: &str, params: Vec<Value>) -> Result<(), String> {
+    fn exec_d1(
+        &self,
+        sql: &str,
+        params: Vec<Value>,
+        ownership_context: Option<&StagingLoadTestAdmissionContext>,
+        resource_handle: &str,
+        now_ms: u64,
+    ) -> Result<(), String> {
+        if let Some(context) = ownership_context {
+            let registration = context
+                .ownership_registration(
+                    StagingLoadTestResourceClass::AuditEvidence,
+                    StagingLoadTestDisposition::Retained,
+                    resource_handle,
+                )
+                .and_then(|resource| resource.d1_statement(clamp_ms(now_ms)))
+                .map_err(|error| error.to_string())?;
+            return d1_batch_blocking(
+                self.d1,
+                vec![D1BatchStatement::new(sql, params), registration],
+            )
+            .map(|_| ());
+        }
         d1_query_blocking(self.d1, sql, params).map(|_| ())
     }
 }
@@ -253,6 +310,7 @@ pub(super) fn sign_and_persist(
     tenant_id: &str,
     verified_at_ms: u64,
     completions: &[BackendCompletion],
+    ownership_context: Option<&StagingLoadTestAdmissionContext>,
 ) {
     // 1. Region — env + EXPLICIT single-region assertion (never mis-attribute).
     let Some(region) = resolve_region_from_env() else {
@@ -294,6 +352,7 @@ pub(super) fn sign_and_persist(
         tenant_id,
         verified_at_ms,
         completions,
+        ownership_context,
     );
 }
 
@@ -313,6 +372,7 @@ fn persist_signed_attestation<S: AttestationSinks>(
     tenant_id: &str,
     verified_at_ms: u64,
     completions: &[BackendCompletion],
+    ownership_context: Option<&StagingLoadTestAdmissionContext>,
 ) {
     // Fail-CLOSED evidence gate (finding #1): bind the proof to the REAL
     // per-backend verification results.
@@ -385,7 +445,9 @@ fn persist_signed_attestation<S: AttestationSinks>(
     let r2_key = format!("{}/{object_key}", region.audit_bucket());
 
     // (1) R2 PUT FIRST — the index row must never precede the object.
-    if let Err(e) = sinks.put_audit_object(&object_key, bundle_json) {
+    if let Err(e) =
+        sinks.put_audit_object(&object_key, bundle_json, ownership_context, verified_at_ms)
+    {
         tracing::error!(
             dsr_id = %dsr_id,
             error = %e,
@@ -410,6 +472,9 @@ fn persist_signed_attestation<S: AttestationSinks>(
             json!(clamp_ms(public_key.overlap_until_ms)),
             json!(public_key.pem),
         ],
+        ownership_context,
+        &format!("attestation-public-key:{}:{kid}", region.as_str()),
+        verified_at_ms,
     ) {
         tracing::error!(
             dsr_id = %dsr_id,
@@ -441,6 +506,9 @@ fn persist_signed_attestation<S: AttestationSinks>(
             json!(attestation.signature_ed25519),
             json!(attestation.canonical_payload_jcs),
         ],
+        ownership_context,
+        &format!("erasure-attestation:{}", attestation.payload.request_id),
+        verified_at_ms,
     ) {
         tracing::error!(
             dsr_id = %dsr_id,
@@ -513,6 +581,7 @@ mod tests {
 
     use serde_json::Value;
 
+    use crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext;
     use corelink_erasure_attestation::{
         verify_attestation_signature, ErasureAttestation, ErasureAttestationPayload,
         ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle, Region,
@@ -730,7 +799,13 @@ mod tests {
     }
 
     impl AttestationSinks for RecordingSinks {
-        fn put_audit_object(&self, key: &str, bytes: Vec<u8>) -> Result<(), String> {
+        fn put_audit_object(
+            &self,
+            key: &str,
+            bytes: Vec<u8>,
+            _ownership_context: Option<&StagingLoadTestAdmissionContext>,
+            _now_ms: u64,
+        ) -> Result<(), String> {
             if self.fail_put {
                 return Err("simulated R2 outage".to_string());
             }
@@ -738,7 +813,14 @@ mod tests {
             Ok(())
         }
 
-        fn exec_d1(&self, sql: &str, params: Vec<Value>) -> Result<(), String> {
+        fn exec_d1(
+            &self,
+            sql: &str,
+            params: Vec<Value>,
+            _ownership_context: Option<&StagingLoadTestAdmissionContext>,
+            _resource_handle: &str,
+            _now_ms: u64,
+        ) -> Result<(), String> {
             self.execs.borrow_mut().push((sql.to_string(), params));
             Ok(())
         }
@@ -767,6 +849,7 @@ mod tests {
             tenant_id,
             ts,
             &all_verified_completions(),
+            None,
         );
 
         // Exactly one R2 PUT, at the canonical object key.
@@ -823,6 +906,7 @@ mod tests {
             "00000000-0000-7000-8000-000000000def",
             1_700_000_000_000,
             &all_verified_completions(),
+            None,
         );
         assert!(
             sinks.puts.borrow().is_empty(),
