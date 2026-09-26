@@ -5,10 +5,7 @@ name: Issue 2418 shared-rustup contract
 on:
   pull_request:
     paths:
-      - '.github/workflows/cas_foundation.yml'
-      - '.github/workflows/coverage.yml'
-      - '.github/workflows/mutation-nightly.yml'
-      - '.github/workflows/issue-2418-rustup-contract.yml'
+      - '.github/workflows/**'
       - 'scripts/ci-use-host-toolchain.sh'
       - 'scripts/test_ci_use_host_toolchain.sh'
       - 'scripts/validate_no_shared_rustup_mutation.py'
@@ -16,10 +13,7 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/cas_foundation.yml'
-      - '.github/workflows/coverage.yml'
-      - '.github/workflows/mutation-nightly.yml'
-      - '.github/workflows/issue-2418-rustup-contract.yml'
+      - '.github/workflows/**'
       - 'scripts/ci-use-host-toolchain.sh'
       - 'scripts/test_ci_use_host_toolchain.sh'
       - 'scripts/validate_no_shared_rustup_mutation.py'
