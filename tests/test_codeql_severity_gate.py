@@ -119,13 +119,15 @@ class CodeQLSeverityGateTests(unittest.TestCase):
         with self.assertRaisesRegex(SarifSeverityError, "unresolved SARIF metadata"):
             high_findings(fixture)
 
-    def test_unqualified_duplicate_rule_id_fails_as_ambiguous(self) -> None:
-        fixture = _sarif(_rule("rust/high", "8.0"), component_index=None)
+    def test_unqualified_duplicate_rule_id_defaults_to_driver(self) -> None:
+        fixture = _sarif(_rule("rust/high", "1.0"), component_index=None)
         run = fixture["runs"][0]
-        run["tool"]["driver"]["rules"].append(_rule("rust/high", "8.0"))
+        run["tool"]["driver"]["rules"].append(_rule("rust/high", "9.0"))
         run["results"][0]["rule"].pop("index")
-        with self.assertRaisesRegex(SarifSeverityError, "ambiguous SARIF metadata"):
-            high_findings(fixture)
+        self.assertEqual(
+            [item["severity"] for item in high_findings(fixture)],
+            [9.0],
+        )
 
     def test_missing_security_severity_fails_closed(self) -> None:
         fixture = _sarif(_rule("py/security-rule", None), component_index=0)
