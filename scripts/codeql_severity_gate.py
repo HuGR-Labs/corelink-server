@@ -38,8 +38,9 @@ def _as_rule_list(component: dict[str, Any], label: str) -> list[dict[str, Any]]
 def _rule_for_result(
     result: dict[str, Any],
     driver_name: str | None,
+    driver_guid: str | None,
     driver_rules: list[dict[str, Any]],
-    extensions: list[tuple[str | None, list[dict[str, Any]]]],
+    extensions: list[tuple[str | None, str | None, list[dict[str, Any]]]],
 ) -> dict[str, Any]:
     rule_id = result.get("ruleId")
     if not isinstance(rule_id, str) or not rule_id:
@@ -59,6 +60,9 @@ def _rule_for_result(
     component_name = component_ref.get("name")
     if component_name is not None and (not isinstance(component_name, str) or not component_name):
         raise SarifSeverityError(f"result {rule_id!r} has an invalid toolComponent name")
+    component_guid = component_ref.get("guid")
+    if component_guid is not None and (not isinstance(component_guid, str) or not component_guid):
+        raise SarifSeverityError(f"result {rule_id!r} has an invalid toolComponent guid")
     raw_rule_index = result.get("ruleIndex", rule_ref.get("index"))
     rule_index: int | None = None
     if raw_rule_index is not None:
@@ -66,12 +70,12 @@ def _rule_for_result(
             raise SarifSeverityError(f"result {rule_id!r} has an invalid rule index")
         rule_index = raw_rule_index
 
-    components: list[tuple[str, str | None, list[dict[str, Any]]]] = [
-        ("driver", driver_name, driver_rules)
+    components: list[tuple[str, str | None, str | None, list[dict[str, Any]]]] = [
+        ("driver", driver_name, driver_guid, driver_rules)
     ]
     components.extend(
-        (f"extension[{index}]", name, rules)
-        for index, (name, rules) in enumerate(extensions)
+        (f"extension[{index}]", name, guid, rules)
+        for index, (name, guid, rules) in enumerate(extensions)
     )
 
     if component_index is not None:
@@ -79,29 +83,41 @@ def _rule_for_result(
             raise SarifSeverityError(f"result {rule_id!r} has an invalid toolComponent index")
         if component_index >= len(extensions):
             raise SarifSeverityError(f"result {rule_id!r} references missing extension[{component_index}]")
-        extension_name, extension_rules = extensions[component_index]
-        if component_name is not None and component_name != extension_name:
-            raise SarifSeverityError(
-                f"result {rule_id!r} toolComponent name {component_name!r} "
-                f"does not match extension[{component_index}] name {extension_name!r}"
-            )
-        candidates = [(f"extension[{component_index}]", extension_name, extension_rules)]
-    elif component_name is not None:
-        candidates = [component for component in components if component[1] == component_name]
+        candidates = [components[component_index + 1]]
+    elif component_guid is not None:
+        candidates = [component for component in components if component[2] == component_guid]
         if not candidates:
             raise SarifSeverityError(
-                f"result {rule_id!r} references unknown toolComponent {component_name!r}"
+                f"result {rule_id!r} references unknown toolComponent guid {component_guid!r}"
+            )
+        if len(candidates) > 1:
+            raise SarifSeverityError(
+                f"result {rule_id!r} references ambiguous toolComponent guid {component_guid!r}"
             )
     else:
-        candidates = components
+        # SARIF 2.1 defaults an unqualified toolComponent reference to the driver.
+        # The name is a consistency check, never an alternate lookup key.
+        candidates = [components[0]]
+
+    resolved = candidates[0]
+    if component_name is not None and component_name != resolved[1]:
+        raise SarifSeverityError(
+            f"result {rule_id!r} toolComponent name {component_name!r} "
+            f"does not match {resolved[0]} name {resolved[1]!r}"
+        )
+    if component_guid is not None and component_guid != resolved[2]:
+        raise SarifSeverityError(
+            f"result {rule_id!r} toolComponent guid {component_guid!r} "
+            f"does not match {resolved[0]} guid {resolved[2]!r}"
+        )
 
     matches: list[dict[str, Any]] = []
-    for _label, _name, rules in candidates:
-        if rule_index is not None:
-            if rule_index < len(rules) and rules[rule_index].get("id") == rule_id:
-                matches.append(rules[rule_index])
-        else:
-            matches.extend(rule for rule in rules if rule.get("id") == rule_id)
+    rules = resolved[3]
+    if rule_index is not None:
+        if rule_index < len(rules) and rules[rule_index].get("id") == rule_id:
+            matches.append(rules[rule_index])
+    else:
+        matches.extend(rule for rule in rules if rule.get("id") == rule_id)
 
     if len(matches) != 1:
         reason = "unresolved" if not matches else "ambiguous"
@@ -151,6 +167,9 @@ def high_findings(sarif: dict[str, Any]) -> list[dict[str, Any]]:
         driver_name = tool["driver"].get("name")
         if driver_name is not None and (not isinstance(driver_name, str) or not driver_name):
             raise SarifSeverityError(f"run {run_number} driver has an invalid name")
+        driver_guid = tool["driver"].get("guid")
+        if driver_guid is not None and (not isinstance(driver_guid, str) or not driver_guid):
+            raise SarifSeverityError(f"run {run_number} driver has an invalid guid")
         raw_extensions = tool.get("extensions", [])
         if not isinstance(raw_extensions, list) or any(not isinstance(ext, dict) for ext in raw_extensions):
             raise SarifSeverityError(f"run {run_number} tool.extensions must be an array of objects")
@@ -163,8 +182,15 @@ def high_findings(sarif: dict[str, Any]) -> list[dict[str, Any]]:
                 raise SarifSeverityError(
                     f"run {run_number} extension[{index}] has an invalid name"
                 )
+            extension_guid = extension.get("guid")
+            if extension_guid is not None and (
+                not isinstance(extension_guid, str) or not extension_guid
+            ):
+                raise SarifSeverityError(
+                    f"run {run_number} extension[{index}] has an invalid guid"
+                )
             rules = _as_rule_list(extension, f"run {run_number} extension[{index}]")
-            extensions.append((extension_name, rules))
+            extensions.append((extension_name, extension_guid, rules))
         results = run.get("results", [])
         if not isinstance(results, list) or any(not isinstance(result, dict) for result in results):
             raise SarifSeverityError(f"run {run_number} results must be an array of objects")
@@ -173,7 +199,7 @@ def high_findings(sarif: dict[str, Any]) -> list[dict[str, Any]]:
         for result_number, result in enumerate(results):
             rule_id = result.get("ruleId")
             try:
-                rule = _rule_for_result(result, driver_name, driver_rules, extensions)
+                rule = _rule_for_result(result, driver_name, driver_guid, driver_rules, extensions)
                 score = _security_score(rule, rule_id if isinstance(rule_id, str) else "unknown")
             except SarifSeverityError as exc:
                 raise SarifSeverityError(f"run {run_number}, result {result_number}: {exc}") from exc

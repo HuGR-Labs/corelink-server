@@ -67,14 +67,35 @@ class CodeQLSeverityGateTests(unittest.TestCase):
         run = fixture["runs"][0]
         run["tool"]["extensions"][0]["name"] = "ext-low"
         run["results"][0]["rule"]["toolComponent"] = {"name": "ext-high"}
-        with self.assertRaisesRegex(SarifSeverityError, "unknown toolComponent"):
+        with self.assertRaisesRegex(SarifSeverityError, "does not match driver name"):
             high_findings(fixture)
 
-    def test_component_name_only_reference_resolves_the_named_extension(self) -> None:
+    def test_name_only_reference_defaults_to_driver_before_name_validation(self) -> None:
         fixture = _sarif(_rule("shared/rule", "8.0"), component_index=None)
-        fixture["runs"][0]["results"][0]["rule"]["toolComponent"] = {
+        fixture["runs"][0]["tool"]["driver"]["rules"].append(
+            _rule("shared/rule", "9.0")
+        )
+        fixture["runs"][0]["results"][0]["rule"]["toolComponent"] = {"name": "CodeQL"}
+        self.assertEqual(
+            [item["severity"] for item in high_findings(fixture)],
+            [9.0],
+        )
+
+    def test_name_only_extension_reference_cannot_hide_duplicate_driver_rule(self) -> None:
+        fixture = _sarif(_rule("shared/rule", "1.0"), component_index=None)
+        run = fixture["runs"][0]
+        run["tool"]["driver"]["rules"].append(_rule("shared/rule", "9.0"))
+        run["results"][0]["rule"]["toolComponent"] = {
             "name": "codeql/language-queries"
         }
+        with self.assertRaisesRegex(SarifSeverityError, "does not match driver name"):
+            high_findings(fixture)
+
+    def test_component_guid_reference_resolves_extension(self) -> None:
+        fixture = _sarif(_rule("shared/rule", "8.0"), component_index=None)
+        extension = fixture["runs"][0]["tool"]["extensions"][0]
+        extension["guid"] = "ext-guid"
+        fixture["runs"][0]["results"][0]["rule"]["toolComponent"] = {"guid": "ext-guid"}
         self.assertEqual([item["rule"] for item in high_findings(fixture)], ["shared/rule"])
 
     def test_component_name_must_match_its_index(self) -> None:
