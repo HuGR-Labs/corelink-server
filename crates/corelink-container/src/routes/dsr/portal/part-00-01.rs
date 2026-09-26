@@ -67,7 +67,8 @@ impl core::fmt::Debug for LivePipeline {
 
 impl DsrPipeline for LivePipeline {
     fn access(&self, tenant_id: &str, dsr_id: &str, now_ms: u64) -> Result<Value, String> {
-        let export = super::super::access::run_access(&self.d1, dsr_id, tenant_id, now_ms)?;
+        let export =
+            super::super::access::run_access(&self.d1, dsr_id, tenant_id, now_ms, None)?;
         serde_json::to_value(export).map_err(|e| format!("export serialize: {e}"))
     }
 
@@ -83,6 +84,7 @@ impl DsrPipeline for LivePipeline {
             dsr_id,
             tenant_id,
             now_ms,
+            None,
         )?;
         let handle = if receipt.persisted {
             receipt.r2_key
@@ -110,6 +112,7 @@ impl DsrPipeline for LivePipeline {
             "email_hash",
             email,
             now_ms,
+            None,
         )? {
             Ok(_result) => Ok(Ok(())),
             Err(reject) => Ok(Err(reject.message().to_owned())),
