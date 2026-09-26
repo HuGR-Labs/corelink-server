@@ -53,7 +53,17 @@
  * Both still fail CLOSED — nothing is authorized either way.
  */
 
+import {
+  signupArtifactHandle,
+  signupOwnershipContext,
+  writeSignupArtifactBatch,
+} from "../signup_writer_ownership.js";
+import type { StagingOwnershipContext } from "../staging_load_test_ownership.js";
+
 export interface InstallationProvisionEnv {
+  /** Deployment environment and staging-only admission signing key. */
+  ENVIRONMENT?: string;
+  CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY?: string;
   /**
    * D1 CONFIG_DB binding — holds `tenant_gh_installation_map` (0084) and
    * `runner_repo_allowlist` (0085). Same binding `clerk.ts` writes
@@ -253,8 +263,34 @@ function resolveRunnerProvisionKey(env: InstallationProvisionEnv): string | null
  */
 export async function writeInstallationProvision(
   db: D1Database,
-  opts: { installationId: string; tenantId: string; repos: string[]; nowMs: number },
+  opts: {
+    installationId: string;
+    tenantId: string;
+    repos: string[];
+    nowMs: number;
+    ownershipContext?: StagingOwnershipContext | null;
+  },
 ): Promise<void> {
+  if (opts.ownershipContext) {
+    const existingMap = await db
+      .prepare(
+        "SELECT 1 AS present FROM tenant_gh_installation_map " +
+          "WHERE installation_id = ?1 LIMIT 1",
+      )
+      .bind(opts.installationId)
+      .first<{ present: number }>();
+    const existingAllowlist = await db
+      .prepare(
+        "SELECT 1 AS present FROM runner_repo_allowlist WHERE tenant_id = ?1 " +
+          "AND repo_full_name IN (SELECT CAST(value AS TEXT) FROM json_each(?2)) LIMIT 1",
+      )
+      .bind(opts.tenantId, JSON.stringify(opts.repos))
+      .first<{ present: number }>();
+    if (existingMap !== null || existingAllowlist !== null) {
+      throw new Error("staging GitHub signup artifact already exists");
+    }
+  }
+
   const statements = [
     db
       .prepare(
@@ -271,7 +307,15 @@ export async function writeInstallationProvision(
         .bind(opts.tenantId, repo, opts.nowMs),
     ),
   ];
-  if (typeof db.batch === "function") {
+  if (opts.ownershipContext) {
+    await writeSignupArtifactBatch(
+      db,
+      opts.ownershipContext,
+      await signupArtifactHandle("github-installation", opts.installationId),
+      statements,
+      opts.nowMs,
+    );
+  } else if (typeof db.batch === "function") {
     await db.batch(statements);
   } else {
     for (const st of statements) {
@@ -340,6 +384,17 @@ export async function handleInstallationProvision(
     (r): r is string => typeof r === "string" && r.length > 0,
   );
 
+  let ownershipContext: StagingOwnershipContext | null;
+  try {
+    ownershipContext = await signupOwnershipContext(
+      request,
+      env.ENVIRONMENT,
+      env.CORELINK_STAGING_LOAD_TEST_ADMISSION_KEY,
+    );
+  } catch {
+    return json(403, { error: "invalid_staging_ownership" });
+  }
+
   const db = env.CONFIG_DB;
   if (!db) {
     // A provisioning call that cannot persist is an error, not a silent no-op.
@@ -350,7 +405,13 @@ export async function handleInstallationProvision(
   // `Date.now()` for all rows in this call.
   const nowMs = Date.now();
   try {
-    await writeInstallationProvision(db, { installationId, tenantId, repos, nowMs });
+    await writeInstallationProvision(db, {
+      installationId,
+      tenantId,
+      repos,
+      nowMs,
+      ownershipContext,
+    });
   } catch {
     // 5. Fail-closed: never partially claim success on a D1 fault.
     return json(500, { error: "provision_failed" });

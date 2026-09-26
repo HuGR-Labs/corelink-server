@@ -35,10 +35,14 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::d1util::{clamp_ms, d1_query_blocking};
+use super::d1util::{clamp_ms, d1_batch_blocking, d1_query_blocking};
 use crate::customer_d1::ms_to_iso8601;
-use crate::storage::d1_http::{D1HttpClient, D1Row};
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
 use crate::storage::r2_s3::R2S3Client;
+use crate::storage::staging_load_test_ownership::{
+    StagingLoadTestDisposition, StagingLoadTestR2Intent, StagingLoadTestResourceClass,
+    StagingLoadTestWriteContext,
+};
 
 /// CloudEvents `type` for the Art.15 access event (audit_outbox).
 pub(super) const EVENT_ACCESS: &str = "corelink.dsr.access";
@@ -379,8 +383,21 @@ fn audit_dsr_event(
     suffix: &str,
     context: &Value,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> Result<(), String> {
     let id = audit_event_id(dsr_id, event_type, suffix);
+    let ownership = ownership_context
+        .map(|context| {
+            context
+                .ownership_registration(
+                    StagingLoadTestResourceClass::AuditEvidence,
+                    StagingLoadTestDisposition::Retained,
+                    &id,
+                )
+                .and_then(|registration| registration.d1_statement(clamp_ms(now_ms)))
+                .map_err(|error| error.to_string())
+        })
+        .transpose()?;
     let request_id = format!("{dsr_id}:dsr");
     let payload = json!({
         "specversion": "1.0",
@@ -414,7 +431,11 @@ fn audit_dsr_event(
         json!(payload_json),
         json!(clamp_ms(now_ms)),
     ];
-    d1_query_blocking(d1, sql, params).map(|_| ())
+    if let Some(registration) = ownership {
+        d1_batch_blocking(d1, vec![D1BatchStatement::new(sql, params), registration]).map(|_| ())
+    } else {
+        d1_query_blocking(d1, sql, params).map(|_| ())
+    }
 }
 
 /// Live D1-backed gather closure for a real handler.
@@ -435,6 +456,7 @@ pub(super) fn run_access(
     dsr_id: &str,
     tenant_id: &str,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> Result<SubjectExport, String> {
     audit_dsr_event(
         d1,
@@ -444,6 +466,7 @@ pub(super) fn run_access(
         "-",
         &json!({ "surface": "access" }),
         now_ms,
+        ownership_context,
     )?;
     gather_live(d1, tenant_id, now_ms)
 }
@@ -474,6 +497,7 @@ pub(super) fn run_portability(
     dsr_id: &str,
     tenant_id: &str,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> Result<(SubjectExport, ExportReceipt), String> {
     audit_dsr_event(
         d1,
@@ -483,10 +507,142 @@ pub(super) fn run_portability(
         "-",
         &json!({ "surface": "portability" }),
         now_ms,
+        ownership_context,
     )?;
     let export = gather_live(d1, tenant_id, now_ms)?;
-    let receipt = persist_export(r2_audit, dsr_id, tenant_id, &export, now_ms);
+    let receipt = persist_export(
+        d1,
+        r2_audit,
+        dsr_id,
+        tenant_id,
+        &export,
+        now_ms,
+        ownership_context,
+    );
     Ok((export, receipt))
+}
+
+pub(super) fn persist_owned_r2(
+    r2: &Arc<R2S3Client>,
+    d1: &Arc<D1HttpClient>,
+    context: &crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext,
+    resource_class: StagingLoadTestResourceClass,
+    disposition: StagingLoadTestDisposition,
+    object_key: &str,
+    bytes: Vec<u8>,
+    now_ms: u64,
+) -> Result<(), String> {
+    persist_owned_r2_with(
+        d1,
+        context,
+        resource_class,
+        disposition,
+        object_key,
+        bytes,
+        now_ms,
+        |key, bytes| {
+            let handle = tokio::runtime::Handle::current();
+            tokio::task::block_in_place(|| handle.block_on(r2.put(key, bytes)))
+        },
+    )
+}
+
+fn persist_owned_r2_with(
+    d1: &Arc<D1HttpClient>,
+    context: &crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext,
+    resource_class: StagingLoadTestResourceClass,
+    disposition: StagingLoadTestDisposition,
+    object_key: &str,
+    bytes: Vec<u8>,
+    now_ms: u64,
+    put_object: impl FnOnce(&str, Vec<u8>) -> Result<(), String>,
+) -> Result<(), String> {
+    let class_name = match resource_class {
+        StagingLoadTestResourceClass::DsrArtifact => "dsr_artifact",
+        StagingLoadTestResourceClass::AuditEvidence => "audit_evidence",
+        _ => return Err("unsupported DSR R2 ownership class".to_owned()),
+    };
+    let disposition_name = match disposition {
+        StagingLoadTestDisposition::Disposable => "disposable",
+        StagingLoadTestDisposition::Retained => "retained",
+    };
+    let registration = context
+        .ownership_registration(resource_class, disposition, object_key)
+        .map_err(|error| error.to_string())?;
+    let mut operation = Sha256::new();
+    operation.update(b"corelink/dsr/r2-operation/v1\0");
+    operation.update(context.run_id().as_bytes());
+    operation.update([0]);
+    operation.update(context.scenario().as_str().as_bytes());
+    operation.update([0]);
+    operation.update(context.target_deployment_sha().as_bytes());
+    operation.update([0]);
+    operation.update(class_name.as_bytes());
+    operation.update([0]);
+    operation.update(object_key.as_bytes());
+    let operation_id = hex::encode(operation.finalize());
+    let intent = registration
+        .r2_intent(&operation_id)
+        .map_err(|error| error.to_string())?;
+
+    let prepared_at_ms = clamp_ms(now_ms);
+    if d1_batch_blocking(d1, vec![intent.prepare_statement(prepared_at_ms)]).is_err() {
+        // Recover only an exact durable intent. Any mismatch or lookup error
+        // leaves the object write unopened and the caller reports failure.
+        let rows = d1_query_blocking(
+            d1,
+            "SELECT operation_id, run_id, scenario, target_deployment_sha, resource_class, receipt_ref, opaque_handle, disposition, state FROM staging_load_test_r2_intents WHERE operation_id = ?1",
+            vec![json!(operation_id)],
+        )?;
+        let Some(row) = rows.first() else {
+            return Err("staging R2 ownership intent could not be prepared".to_owned());
+        };
+        let expected_receipt =
+            staging_receipt_ref(context, class_name, object_key, disposition_name);
+        let exact = [
+            ("run_id", context.run_id()),
+            ("scenario", context.scenario().as_str()),
+            ("target_deployment_sha", context.target_deployment_sha()),
+            ("resource_class", class_name),
+            ("receipt_ref", expected_receipt.as_str()),
+            ("opaque_handle", object_key),
+            ("disposition", disposition_name),
+        ]
+        .iter()
+        .all(|(key, value)| row.get(*key).and_then(Value::as_str) == Some(*value));
+        let state = row.get("state").and_then(Value::as_str);
+        if !exact || !matches!(state, Some("prepared" | "committed")) {
+            return Err("staging R2 ownership intent conflicts with this write".to_owned());
+        }
+    }
+
+    put_object(object_key, bytes)?;
+    let statements = intent.commit_statements(clamp_ms(now_ms));
+    d1_batch_blocking(d1, statements.into_iter().collect())
+        .map_err(|_| "staging R2 ownership commit failed".to_owned())?;
+    Ok(())
+}
+
+fn staging_receipt_ref(
+    context: &crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext,
+    resource_class: &str,
+    opaque_handle: &str,
+    disposition: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"corelink-staging-load-test-resource-receipt-v1\0");
+    for part in [
+        context.run_id().as_bytes(),
+        context.scenario().as_str().as_bytes(),
+        context.target_deployment_sha().as_bytes(),
+        resource_class.as_bytes(),
+        opaque_handle.as_bytes(),
+        disposition.as_bytes(),
+    ] {
+        hasher.update((part.len() as u64).to_be_bytes());
+        hasher.update(part);
+    }
+    hex::encode(hasher.finalize())
 }
 
 /// Best-effort durable persistence of the export bundle to the R2 audit bucket,
@@ -495,11 +651,13 @@ pub(super) fn run_portability(
 /// infra (or a transient PUT failure) downgrades to `persisted: false` — the
 /// inline machine-readable bundle is the Art.20 core and always returns.
 fn persist_export(
+    d1: &Arc<D1HttpClient>,
     r2_audit: Option<&Arc<R2S3Client>>,
     dsr_id: &str,
     tenant_id: &str,
     export: &SubjectExport,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> ExportReceipt {
     let bundle_bytes = serde_json::to_vec(export).unwrap_or_default();
     let content_sha256 = hex::encode(Sha256::digest(&bundle_bytes));
@@ -515,8 +673,20 @@ fn persist_export(
 
     let object_key = format!("dsr_exports/{dsr_id}.json");
     let handle = tokio::runtime::Handle::current();
-    let put_ok =
-        tokio::task::block_in_place(|| handle.block_on(r2.put(&object_key, bundle_bytes.clone())));
+    let put_ok = if let Some(context) = ownership_context {
+        persist_owned_r2(
+            r2,
+            d1,
+            context,
+            StagingLoadTestResourceClass::DsrArtifact,
+            StagingLoadTestDisposition::Disposable,
+            &object_key,
+            bundle_bytes.clone(),
+            now_ms,
+        )
+    } else {
+        tokio::task::block_in_place(|| handle.block_on(r2.put(&object_key, bundle_bytes.clone())))
+    };
     if let Err(e) = put_ok {
         tracing::warn!(dsr_id = %dsr_id, error = %e, "dsr/portability: export bundle R2 PUT failed (inline bundle still returned)");
         return ExportReceipt {
@@ -536,8 +706,20 @@ fn persist_export(
     {
         if let Ok(sig_bytes) = serde_json::to_vec(&attestation) {
             let sig_key = format!("dsr_exports/{dsr_id}.sig.json");
-            let sig_ok =
-                tokio::task::block_in_place(|| handle.block_on(r2.put(&sig_key, sig_bytes)));
+            let sig_ok = if let Some(context) = ownership_context {
+                persist_owned_r2(
+                    r2,
+                    d1,
+                    context,
+                    StagingLoadTestResourceClass::DsrArtifact,
+                    StagingLoadTestDisposition::Disposable,
+                    &sig_key,
+                    sig_bytes,
+                    now_ms,
+                )
+            } else {
+                tokio::task::block_in_place(|| handle.block_on(r2.put(&sig_key, sig_bytes)))
+            };
             match sig_ok {
                 Ok(()) => signed = true,
                 Err(e) => {
@@ -641,6 +823,7 @@ pub(super) fn run_rectification(
     field: &str,
     new_value: &str,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> Result<Result<RectifyResult, RectifyReject>, String> {
     let plan = match classify_rectify(table, field, new_value) {
         Ok(p) => p,
@@ -656,14 +839,37 @@ pub(super) fn run_rectification(
         &format!("{table}.{field}"),
         &json!({ "surface": "rectification", "table": table, "field": field }),
         now_ms,
+        ownership_context,
     )?;
-    let rows = d1_query_blocking(
-        d1,
-        &plan.sql,
-        vec![json!(tenant_id), json!(plan.stored_value)],
-    )?;
-    // D1 returns the changed-row set / meta; we report the count defensively.
-    let rows_updated = u64::try_from(rows.len()).unwrap_or(0);
+    let params = vec![json!(tenant_id), json!(plan.stored_value)];
+    let rows_updated = if let Some(context) = ownership_context {
+        let handle = format!("{dsr_id}:rectification:{table}.{field}");
+        let registration = context
+            .ownership_registration(
+                StagingLoadTestResourceClass::DsrArtifact,
+                StagingLoadTestDisposition::Disposable,
+                &handle,
+            )
+            .and_then(|registration| registration.d1_statement(clamp_ms(now_ms)))
+            .map_err(|error| error.to_string())?;
+        let results = d1_batch_blocking(
+            d1,
+            vec![
+                D1BatchStatement::new(&plan.sql, params),
+                D1BatchStatement::new("SELECT changes() AS rows_updated", vec![]),
+                registration,
+            ],
+        )?;
+        results
+            .get(1)
+            .and_then(|rows| rows.first())
+            .and_then(|row| row.get("rows_updated"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+    } else {
+        let rows = d1_query_blocking(d1, &plan.sql, params)?;
+        u64::try_from(rows.len()).unwrap_or(0)
+    };
     Ok(Ok(RectifyResult {
         table: table.to_owned(),
         field: field.to_owned(),
@@ -1042,5 +1248,405 @@ mod tests {
         );
         // Under a salt the pseudonym is no longer the rainbow-attackable SHA-256.
         assert_ne!(email_hash("user@example.com"), want);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn admitted_access_audit_batches_registration_from_accepted_context() {
+        let (database, endpoint) = ownership_d1_fixture(false, 3);
+        let context = accepted_dsr_context(&endpoint).await;
+        let d1 = Arc::new(test_d1_client(&endpoint));
+        let emit = || {
+            audit_dsr_event(
+                &d1,
+                "dsr-2581",
+                TID,
+                EVENT_ACCESS,
+                "-",
+                &json!({ "surface": "access" }),
+                1_700_000_000_000,
+                Some(&context),
+            )
+        };
+        let result = emit();
+        assert!(
+            result.is_ok(),
+            "writer should commit with its ownership row"
+        );
+        assert!(emit().is_ok(), "duplicate logical events are idempotent");
+        let db = database.lock().expect("fixture database");
+        let audit_count: i64 = db
+            .query_row("SELECT count(*) FROM audit_outbox", [], |row| row.get(0))
+            .expect("audit count");
+        let mut resource_query = db
+            .prepare("SELECT resource_class, disposition, run_id, scenario, opaque_handle, receipt_ref FROM staging_load_test_resources")
+            .expect("resource query");
+        let resources = resource_query
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            })
+            .expect("resource rows")
+            .map(|row| row.expect("resource row"))
+            .collect::<Vec<(String, String, String, String, String, String)>>();
+        assert_eq!(audit_count, 1);
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].0, "audit_evidence");
+        assert_eq!(resources[0].1, "retained");
+        assert_eq!(resources[0].2, "2581");
+        assert_eq!(resources[0].3, "dsr");
+        assert_eq!(
+            resources[0].4,
+            audit_event_id("dsr-2581", EVENT_ACCESS, "-")
+        );
+        assert_eq!(
+            resources[0].5.len(),
+            64,
+            "ownership receipts are SHA-256 only"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn admitted_access_audit_batch_failure_rolls_back_domain_write() {
+        let (database, endpoint) = ownership_d1_fixture(true, 2);
+        let context = accepted_dsr_context(&endpoint).await;
+        let d1 = Arc::new(test_d1_client(&endpoint));
+        let result = audit_dsr_event(
+            &d1,
+            "dsr-2581",
+            TID,
+            EVENT_ACCESS,
+            "-",
+            &json!({ "surface": "access" }),
+            1_700_000_000_000,
+            Some(&context),
+        );
+        assert!(result.is_err(), "registration failure must fail the writer");
+        let db = database.lock().expect("fixture database");
+        let audit_count: i64 = db
+            .query_row("SELECT count(*) FROM audit_outbox", [], |row| row.get(0))
+            .expect("audit count");
+        let resource_count: i64 = db
+            .query_row(
+                "SELECT count(*) FROM staging_load_test_resources",
+                [],
+                |row| row.get(0),
+            )
+            .expect("resource count");
+        assert_eq!(audit_count, 0, "the earlier audit insert rolled back");
+        assert_eq!(
+            resource_count, 0,
+            "failed registration left no ownership row"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn admitted_r2_writer_recovers_exact_prepare_and_replays_once() {
+        let (database, endpoint) = ownership_d1_fixture(false, 8);
+        let context = Arc::new(accepted_dsr_context(&endpoint).await);
+        let d1 = Arc::new(test_d1_client(&endpoint));
+        let put_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let run = |put_result: Result<(), String>| {
+            let d1 = Arc::clone(&d1);
+            let context = Arc::clone(&context);
+            let put_attempts = Arc::clone(&put_attempts);
+            async move {
+                // The test seam substitutes only the external R2 PUT; the real
+                // DSR writer still prepares, recovers and commits through D1.
+                persist_owned_r2_with(
+                    &d1,
+                    context.as_ref(),
+                    StagingLoadTestResourceClass::DsrArtifact,
+                    StagingLoadTestDisposition::Disposable,
+                    "dsr_exports/dsr-2581.json",
+                    b"synthetic bundle".to_vec(),
+                    1_700_000_000_000,
+                    move |_, _| {
+                        put_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        put_result
+                    },
+                )
+            }
+        };
+
+        assert!(run(Err("simulated R2 failure".into())).await.is_err());
+        {
+            let db = database.lock().expect("fixture database");
+            let (state, resources): (String, i64) = db
+                .query_row(
+                    "SELECT (SELECT state FROM staging_load_test_r2_intents), (SELECT count(*) FROM staging_load_test_resources)",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("failed PUT remains prepared without claiming a resource");
+            assert_eq!(state, "prepared");
+            assert_eq!(
+                resources, 0,
+                "failed external PUT never reports a registered artifact"
+            );
+        }
+        assert!(
+            run(Ok(())).await.is_ok(),
+            "exact prepared intent should reconcile"
+        );
+        assert!(
+            run(Ok(())).await.is_ok(),
+            "committed exact replay remains idempotent"
+        );
+        assert_eq!(put_attempts.load(std::sync::atomic::Ordering::SeqCst), 3);
+
+        let db = database.lock().expect("fixture database");
+        let state: String = db
+            .query_row(
+                "SELECT state FROM staging_load_test_r2_intents",
+                [],
+                |row| row.get(0),
+            )
+            .expect("intent state");
+        let (intent_count, resource_count, resource_class, disposition, opaque_handle): (i64, i64, String, String, String) = db
+            .query_row(
+                "SELECT (SELECT count(*) FROM staging_load_test_r2_intents), (SELECT count(*) FROM staging_load_test_resources), (SELECT resource_class FROM staging_load_test_resources), (SELECT disposition FROM staging_load_test_resources), (SELECT opaque_handle FROM staging_load_test_resources)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .expect("durable counts");
+        assert_eq!(state, "committed");
+        assert_eq!(intent_count, 1, "retry reused the exact immutable intent");
+        assert_eq!(
+            resource_count, 1,
+            "replay created one canonical resource row"
+        );
+        assert_eq!(resource_class, "dsr_artifact");
+        assert_eq!(disposition, "disposable");
+        assert_eq!(opaque_handle, "dsr_exports/dsr-2581.json");
+    }
+
+    fn test_storage_env(endpoint: &str) -> crate::storage::StorageEnv {
+        crate::storage::StorageEnv {
+            r2_endpoint: endpoint.to_owned(),
+            r2_access_key_id: "test".to_owned(),
+            r2_secret_access_key: "test".to_owned(),
+            cloudflare_account_id: "test".to_owned(),
+            cf_api_token: "test".to_owned(),
+            d1_database_id: "test".to_owned(),
+        }
+    }
+
+    fn test_d1_client(endpoint: &str) -> D1HttpClient {
+        D1HttpClient::new_for_loopback_test(&test_storage_env(endpoint), endpoint)
+            .expect("loopback D1 test client")
+    }
+
+    async fn accepted_dsr_context(
+        endpoint: &str,
+    ) -> crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext {
+        use hmac::{Hmac, KeyInit, Mac};
+        use sha2::Sha256;
+
+        let sha = "a".repeat(40);
+        let key = [0x63_u8; 32];
+        let verifier =
+            crate::storage::staging_load_test_admission::StagingLoadTestAdmissionVerifier::new(
+                "staging", key,
+            )
+            .expect("test staging verifier");
+        let now_ms = i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock")
+                .as_millis(),
+        )
+        .expect("timestamp fits i64");
+        let issued = now_ms - 1_000;
+        let expires = now_ms + 60_000;
+        let nonce = hex::encode([0x39_u8; 32]);
+        let payload = format!("v1.2581.dsr.staging.{sha}.{issued}.{expires}.{nonce}");
+        let mut mac = Hmac::<Sha256>::new_from_slice(&key).expect("HMAC key");
+        mac.update(b"corelink/staging-load-admission-auth/v1\0");
+        mac.update(payload.as_bytes());
+        let credential = format!("{payload}.{}", hex::encode(mac.finalize().into_bytes()));
+        let verified = verifier
+            .verify(&credential, now_ms)
+            .expect("verified claim");
+        let store = crate::storage::staging_load_test_admission::StagingLoadTestAdmissionStore::from_d1_client_for_test(
+            test_d1_client(endpoint),
+        );
+        let expectation =
+            crate::storage::staging_load_test_admission::StagingLoadTestAdmissionExpectation {
+                run_id: "2581",
+                scenario: crate::storage::staging_load_test_ownership::StagingLoadTestScenario::Dsr,
+                target_environment: "staging",
+                target_deployment_sha: &sha,
+            };
+        let context = store
+            .consume_verified_admission(expectation, verified)
+            .await
+            .expect("atomic admission consumption");
+        context
+    }
+
+    fn ownership_d1_fixture(
+        fail_resource_registration: bool,
+        request_count: usize,
+    ) -> (std::sync::Arc<std::sync::Mutex<Connection>>, String) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::{Arc, Mutex};
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("D1 loopback listener");
+        let endpoint = format!(
+            "http://{}",
+            listener.local_addr().expect("listener address")
+        );
+        let database = Connection::open_in_memory().expect("SQLite D1 fixture");
+        database
+            .execute_batch(
+                "CREATE TABLE staging_load_test_runs (run_id TEXT, scenario TEXT, target_environment TEXT, target_deployment_sha TEXT, state TEXT, admitted_at_ms INTEGER, PRIMARY KEY (run_id, scenario));
+                 CREATE TABLE staging_load_test_admission_nonces (nonce_digest TEXT PRIMARY KEY, run_id TEXT, scenario TEXT, target_environment TEXT, target_deployment_sha TEXT, issued_at_ms INTEGER, expires_at_ms INTEGER, admitted_at_ms INTEGER);
+                 CREATE TABLE tenant (tenant_id TEXT PRIMARY KEY, primary_region TEXT NOT NULL);
+                 CREATE TABLE audit_outbox (id TEXT PRIMARY KEY, tenant_id TEXT, digest TEXT, request_id TEXT, event_type TEXT, payload_json TEXT, enqueued_at INTEGER, emitted_at INTEGER, region TEXT);
+                 CREATE TABLE staging_load_test_resources (run_id TEXT, scenario TEXT, resource_class TEXT, receipt_ref TEXT, opaque_handle TEXT, disposition TEXT, state TEXT, registered_at_ms INTEGER, PRIMARY KEY (run_id, scenario, resource_class, receipt_ref));
+                 CREATE TABLE staging_load_test_r2_intents (operation_id TEXT PRIMARY KEY, run_id TEXT, scenario TEXT, target_deployment_sha TEXT, resource_class TEXT, receipt_ref TEXT, opaque_handle TEXT, disposition TEXT, state TEXT, prepared_at_ms INTEGER, committed_at_ms INTEGER);
+                 INSERT INTO tenant VALUES ('00000000-0000-7000-8000-000000000002', 'weur');",
+            )
+            .expect("fixture schema");
+        if fail_resource_registration {
+            database
+                .execute_batch(
+                    "CREATE TRIGGER fail_staging_resource BEFORE INSERT ON staging_load_test_resources BEGIN SELECT RAISE(ABORT, 'forced registration failure'); END;",
+                )
+                .expect("failure trigger");
+        }
+        let database = Arc::new(Mutex::new(database));
+        let thread_db = Arc::clone(&database);
+        std::thread::spawn(move || {
+            for _ in 0..request_count {
+                let (mut stream, _) = listener.accept().expect("D1 request connection");
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                    .expect("read timeout");
+                let mut bytes = Vec::new();
+                loop {
+                    let mut buffer = [0_u8; 4096];
+                    let read = stream.read(&mut buffer).expect("HTTP request read");
+                    bytes.extend_from_slice(&buffer[..read]);
+                    let Some(header_end) = bytes.windows(4).position(|part| part == b"\r\n\r\n")
+                    else {
+                        continue;
+                    };
+                    let headers = String::from_utf8_lossy(&bytes[..header_end]);
+                    let content_length = headers
+                        .lines()
+                        .find_map(|line| {
+                            let (key, value) = line.split_once(':')?;
+                            key.eq_ignore_ascii_case("content-length")
+                                .then_some(value.trim())
+                        })
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .expect("HTTP content length");
+                    if bytes.len() >= header_end + 4 + content_length {
+                        break;
+                    }
+                }
+                let header_end = bytes
+                    .windows(4)
+                    .position(|part| part == b"\r\n\r\n")
+                    .unwrap();
+                let body: Value =
+                    serde_json::from_slice(&bytes[header_end + 4..]).expect("D1 JSON");
+                let result = if let Some(batch) = body.get("batch").and_then(Value::as_array) {
+                    let mut db = thread_db.lock().expect("fixture database lock");
+                    let tx = db.transaction().expect("D1 batch transaction");
+                    let executed = batch.iter().try_for_each(|statement| {
+                        let sql = statement["sql"].as_str().expect("batch SQL");
+                        let values =
+                            json_sql_values(statement["params"].as_array().expect("batch params"));
+                        tx.execute(sql, rusqlite::params_from_iter(values.iter()))
+                            .map(|_| ())
+                    });
+                    match executed {
+                        Ok(()) => {
+                            tx.commit().expect("commit D1 fixture transaction");
+                            Ok(serde_json::json!({
+                                "result": batch.iter().map(|_| serde_json::json!({"results": [], "success": true})).collect::<Vec<_>>(),
+                                "success": true,
+                                "errors": []
+                            }))
+                        }
+                        Err(error) => {
+                            drop(tx);
+                            Err(error.to_string())
+                        }
+                    }
+                } else {
+                    let sql = body["sql"].as_str().expect("query SQL");
+                    let values = json_sql_values(body["params"].as_array().expect("query params"));
+                    let db = thread_db.lock().expect("fixture database lock");
+                    query_json_rows(&db, sql, &values)
+                        .map_err(|error| error.to_string())
+                        .map(|rows| serde_json::json!({ "result": [{"results": rows, "success": true}], "success": true, "errors": [] }))
+                };
+                let (status, response) = match result {
+                    Ok(response) => ("200 OK", response),
+                    Err(error) => (
+                        "400 Bad Request",
+                        serde_json::json!({"result": [], "success": false, "errors": [{"message": error}]}),
+                    ),
+                };
+                let response = response.to_string();
+                write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}", response.len()).expect("D1 HTTP response");
+            }
+        });
+        (database, endpoint)
+    }
+
+    fn json_sql_values(values: &[Value]) -> Vec<rusqlite::types::Value> {
+        values
+            .iter()
+            .map(|value| match value {
+                Value::Null => rusqlite::types::Value::Null,
+                Value::Bool(value) => rusqlite::types::Value::Integer(i64::from(*value)),
+                Value::Number(value) => {
+                    rusqlite::types::Value::Integer(value.as_i64().expect("integer D1 param"))
+                }
+                Value::String(value) => rusqlite::types::Value::Text(value.clone()),
+                _ => rusqlite::types::Value::Text(value.to_string()),
+            })
+            .collect()
+    }
+
+    fn query_json_rows(
+        connection: &Connection,
+        sql: &str,
+        values: &[rusqlite::types::Value],
+    ) -> Result<Vec<Value>, rusqlite::Error> {
+        let mut statement = connection.prepare(sql)?;
+        let columns = statement
+            .column_names()
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>();
+        let mut rows = statement.query(rusqlite::params_from_iter(values.iter()))?;
+        let mut result = Vec::new();
+        while let Some(row) = rows.next()? {
+            let mut object = serde_json::Map::new();
+            for (index, name) in columns.iter().enumerate() {
+                let value = match row.get_ref(index)? {
+                    rusqlite::types::ValueRef::Null => Value::Null,
+                    rusqlite::types::ValueRef::Integer(value) => json!(value),
+                    rusqlite::types::ValueRef::Real(value) => json!(value),
+                    rusqlite::types::ValueRef::Text(value) => json!(String::from_utf8_lossy(value)),
+                    rusqlite::types::ValueRef::Blob(value) => json!(hex::encode(value)),
+                };
+                object.insert(name.clone(), value);
+            }
+            result.push(Value::Object(object));
+        }
+        Ok(result)
     }
 }
