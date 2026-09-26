@@ -9,6 +9,37 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
     assert_publication_inventory_contract(&workflow);
     assert_retry_manifest_contract(&workflow);
 
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-pc-windows-gnu",
+    ] {
+        let target_line = format!("          - triple: {target}");
+        let missing_target = workflow.replacen(&target_line, "          - triple: removed", 1);
+        assert_ne!(missing_target, workflow, "target mutation must take effect");
+        assert!(
+            std::panic::catch_unwind(|| assert_release_contract(&missing_target)).is_err(),
+            "release contract accepted missing required target {target}"
+        );
+    }
+
+    for apple_target in ["x86_64-apple-darwin", "aarch64-apple-darwin"] {
+        let windows_target = "          - triple: x86_64-pc-windows-gnu";
+        let reintroduced_apple = workflow.replacen(
+            windows_target,
+            &format!("          - triple: {apple_target}\n{windows_target}"),
+            1,
+        );
+        assert_ne!(
+            reintroduced_apple, workflow,
+            "Apple mutation must take effect"
+        );
+        assert!(
+            std::panic::catch_unwind(|| assert_release_contract(&reintroduced_apple)).is_err(),
+            "release contract accepted reintroduced Apple target {apple_target}"
+        );
+    }
+
     for (mutant, label) in [
         (
             workflow.replace("tool: cargo-zigbuild@0.19.8", "tool: cargo-zigbuild@0.19.7"),
@@ -24,10 +55,6 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
                 "cargo-zigbuild --version",
             ),
             "unsupported cargo-zigbuild version probe",
-        ),
-        (
-            workflow.replace("x86_64-pc-windows-gnu", "windows target removed"),
-            "Windows target removal",
         ),
         (
             workflow.replace("run: git config --global core.longpaths true", "run: true"),
@@ -164,11 +191,6 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         !windows.contains("workflow_dispatch:"),
         "privileged signer dispatch must remain disabled"
     );
-    assert!(
-        workflow.contains("notarize-macos:\n    needs: [sign-windows, release]"),
-        "macOS notarization must wait for Windows through a release-root needs edge"
-    );
-
     let slsa = load_workflow("release-slsa3.yml")?;
     for required in [
         "CORELINK_CLI_RELEASE_TOKEN",
