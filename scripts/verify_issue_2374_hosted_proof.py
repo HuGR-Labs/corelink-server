@@ -78,6 +78,56 @@ MUTATION_MARKERS = {
 }
 SHA = re.compile(r"[0-9a-f]{40}")
 
+SOCKET_GUARD_SOURCE = r'''
+"use strict";
+const net = require("node:net");
+const nativeConnect = net.Socket.prototype.connect;
+function blocked(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  throw error;
+}
+function portNumber(value) {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && /^[0-9]{1,5}$/.test(value)) return Number(value);
+  return null;
+}
+net.Socket.prototype.connect = function (...args) {
+  let target = args[0];
+  let positional = args;
+  if (Array.isArray(target) && args.length === 1 && target.length === 2 &&
+      target[0] && typeof target[0] === "object" && typeof target[1] === "function") {
+    positional = target;
+    target = positional[0];
+  }
+  let host;
+  let port;
+  if (typeof target === "number") {
+    port = target;
+    host = typeof positional[1] === "string" ? positional[1] : null;
+  } else if (target && typeof target === "object" && !Array.isArray(target)) {
+    port = portNumber(target.port);
+    host = typeof target.host === "string" ? target.host :
+      (typeof target.hostname === "string" ? target.hostname : null);
+    if (target.path || target.socketPath) {
+      blocked("I2374_ACTION_EGRESS_BLOCKED", "Unix socket destinations are outside the local API mock");
+    }
+  } else {
+    blocked("I2374_ACTION_EGRESS_BLOCKED", "unrecognized Socket.connect arguments");
+  }
+
+  const configured = process.env.I2374_ACTION_ALLOWED_PORT;
+  const allowedPort = /^[1-9][0-9]{0,4}$/.test(configured || "") ? Number(configured) : null;
+  if (!allowedPort || allowedPort > 65535 || !port || port < 1 || port > 65535) {
+    blocked("I2374_ACTION_EGRESS_BLOCKED_PORT", "local API mock port is missing or invalid");
+  }
+  if (port !== allowedPort || host !== "127.0.0.1") {
+    blocked("I2374_ACTION_EGRESS_BLOCKED", `denied Socket.connect destination ${String(host)}:${port}`);
+  }
+  return nativeConnect.apply(this, args);
+};
+'''
+
 
 def fail(message: str) -> None:
     raise ContractError(message)
@@ -655,7 +705,10 @@ def action_step_inputs(root: Path, relative: str, job: str, step_name: str) -> d
     return inputs
 
 
-def run_pinned_action(action_root: Path, action: str, root: Path, api_url: str, event_path: Path, tmp: Path) -> None:
+def run_pinned_action(
+    action_root: Path, action: str, root: Path, api_url: str, event_path: Path,
+    tmp: Path, guard_path: Path,
+) -> None:
     action_dir = action_root / action
     metadata = (action_dir / "action.yml").read_text(encoding="utf-8")
     main = re.search(r"(?m)^\s*main:\s*['\"]?([^\s'\"]+)", metadata)
@@ -680,7 +733,9 @@ def run_pinned_action(action_root: Path, action: str, root: Path, api_url: str, 
         "GITHUB_TOKEN": "fixture-token-never-valid-outside-local-mock",
         "INPUT_GITHUB_TOKEN": "fixture-token-never-valid-outside-local-mock",
         "INPUT_REPO-TOKEN": "fixture-token-never-valid-outside-local-mock",
+        "I2374_ACTION_ALLOWED_PORT": str(urlsplit(api_url).port or ""),
     }
+    env["NODE_OPTIONS"] = f"--require={guard_path}"
     in_inputs = False
     current_input: str | None = None
     for line in metadata.splitlines():
@@ -736,9 +791,11 @@ def verify_pinned_mutating_actions(root: Path, action_root: Path) -> None:
     try:
         with tempfile.TemporaryDirectory(prefix="i2374-actions-") as directory:
             tmp = Path(directory)
-            run_pinned_action(action_root, "labeler", root, api_url, event_path, tmp)
-            run_pinned_action(action_root, "stale", root, api_url, event_path, tmp)
-            run_pinned_action(action_root, "sticky", root, api_url, event_path, tmp)
+            guard_path = tmp / "socket-guard.cjs"
+            guard_path.write_text(SOCKET_GUARD_SOURCE, encoding="utf-8")
+            run_pinned_action(action_root, "labeler", root, api_url, event_path, tmp, guard_path)
+            run_pinned_action(action_root, "stale", root, api_url, event_path, tmp, guard_path)
+            run_pinned_action(action_root, "sticky", root, api_url, event_path, tmp, guard_path)
     finally:
         server.shutdown()
         server.server_close()
@@ -754,7 +811,6 @@ def verify_pinned_mutating_actions(root: Path, action_root: Path) -> None:
             and "mutation" not in str(request["body"].get("query", "")).lower()
         )
     ]
-    serialized = json.dumps(writes)
     all_requests = json.dumps(LocalGitHubHandler.requests)
     if "/pulls/314/files" not in all_requests or not any("/issues/314/labels" in str(request.get("path")) for request in writes):
         fail(f"pinned labeler did not reach its denied fixture label write: {LocalGitHubHandler.requests}")
@@ -764,8 +820,70 @@ def verify_pinned_mutating_actions(root: Path, action_root: Path) -> None:
         fail("pinned coverage comment action did not attempt its fixture comment")
     if not writes or any(request.get("status") != 403 for request in writes):
         fail(f"pinned action REST writes were not all denied: {writes}")
-    if any("api.github.com" in str(request) for request in LocalGitHubHandler.requests):
-        fail("a pinned action escaped the local GitHub API mock")
+
+
+def verify_socket_guard_controls() -> None:
+    """Prove local success, lookalike denial before DNS, and missing-port denial."""
+    LocalGitHubHandler.requests = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), LocalGitHubHandler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        with tempfile.TemporaryDirectory(prefix="i2374-socket-guard-") as directory:
+            tmp = Path(directory)
+            guard_path = tmp / "socket-guard.cjs"
+            guard_path.write_text(SOCKET_GUARD_SOURCE, encoding="utf-8")
+            port = server.server_port
+
+            positive = r'''const http = require("node:http");
+const port = Number(process.env.I2374_ACTION_ALLOWED_PORT);
+http.get({ hostname: "127.0.0.1", port, path: "/api/v3/guard-positive" }, response => {
+  response.resume();
+  response.on("end", () => { if (response.statusCode !== 200) process.exitCode = 1; });
+}).on("error", () => { process.exitCode = 1; });
+'''
+            negative = r'''const http = require("node:http");
+let lookedUp = false;
+try {
+  const request = http.get({
+    hostname: "api.github.com.evil.invalid", port: 443,
+    lookup(_host, _options, callback) { lookedUp = true; callback(new Error("lookup must not run")); },
+  }, () => { process.exitCode = 1; });
+  request.on("error", error => {
+    if (error.code !== "I2374_ACTION_EGRESS_BLOCKED" || lookedUp) process.exitCode = 1;
+  });
+} catch (error) {
+  if (error.code !== "I2374_ACTION_EGRESS_BLOCKED" || lookedUp) process.exitCode = 1;
+}
+'''
+            missing_port = r'''const net = require("node:net");
+try {
+  new net.Socket().connect({ host: "127.0.0.1", port: Number(process.env.I2374_PROBE_PORT) });
+  process.exitCode = 1;
+} catch (error) {
+  if (error.code !== "I2374_ACTION_EGRESS_BLOCKED_PORT") process.exitCode = 1;
+}
+'''
+
+            def probe(source: str, *, allowed_port: int | None) -> None:
+                env = {**os.environ, "NODE_OPTIONS": f"--require={guard_path}", "I2374_PROBE_PORT": str(port)}
+                if allowed_port is None:
+                    env.pop("I2374_ACTION_ALLOWED_PORT", None)
+                else:
+                    env["I2374_ACTION_ALLOWED_PORT"] = str(allowed_port)
+                result = subprocess.run(["node", "-e", source], env=env, capture_output=True, text=True)
+                if result.returncode != 0:
+                    fail(f"socket guard control failed: {result.stderr or result.stdout}")
+
+            probe(positive, allowed_port=port)
+            probe(negative, allowed_port=port)
+            probe(missing_port, allowed_port=None)
+            if not any(str(request.get("path", "")).endswith("/guard-positive") for request in LocalGitHubHandler.requests):
+                fail("local positive socket control did not reach the mock handler")
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
 
 
 def verify_mock_deny_negative_control() -> None:
@@ -1156,6 +1274,7 @@ def main() -> int:
                 verify_negative_controls(args.root, args.baseline_root)
             verify_read_only_fixtures(args.root)
             verify_original_write_commands(args.root)
+            verify_socket_guard_controls()
             if not args.actions_root:
                 fail("exact hosted proof requires checked-out sources for the pinned mutating actions")
             verify_pinned_mutating_actions(args.root, args.actions_root)
