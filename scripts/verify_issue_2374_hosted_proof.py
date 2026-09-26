@@ -102,7 +102,8 @@ net.Socket.prototype.connect = function (...args) {
   let target = args[0];
   let positional = args;
   if (Array.isArray(target) && args.length === 1 && target.length === 2 &&
-      target[0] && typeof target[0] === "object" && typeof target[1] === "function") {
+      target[0] && typeof target[0] === "object" &&
+      (typeof target[1] === "function" || target[1] === null)) {
     positional = target;
     target = positional[0];
   }
@@ -894,6 +895,13 @@ try {
   if (error.code !== "I2374_ACTION_EGRESS_BLOCKED" || lookedUp) process.exitCode = 1;
 }
 '''
+            wrapped_null_positive = r'''const net = require("node:net");
+const port = Number(process.env.I2374_ACTION_ALLOWED_PORT);
+const socket = new net.Socket();
+socket.on("connect", () => socket.destroy());
+socket.on("error", () => { process.exitCode = 1; });
+socket.connect([{host: "127.0.0.1", port}, null]);
+'''
             missing_port = r'''const net = require("node:net");
 try {
   new net.Socket().connect({ host: "127.0.0.1", port: Number(process.env.I2374_PROBE_PORT) });
@@ -916,6 +924,7 @@ try {
             probe(positive, allowed_port=port)
             probe(negative, allowed_port=port)
             probe(wrapped_null_negative, allowed_port=port)
+            probe(wrapped_null_positive, allowed_port=port)
             probe(missing_port, allowed_port=None)
             if not any(str(request.get("path", "")).endswith("/guard-positive") for request in LocalGitHubHandler.requests):
                 fail("local positive socket control did not reach the mock handler")
