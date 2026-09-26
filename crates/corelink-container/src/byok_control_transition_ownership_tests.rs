@@ -665,8 +665,10 @@ async fn synthetic_activation_rejects_wrong_reference_and_preexisting_byok_state
         .prepare_staging_synthetic_activation(&staging_activation(), 10_003, &context, &wrong_ref)
         .await
         .is_err());
+    let mut mismatched_activation = activation();
+    mismatched_activation.tenant_id = "11111111-1111-4111-8111-111111111111".to_owned();
     assert!(control
-        .prepare_staging_synthetic_activation(&activation(), 10_004, &context, &good_ref)
+        .prepare_staging_synthetic_activation(&mismatched_activation, 10_004, &context, &good_ref,)
         .await
         .is_err());
     let no_wrong_id_intents: i64 = fixture
@@ -736,21 +738,21 @@ async fn published_partial_synthetic_activation_is_not_cancelled_as_pending() {
         db.execute_batch("DROP TRIGGER trg_byok_activation_intent_forward_only;")
             .expect("allow construction of adversarial published state");
         db.execute(
-            "UPDATE tenant_byok_config SET state='partial',config_version=config_version+1 \\
+            "UPDATE tenant_byok_config SET state='partial',config_version=config_version+1 \
              WHERE tenant_id=?1",
             [locator.tenant_id.as_str()],
         )
         .expect("published partial config fixture");
         db.execute(
-            "UPDATE byok_tenant_gate SET current_generation=1,gate_epoch=gate_epoch+1 \\
+            "UPDATE byok_tenant_gate SET current_generation=1,gate_epoch=gate_epoch+1 \
              WHERE tenant_id=?1",
             [locator.tenant_id.as_str()],
         )
         .expect("published generation fixture");
         db.execute(
-            "UPDATE byok_activation_intent SET phase='published_partial', \\
-                 publication_gate_epoch=observed_gate_epoch+1, \\
-                 published_config_version=config_version+1,cas_complete=1,ac_complete=1, \\
+            "UPDATE byok_activation_intent SET phase='published_partial', \
+                 publication_gate_epoch=observed_gate_epoch+1, \
+                 published_config_version=config_version+1,cas_complete=1,ac_complete=1, \
                  state_version=state_version+1 WHERE intent_id=?1",
             [&locator.intent_id],
         )
@@ -765,9 +767,9 @@ async fn published_partial_synthetic_activation_is_not_cancelled_as_pending() {
     let db = fixture.db.lock().expect("sqlite lock");
     let (phase, state, generation, purges): (String, String, i64, i64) = db
         .query_row(
-            "SELECT a.phase,c.state,g.current_generation, \\
-             (SELECT COUNT(*) FROM byok_object_purge_item p WHERE p.tenant_id=a.tenant_id) \\
-             FROM byok_activation_intent a JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \\
+            "SELECT a.phase,c.state,g.current_generation, \
+             (SELECT COUNT(*) FROM byok_object_purge_item p WHERE p.tenant_id=a.tenant_id) \
+             FROM byok_activation_intent a JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \
              JOIN byok_tenant_gate g ON g.tenant_id=a.tenant_id WHERE a.intent_id=?1",
             [&locator.intent_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
@@ -789,7 +791,7 @@ async fn cancellation_batch_failure_rolls_back_without_success_or_purge() {
         .lock()
         .expect("sqlite lock")
         .execute_batch(
-            "CREATE TRIGGER reject_staging_byok_cancel BEFORE UPDATE OF phase ON byok_activation_intent \\
+            "CREATE TRIGGER reject_staging_byok_cancel BEFORE UPDATE OF phase ON byok_activation_intent \
              WHEN NEW.phase='aborted' BEGIN SELECT RAISE(ABORT,'injected cancellation failure'); END;",
         )
         .expect("inject cancellation batch failure");
@@ -801,10 +803,10 @@ async fn cancellation_batch_failure_rolls_back_without_success_or_purge() {
     let db = fixture.db.lock().expect("sqlite lock");
     let (phase, state, wrapped, outcomes, purges): (String, String, Option<Vec<u8>>, i64, i64) = db
         .query_row(
-            "SELECT a.phase,c.state,s.tcs_wrapped, \\
-             (SELECT COUNT(*) FROM byok_control_outcome o WHERE o.tenant_id=a.tenant_id), \\
-             (SELECT COUNT(*) FROM byok_object_purge_item p WHERE p.tenant_id=a.tenant_id) \\
-             FROM byok_activation_intent a JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \\
+            "SELECT a.phase,c.state,s.tcs_wrapped, \
+             (SELECT COUNT(*) FROM byok_control_outcome o WHERE o.tenant_id=a.tenant_id), \
+             (SELECT COUNT(*) FROM byok_object_purge_item p WHERE p.tenant_id=a.tenant_id) \
+             FROM byok_activation_intent a JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \
              JOIN tenant_byok_secret s ON s.tenant_id=a.tenant_id WHERE a.intent_id=?1",
             [&locator.intent_id],
             |row| {
@@ -833,10 +835,10 @@ async fn cancellation_readback_residue_cannot_return_success() {
         .lock()
         .expect("sqlite lock")
         .execute_batch(
-            "CREATE TRIGGER inject_staging_byok_readback_residue AFTER INSERT ON byok_activation_postcondition \\
-             WHEN NEW.expected_phase='aborted' BEGIN \\
-               UPDATE byok_tenant_gate SET current_generation=1 \\
-                WHERE tenant_id=(SELECT tenant_id FROM byok_activation_intent WHERE intent_id=NEW.intent_id); \\
+            "CREATE TRIGGER inject_staging_byok_readback_residue AFTER INSERT ON byok_activation_postcondition \
+             WHEN NEW.expected_phase='aborted' BEGIN \
+               UPDATE byok_tenant_gate SET current_generation=1 \
+                WHERE tenant_id=(SELECT tenant_id FROM byok_activation_intent WHERE intent_id=NEW.intent_id); \
              END;",
         )
         .expect("inject readback residue after cancellation postcondition");
@@ -848,8 +850,8 @@ async fn cancellation_readback_residue_cannot_return_success() {
     let db = fixture.db.lock().expect("sqlite lock");
     let (phase, state, generation): (String, String, i64) = db
         .query_row(
-            "SELECT a.phase,c.state,g.current_generation FROM byok_activation_intent a \\
-             JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \\
+            "SELECT a.phase,c.state,g.current_generation FROM byok_activation_intent a \
+             JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \
              JOIN byok_tenant_gate g ON g.tenant_id=a.tenant_id WHERE a.intent_id=?1",
             [&locator.intent_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
