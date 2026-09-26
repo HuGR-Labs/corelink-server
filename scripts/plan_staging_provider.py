@@ -91,6 +91,18 @@ def result_items(result: Any) -> list[dict[str, Any]]:
     return [item for item in items if isinstance(item, dict)]
 
 
+def canonical_dns_present(result: Any) -> bool:
+    return any(item.get("name") == HOSTNAME for item in result_items(result))
+
+
+def canonical_route_present(result: Any) -> bool:
+    return any(
+        item.get("pattern", "").split("/", 1)[0].lower() == HOSTNAME
+        for item in result_items(result)
+        if isinstance(item.get("pattern"), str)
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", type=Path, default=Path("infra/staging/topology.json"))
@@ -155,14 +167,9 @@ def main() -> int:
     dns_ok, dns_result = provider_get(token, f"zones/{zone}/dns_records?{dns_query}")
     checks["dns-read"] = {"ok": dns_ok}
     if dns_ok:
-        dns_present = any(
-            item.get("name") == HOSTNAME
-            and item.get("proxied") is True
-            and item.get("type") in {"A", "AAAA", "CNAME"}
-            for item in result_items(dns_result)
-        )
+        dns_present = canonical_dns_present(dns_result)
         checks["staging-dns"] = {
-            "ok": dns_present,
+            "ok": not dns_present,
             "state": "present" if dns_present else "absent",
         }
     else:
@@ -172,14 +179,11 @@ def main() -> int:
     checks["worker-routes-read"] = {"ok": routes_ok}
     if routes_ok:
         # Cloudflare exposes routes only as a zone-wide list. This receipt
-        # discards it and retains the truth of the exact staging pair only.
-        route_present = any(
-            item.get("pattern") == f"{HOSTNAME}/*"
-            and item.get("script") == cloudflare["root_worker"]
-            for item in result_items(routes_result)
-        )
+        # discards it and requires the canonical staging host to remain empty
+        # until the separately reviewed bootstrap publishes its exact routes.
+        route_present = canonical_route_present(routes_result)
         checks["staging-worker-route"] = {
-            "ok": route_present,
+            "ok": not route_present,
             "state": "present" if route_present else "absent",
         }
     else:
