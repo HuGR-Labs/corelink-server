@@ -1,0 +1,25 @@
+{
+  "completed_entry_ids": [
+    "binary:corelink-adapter-host:test:cargo_prop_translate",
+    "binary:corelink-privacy-erasure-worker:test:verification_job_24h",
+    "binary:corelink-telemetry:test:migration_canonical_0016",
+    "doctest:corelink-billing-stripe-traits"
+  ],
+  "entry_ids": [
+    "binary:corelink-adapter-host:test:cargo_prop_translate",
+    "binary:corelink-cli:test:release_workflow_contract",
+    "binary:corelink-privacy-erasure-worker:test:verification_job_24h",
+    "binary:corelink-telemetry:test:migration_canonical_0016",
+    "doctest:corelink-billing-stripe-traits"
+  ],
+  "failed_entry_ids": [
+    "binary:corelink-cli:test:release_workflow_contract"
+  ],
+  "plan_digest": "1e5914b9d6d554e222f4dda7436e2d67fc09b31a2d39f646e7eada085909c8ae",
+  "run_attempt": 1,
+  "run_id": "36195446816",
+  "schema": "corelink.hosted-mutants-baseline-test-shard.v1",
+  "sha": "bf217e7f6fe02df4ffbb1fc7d72126c59b066f7c",
+  "shard": 31,
+  "status": "failure"
+}

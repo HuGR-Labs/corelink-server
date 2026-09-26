@@ -221,7 +221,7 @@ jobs:
         with:
           pattern: mutants-*-${{ github.run_id }}-*
           path: ${{ runner.temp }}/baseline-artifacts
-      - name: Aggregate the complete mapping and every successful shard
+      - name: Aggregate the complete mapping and retain every completed shard
         run: |
           set -euo pipefail
           inventory="$(find "${RUNNER_TEMP}/baseline-artifacts" -name inventory-manifest.json -type f -print | sort | tail -n1)"
