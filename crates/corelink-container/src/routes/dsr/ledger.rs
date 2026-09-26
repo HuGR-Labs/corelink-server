@@ -22,15 +22,21 @@ use std::sync::Arc;
 use serde_json::json;
 use uuid::Uuid;
 
+use corelink_privacy_erasure_worker::audit_emit::ErasureRequestContext;
 use corelink_privacy_erasure_worker::error::ErasureIdempotencyError;
 use corelink_privacy_erasure_worker::event::{
     canonical_backend_kinds, BackendCompletion, BackendErasureOutcome, BackendKind,
 };
 use corelink_privacy_erasure_worker::idempotency::{ErasureIdempotencyLedger, LedgerOutcome};
 
-use super::d1util::{clamp_ms, col_i64, col_str, d1_query_blocking, iso8601_to_ms};
+use super::d1util::{
+    clamp_ms, col_i64, col_str, d1_batch_blocking, d1_query_blocking, iso8601_to_ms,
+};
 use crate::customer_d1::ms_to_iso8601;
-use crate::storage::d1_http::{D1HttpClient, D1Row};
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
+use crate::storage::staging_load_test_ownership::{
+    StagingLoadTestDisposition, StagingLoadTestResourceClass,
+};
 
 /// Columns selected when reconstructing a [`BackendCompletion`] tombstone.
 const SELECT_COLS: &str = "dsr_id, tenant_id, subject_id_hash, backend, outcome, \
@@ -94,6 +100,16 @@ impl ErasureIdempotencyLedger for D1ErasureIdempotencyLedger {
         &self,
         completion: BackendCompletion,
     ) -> Result<LedgerOutcome, ErasureIdempotencyError> {
+        self.upsert_with_context(completion, None)
+    }
+
+    fn upsert_with_context(
+        &self,
+        completion: BackendCompletion,
+        request_context: Option<&dyn ErasureRequestContext>,
+    ) -> Result<LedgerOutcome, ErasureIdempotencyError> {
+        let ownership_context = super::staging_admission_context(request_context)
+            .map_err(|message| ErasureIdempotencyError::Backend(message.to_owned()))?;
         let sel =
             format!("SELECT {SELECT_COLS} FROM dsr_erasure_log WHERE dsr_id = ?1 AND backend = ?2");
         let rows = d1_query_blocking(
@@ -122,6 +138,18 @@ impl ErasureIdempotencyLedger for D1ErasureIdempotencyLedger {
                 && prior.subject_id_hash == completion.subject_id_hash
                 && prior.idempotency_key == completion.idempotency_key
             {
+                if let Some(context) = ownership_context {
+                    d1_batch_blocking(
+                        &self.d1,
+                        vec![ownership_statement(
+                            context,
+                            completion.dsr_id,
+                            completion.backend,
+                            current_time_ms().map_err(ErasureIdempotencyError::Backend)?,
+                        )?],
+                    )
+                    .map_err(ErasureIdempotencyError::Backend)?;
+                }
                 return Ok(LedgerOutcome::Replayed { prior });
             }
             return Err(ErasureIdempotencyError::DivergentPayload);
@@ -153,7 +181,21 @@ impl ErasureIdempotencyLedger for D1ErasureIdempotencyLedger {
             json!(ms_to_iso8601(clamp_ms(completion.started_at_ms))),
             json!(ms_to_iso8601(clamp_ms(completion.completed_at_ms))),
         ];
-        d1_query_blocking(&self.d1, ins, params).map_err(ErasureIdempotencyError::Backend)?;
+        if let Some(context) = ownership_context {
+            let registration = ownership_statement(
+                context,
+                completion.dsr_id,
+                completion.backend,
+                current_time_ms().map_err(ErasureIdempotencyError::Backend)?,
+            )?;
+            d1_batch_blocking(
+                &self.d1,
+                vec![D1BatchStatement::new(ins, params), registration],
+            )
+            .map_err(ErasureIdempotencyError::Backend)?;
+        } else {
+            d1_query_blocking(&self.d1, ins, params).map_err(ErasureIdempotencyError::Backend)?;
+        }
         Ok(LedgerOutcome::Inserted)
     }
 
@@ -199,6 +241,49 @@ impl ErasureIdempotencyLedger for D1ErasureIdempotencyLedger {
         Ok(())
     }
 
+    fn set_outcome_snapshot_with_context(
+        &self,
+        dsr_id: Uuid,
+        outcome_json: &str,
+        request_context: Option<&dyn ErasureRequestContext>,
+    ) -> Result<(), ErasureIdempotencyError> {
+        let Some(context) = super::staging_admission_context(request_context)
+            .map_err(|message| ErasureIdempotencyError::Backend(message.to_owned()))?
+        else {
+            return self.set_outcome_snapshot(dsr_id, outcome_json);
+        };
+
+        let rows = d1_query_blocking(
+            &self.d1,
+            "SELECT backend FROM dsr_erasure_log WHERE dsr_id = ?1",
+            vec![json!(dsr_id.to_string())],
+        )
+        .map_err(ErasureIdempotencyError::Backend)?;
+        let mut statements = vec![D1BatchStatement::new(
+            "UPDATE dsr_erasure_log SET outcome_json = ?2 WHERE dsr_id = ?1",
+            vec![json!(dsr_id.to_string()), json!(outcome_json)],
+        )];
+        for row in rows {
+            let name = col_str(&row, "backend").ok_or_else(|| {
+                ErasureIdempotencyError::Backend(
+                    "dsr_erasure_log: malformed backend identity".to_owned(),
+                )
+            })?;
+            let backend = backend_from_str(&name).ok_or_else(|| {
+                ErasureIdempotencyError::Backend(
+                    "dsr_erasure_log: unknown backend identity".to_owned(),
+                )
+            })?;
+            statements.push(ownership_statement(
+                context,
+                dsr_id,
+                backend,
+                current_time_ms().map_err(ErasureIdempotencyError::Backend)?,
+            )?);
+        }
+        d1_batch_blocking(&self.d1, statements).map_err(ErasureIdempotencyError::Backend)
+    }
+
     fn get_outcome_snapshot(
         &self,
         dsr_id: Uuid,
@@ -209,6 +294,31 @@ impl ErasureIdempotencyLedger for D1ErasureIdempotencyLedger {
             .map_err(ErasureIdempotencyError::Backend)?;
         Ok(rows.first().and_then(|r| col_str(r, "outcome_json")))
     }
+}
+
+fn ownership_statement(
+    context: &crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext,
+    dsr_id: Uuid,
+    backend: BackendKind,
+    registered_at_ms: i64,
+) -> Result<D1BatchStatement, ErasureIdempotencyError> {
+    let handle = format!("{}-{}", dsr_id.simple(), backend.as_str());
+    context
+        .ownership_registration(
+            StagingLoadTestResourceClass::DsrObligation,
+            StagingLoadTestDisposition::Retained,
+            &handle,
+        )
+        .and_then(|registration| registration.d1_statement(registered_at_ms))
+        .map_err(|error| ErasureIdempotencyError::Backend(error.to_string()))
+}
+
+fn current_time_ms() -> Result<i64, String> {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "system clock is before the Unix epoch".to_owned())?
+        .as_millis();
+    i64::try_from(millis).map_err(|_| "system clock timestamp is out of range".to_owned())
 }
 
 /// `records_affected` column value (count_deleted OR count_redacted).

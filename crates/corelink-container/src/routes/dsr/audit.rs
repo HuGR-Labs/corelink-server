@@ -35,12 +35,17 @@ use std::sync::Arc;
 
 use serde_json::json;
 
-use corelink_privacy_erasure_worker::audit_emit::{ErasureAuditRecord, ErasureAuditSink};
+use corelink_privacy_erasure_worker::audit_emit::{
+    ErasureAuditRecord, ErasureAuditSink, ErasureRequestContext,
+};
 use corelink_privacy_erasure_worker::error::ErasureAuditSinkError;
 
-use super::d1util::{clamp_ms, d1_query_blocking};
+use super::d1util::{clamp_ms, d1_batch_blocking, d1_query_blocking};
 use crate::customer_d1::ms_to_iso8601;
-use crate::storage::d1_http::D1HttpClient;
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient};
+use crate::storage::staging_load_test_ownership::{
+    StagingLoadTestDisposition, StagingLoadTestResourceClass,
+};
 
 /// Durable erasure audit sink backed by the D1 `audit_outbox` table.
 ///
@@ -70,6 +75,28 @@ impl D1ErasureAuditSink {
 
 impl ErasureAuditSink for D1ErasureAuditSink {
     fn emit(&self, record: ErasureAuditRecord) -> Result<(), ErasureAuditSinkError> {
+        self.emit_attributed(record, None)
+    }
+
+    fn emit_with_context(
+        &self,
+        record: ErasureAuditRecord,
+        context: Option<&dyn ErasureRequestContext>,
+    ) -> Result<(), ErasureAuditSinkError> {
+        let context = super::staging_admission_context(context)
+            .map_err(|message| ErasureAuditSinkError::Store(message.to_owned()))?;
+        self.emit_attributed(record, context)
+    }
+}
+
+impl D1ErasureAuditSink {
+    fn emit_attributed(
+        &self,
+        record: ErasureAuditRecord,
+        context: Option<
+            &crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext,
+        >,
+    ) -> Result<(), ErasureAuditSinkError> {
         let event_type = record.event_type.as_str();
         let backend = record.backend.map(|b| b.as_str());
         // Deterministic, replay-safe keys: a re-emit of the same logical
@@ -120,7 +147,25 @@ impl ErasureAuditSink for D1ErasureAuditSink {
             json!(payload_json),
             json!(clamp_ms(record.now_ms)),
         ];
-        d1_query_blocking(&self.d1, sql, params).map_err(ErasureAuditSinkError::Store)?;
+        if let Some(context) = context {
+            let registration = context
+                .ownership_registration(
+                    StagingLoadTestResourceClass::AuditEvidence,
+                    StagingLoadTestDisposition::Retained,
+                    &id,
+                )
+                .map_err(|error| ErasureAuditSinkError::Store(error.to_string()))?;
+            let ownership = registration
+                .d1_statement(clamp_ms(record.now_ms))
+                .map_err(|error| ErasureAuditSinkError::Store(error.to_string()))?;
+            d1_batch_blocking(
+                &self.d1,
+                vec![D1BatchStatement::new(sql, params), ownership],
+            )
+            .map_err(ErasureAuditSinkError::Store)?;
+        } else {
+            d1_query_blocking(&self.d1, sql, params).map_err(ErasureAuditSinkError::Store)?;
+        }
         Ok(())
     }
 }

@@ -1,0 +1,74 @@
+name: Issue 2581 DSR audit ownership
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-2581-dsr-audit.yml
+      - crates/corelink-container/src/routes/dsr.rs
+      - crates/corelink-container/src/routes/dsr/**
+      - crates/corelink-container/src/storage/d1_audit_sink/**
+      - apps/signup-worker/src/webhooks/dsr_*
+      - apps/signup-worker/src/webhooks/audit_*
+      - docs/issue-2581-dsr-audit-writer-census.md
+      - scripts/verify_issue_2581_dsr_audit.py
+      - tests/test_issue_2581_dsr_audit.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2581-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  dsr-audit:
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact candidate and protected base
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXPECTED_BASE" "$EXPECTED_HEAD")" = "$EXPECTED_BASE"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Install pinned Protobuf compiler
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+
+      - name: Run census and adversarial source controls
+        run: |
+          python3 -I scripts/verify_issue_2581_dsr_audit.py
+          python3 -I tests/test_issue_2581_dsr_audit.py
+
+      - name: Check Rust formatting and compile scoped crate
+        run: |
+          cargo fmt --all -- --check
+          cargo check --locked -p corelink-server --lib
+
+      - name: Run focused DSR writer tests
+        run: |
+          cargo test --locked -p corelink-server --lib routes::dsr::access::tests::audit_event_id_is_deterministic -- --exact
+          cargo test --locked -p corelink-server --lib routes::dsr::access::tests::rectify_rejects_content_and_non_editable_allows_email -- --exact
+          cargo test --locked -p corelink-server --lib routes::dsr::access::tests::rectify_rejects_invalid_email -- --exact
+          cargo test --locked -p corelink-server --lib routes::dsr::attestation::tests::round_trip_persists_signature_canonical_and_r2_key -- --exact
+          cargo test --locked -p corelink-server --lib routes::dsr::attestation::tests::r2_put_failure_persists_nothing -- --exact
+          cargo test --locked -p corelink-server --lib storage::staging_load_test_admission::tests::present_admission_header_fails_closed_when_the_gate_is_not_configured -- --exact
+          cargo test --locked -p corelink-server --lib storage::staging_load_test_ownership::tests::d1_and_r2_contracts_accept_only_bounded_canonical_inputs -- --exact

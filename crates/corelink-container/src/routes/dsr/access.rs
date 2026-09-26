@@ -35,10 +35,14 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::d1util::{clamp_ms, d1_query_blocking};
+use super::d1util::{clamp_ms, d1_batch_blocking, d1_query_blocking};
 use crate::customer_d1::ms_to_iso8601;
-use crate::storage::d1_http::{D1HttpClient, D1Row};
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
 use crate::storage::r2_s3::R2S3Client;
+use crate::storage::staging_load_test_ownership::{
+    StagingLoadTestDisposition, StagingLoadTestR2Intent, StagingLoadTestResourceClass,
+    StagingLoadTestWriteContext,
+};
 
 /// CloudEvents `type` for the Art.15 access event (audit_outbox).
 pub(super) const EVENT_ACCESS: &str = "corelink.dsr.access";
@@ -379,8 +383,21 @@ fn audit_dsr_event(
     suffix: &str,
     context: &Value,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> Result<(), String> {
     let id = audit_event_id(dsr_id, event_type, suffix);
+    let ownership = ownership_context
+        .map(|context| {
+            context
+                .ownership_registration(
+                    StagingLoadTestResourceClass::AuditEvidence,
+                    StagingLoadTestDisposition::Retained,
+                    &id,
+                )
+                .and_then(|registration| registration.d1_statement(clamp_ms(now_ms)))
+                .map_err(|error| error.to_string())
+        })
+        .transpose()?;
     let request_id = format!("{dsr_id}:dsr");
     let payload = json!({
         "specversion": "1.0",
@@ -414,7 +431,11 @@ fn audit_dsr_event(
         json!(payload_json),
         json!(clamp_ms(now_ms)),
     ];
-    d1_query_blocking(d1, sql, params).map(|_| ())
+    if let Some(registration) = ownership {
+        d1_batch_blocking(d1, vec![D1BatchStatement::new(sql, params), registration])
+    } else {
+        d1_query_blocking(d1, sql, params).map(|_| ())
+    }
 }
 
 /// Live D1-backed gather closure for a real handler.
@@ -435,6 +456,7 @@ pub(super) fn run_access(
     dsr_id: &str,
     tenant_id: &str,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> Result<SubjectExport, String> {
     audit_dsr_event(
         d1,
@@ -444,6 +466,7 @@ pub(super) fn run_access(
         "-",
         &json!({ "surface": "access" }),
         now_ms,
+        ownership_context,
     )?;
     gather_live(d1, tenant_id, now_ms)
 }
@@ -474,6 +497,7 @@ pub(super) fn run_portability(
     dsr_id: &str,
     tenant_id: &str,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> Result<(SubjectExport, ExportReceipt), String> {
     audit_dsr_event(
         d1,
@@ -483,10 +507,118 @@ pub(super) fn run_portability(
         "-",
         &json!({ "surface": "portability" }),
         now_ms,
+        ownership_context,
     )?;
     let export = gather_live(d1, tenant_id, now_ms)?;
-    let receipt = persist_export(r2_audit, dsr_id, tenant_id, &export, now_ms);
+    let receipt = persist_export(
+        d1,
+        r2_audit,
+        dsr_id,
+        tenant_id,
+        &export,
+        now_ms,
+        ownership_context,
+    );
     Ok((export, receipt))
+}
+
+pub(super) fn persist_owned_r2(
+    r2: &Arc<R2S3Client>,
+    d1: &Arc<D1HttpClient>,
+    context: &crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext,
+    resource_class: StagingLoadTestResourceClass,
+    disposition: StagingLoadTestDisposition,
+    object_key: &str,
+    bytes: Vec<u8>,
+    now_ms: u64,
+) -> Result<(), String> {
+    let class_name = match resource_class {
+        StagingLoadTestResourceClass::DsrArtifact => "dsr_artifact",
+        StagingLoadTestResourceClass::AuditEvidence => "audit_evidence",
+        _ => return Err("unsupported DSR R2 ownership class".to_owned()),
+    };
+    let disposition_name = match disposition {
+        StagingLoadTestDisposition::Disposable => "disposable",
+        StagingLoadTestDisposition::Retained => "retained",
+    };
+    let registration = context
+        .ownership_registration(resource_class, disposition, object_key)
+        .map_err(|error| error.to_string())?;
+    let mut operation = Sha256::new();
+    operation.update(b"corelink/dsr/r2-operation/v1\0");
+    operation.update(context.run_id().as_bytes());
+    operation.update([0]);
+    operation.update(context.scenario().as_str().as_bytes());
+    operation.update([0]);
+    operation.update(context.target_deployment_sha().as_bytes());
+    operation.update([0]);
+    operation.update(class_name.as_bytes());
+    operation.update([0]);
+    operation.update(object_key.as_bytes());
+    let operation_id = hex::encode(operation.finalize());
+    let intent = registration
+        .r2_intent(&operation_id)
+        .map_err(|error| error.to_string())?;
+
+    let prepared_at_ms = clamp_ms(now_ms);
+    if d1_batch_blocking(d1, vec![intent.prepare_statement(prepared_at_ms)]).is_err() {
+        // Recover only an exact durable intent. Any mismatch or lookup error
+        // leaves the object write unopened and the caller reports failure.
+        let rows = d1_query_blocking(
+            d1,
+            "SELECT operation_id, run_id, scenario, target_deployment_sha, resource_class, receipt_ref, opaque_handle, disposition, state FROM staging_load_test_r2_intents WHERE operation_id = ?1",
+            vec![json!(operation_id)],
+        )?;
+        let Some(row) = rows.first() else {
+            return Err("staging R2 ownership intent could not be prepared".to_owned());
+        };
+        let expected_receipt =
+            staging_receipt_ref(context, class_name, object_key, disposition_name);
+        let exact = [
+            ("run_id", context.run_id()),
+            ("scenario", context.scenario().as_str()),
+            ("target_deployment_sha", context.target_deployment_sha()),
+            ("resource_class", class_name),
+            ("receipt_ref", expected_receipt.as_str()),
+            ("opaque_handle", object_key),
+            ("disposition", disposition_name),
+        ]
+        .iter()
+        .all(|(key, value)| row.get(*key).and_then(Value::as_str) == Some(*value));
+        let state = row.get("state").and_then(Value::as_str);
+        if !exact || !matches!(state, Some("prepared" | "committed")) {
+            return Err("staging R2 ownership intent conflicts with this write".to_owned());
+        }
+    }
+
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::block_in_place(|| handle.block_on(r2.put(object_key, bytes)))?;
+    let statements = intent.commit_statements(clamp_ms(now_ms));
+    d1_batch_blocking(d1, statements.into_iter().collect())
+        .map_err(|_| "staging R2 ownership commit failed".to_owned())?;
+    Ok(())
+}
+
+fn staging_receipt_ref(
+    context: &crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext,
+    resource_class: &str,
+    opaque_handle: &str,
+    disposition: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"corelink-staging-load-test-resource-receipt-v1\0");
+    for part in [
+        context.run_id().as_bytes(),
+        context.scenario().as_str().as_bytes(),
+        context.target_deployment_sha().as_bytes(),
+        resource_class.as_bytes(),
+        opaque_handle.as_bytes(),
+        disposition.as_bytes(),
+    ] {
+        hasher.update((part.len() as u64).to_be_bytes());
+        hasher.update(part);
+    }
+    hex::encode(hasher.finalize())
 }
 
 /// Best-effort durable persistence of the export bundle to the R2 audit bucket,
@@ -495,11 +627,13 @@ pub(super) fn run_portability(
 /// infra (or a transient PUT failure) downgrades to `persisted: false` — the
 /// inline machine-readable bundle is the Art.20 core and always returns.
 fn persist_export(
+    d1: &Arc<D1HttpClient>,
     r2_audit: Option<&Arc<R2S3Client>>,
     dsr_id: &str,
     tenant_id: &str,
     export: &SubjectExport,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> ExportReceipt {
     let bundle_bytes = serde_json::to_vec(export).unwrap_or_default();
     let content_sha256 = hex::encode(Sha256::digest(&bundle_bytes));
@@ -515,8 +649,20 @@ fn persist_export(
 
     let object_key = format!("dsr_exports/{dsr_id}.json");
     let handle = tokio::runtime::Handle::current();
-    let put_ok =
-        tokio::task::block_in_place(|| handle.block_on(r2.put(&object_key, bundle_bytes.clone())));
+    let put_ok = if let Some(context) = ownership_context {
+        persist_owned_r2(
+            r2,
+            d1,
+            context,
+            StagingLoadTestResourceClass::DsrArtifact,
+            StagingLoadTestDisposition::Disposable,
+            &object_key,
+            bundle_bytes.clone(),
+            now_ms,
+        )
+    } else {
+        tokio::task::block_in_place(|| handle.block_on(r2.put(&object_key, bundle_bytes.clone())))
+    };
     if let Err(e) = put_ok {
         tracing::warn!(dsr_id = %dsr_id, error = %e, "dsr/portability: export bundle R2 PUT failed (inline bundle still returned)");
         return ExportReceipt {
@@ -536,8 +682,20 @@ fn persist_export(
     {
         if let Ok(sig_bytes) = serde_json::to_vec(&attestation) {
             let sig_key = format!("dsr_exports/{dsr_id}.sig.json");
-            let sig_ok =
-                tokio::task::block_in_place(|| handle.block_on(r2.put(&sig_key, sig_bytes)));
+            let sig_ok = if let Some(context) = ownership_context {
+                persist_owned_r2(
+                    r2,
+                    d1,
+                    context,
+                    StagingLoadTestResourceClass::DsrArtifact,
+                    StagingLoadTestDisposition::Disposable,
+                    &sig_key,
+                    sig_bytes,
+                    now_ms,
+                )
+            } else {
+                tokio::task::block_in_place(|| handle.block_on(r2.put(&sig_key, sig_bytes)))
+            };
             match sig_ok {
                 Ok(()) => signed = true,
                 Err(e) => {
@@ -641,6 +799,7 @@ pub(super) fn run_rectification(
     field: &str,
     new_value: &str,
     now_ms: u64,
+    ownership_context: StagingLoadTestWriteContext<'_>,
 ) -> Result<Result<RectifyResult, RectifyReject>, String> {
     let plan = match classify_rectify(table, field, new_value) {
         Ok(p) => p,
@@ -656,14 +815,37 @@ pub(super) fn run_rectification(
         &format!("{table}.{field}"),
         &json!({ "surface": "rectification", "table": table, "field": field }),
         now_ms,
+        ownership_context,
     )?;
-    let rows = d1_query_blocking(
-        d1,
-        &plan.sql,
-        vec![json!(tenant_id), json!(plan.stored_value)],
-    )?;
-    // D1 returns the changed-row set / meta; we report the count defensively.
-    let rows_updated = u64::try_from(rows.len()).unwrap_or(0);
+    let params = vec![json!(tenant_id), json!(plan.stored_value)];
+    let rows_updated = if let Some(context) = ownership_context {
+        let handle = format!("{dsr_id}:rectification:{table}.{field}");
+        let registration = context
+            .ownership_registration(
+                StagingLoadTestResourceClass::DsrArtifact,
+                StagingLoadTestDisposition::Disposable,
+                &handle,
+            )
+            .and_then(|registration| registration.d1_statement(clamp_ms(now_ms)))
+            .map_err(|error| error.to_string())?;
+        let results = d1_batch_blocking(
+            d1,
+            vec![
+                D1BatchStatement::new(&plan.sql, params),
+                D1BatchStatement::new("SELECT changes() AS rows_updated", vec![]),
+                registration,
+            ],
+        )?;
+        results
+            .get(1)
+            .and_then(|rows| rows.first())
+            .and_then(|row| row.get("rows_updated"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+    } else {
+        let rows = d1_query_blocking(d1, &plan.sql, params)?;
+        u64::try_from(rows.len()).unwrap_or(0)
+    };
     Ok(Ok(RectifyResult {
         table: table.to_owned(),
         field: field.to_owned(),
