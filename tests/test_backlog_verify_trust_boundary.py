@@ -36,7 +36,7 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         trusted.mkdir()
         candidate.mkdir()
         preimages = {
-            "scripts/verify_b057_sli.py": b"trusted verifier preimage\n",
+            "scripts/verify_b057_sli.py": b"def trusted_verifier_preimage():\n    return True\n",
             "tests/test_b057_sli_contract.py": b"trusted contract preimage\n",
         }
         targets = {
