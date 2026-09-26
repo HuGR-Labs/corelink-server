@@ -131,6 +131,8 @@ def _securetransport_handshake(hostname: str, label: str) -> dict[str, Any]:
 
 def build_report(*, live: bool, revision: str | None) -> dict[str, Any]:
     inventory = b035.inventory(ROOT)
+    source_validation = inventory["external_surface"]["source_validation"]
+    source_validation_ok = source_validation.get("status") == "all_markers_match"
     report: dict[str, Any] = {
         "issue": 2163,
         "backlog_id": "B-035",
@@ -144,6 +146,8 @@ def build_report(*, live: bool, revision: str | None) -> dict[str, Any]:
         "zone_id_redacted": f"{b035.ZONE_ID[:8]}…{b035.ZONE_ID[-4:]}",
         "zone_floor": {"status": "not_requested"},
         "legal_claims": inventory["instruments"],
+        "source_validation": source_validation,
+        "handshake_probe_status": "ready" if source_validation_ok else "blocked_source_validation",
         "handshake_scope": "TLS negotiation only; no HTTP request, authentication attempt, cache read/write, or application contract test",
         "ingress": [],
         "templated_ingress": [],
@@ -199,13 +203,16 @@ def build_report(*, live: bool, revision: str | None) -> dict[str, Any]:
         entry = {
             "hostname": hostname,
             "sources": [{"name": s["name"], "source": s["source"], "declared_status": s["status"]} for s in surfaces],
+            "handshake_status": "probed" if live and source_validation_ok else (
+                "skipped_source_validation" if live else "inventory_only"
+            ),
             "python_tls": (
                 [_python_handshake(hostname, label, version) for label, version in TLS_VERSIONS]
-                if live
+                if live and source_validation_ok
                 else []
             ),
         }
-        if live and hostname == "corelink-api.humangr.com":
+        if live and source_validation_ok and hostname == "corelink-api.humangr.com":
             entry["securetransport_tls"] = [_securetransport_handshake(hostname, label) for label, _ in TLS_VERSIONS]
         report["ingress"].append(entry)
 
@@ -247,6 +254,8 @@ def main() -> int:
                 claim["claim_count"] == 1 and claim["claim_matches_expected"]
                 for claim in report["legal_claims"]
             ),
+            "source_validation": report["source_validation"]["status"],
+            "source_validation_errors": report["source_validation"]["errors"],
             "source_bound_ingress_rows": report["handshake_summary"]["source_bound_ingress_rows"],
             "concrete_hostnames": report["handshake_summary"]["unique_concrete_ingress_hostnames"],
             "templated_ingress_not_probeable": report["handshake_summary"]["templated_ingress_not_probeable"],
@@ -258,6 +267,8 @@ def main() -> int:
         return 0 if (
             summary["instrument_count"] == 8
             and summary["instrument_claims_match"]
+            and summary["source_validation"] == "all_markers_match"
+            and not summary["source_validation_errors"]
             and summary["source_bound_ingress_rows"] == 15
             and summary["concrete_hostnames"] == 13
             and summary["templated_ingress_not_probeable"] == 1
@@ -266,7 +277,10 @@ def main() -> int:
     print(json.dumps(report, indent=2, sort_keys=True))
     if not args.live:
         return 0
-    return 0 if report["zone_floor"].get("status") in {"match", "drift"} else 2
+    return 0 if (
+        report["zone_floor"].get("status") in {"match", "drift"}
+        and report["source_validation"].get("status") == "all_markers_match"
+    ) else 2
 
 
 if __name__ == "__main__":

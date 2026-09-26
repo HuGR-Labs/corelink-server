@@ -50,4 +50,4 @@ jobs:
         if: always()
         env:
           B035_REPORT: ${{ runner.temp }}/b035-tls-probe.json
-        run: python3 -c 'import json, os, pathlib, sys; p=json.loads(pathlib.Path(os.environ["B035_REPORT"]).read_text()); print("zone floor:", p["zone_floor"].get("status"), p["zone_floor"].get("value", "")); sys.exit(0 if p["zone_floor"].get("status") in {"match", "drift"} else 1)'
+        run: python3 -c 'import json, os, pathlib, sys; p=json.loads(pathlib.Path(os.environ["B035_REPORT"]).read_text()); print("zone floor:", p["zone_floor"].get("status"), p["zone_floor"].get("value", "")); print("source validation:", p["source_validation"].get("status")); sys.exit(0 if p["zone_floor"].get("status") in {"match", "drift"} and p["source_validation"].get("status") == "all_markers_match" else 1)'
