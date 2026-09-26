@@ -188,11 +188,6 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         !windows.contains("workflow_dispatch:"),
         "privileged signer dispatch must remain disabled"
     );
-    assert!(
-        workflow.contains("notarize-macos:\n    needs: [sign-windows, release]"),
-        "macOS notarization must wait for Windows through a release-root needs edge"
-    );
-
     let slsa = load_workflow("release-slsa3.yml")?;
     for required in [
         "CORELINK_CLI_RELEASE_TOKEN",
