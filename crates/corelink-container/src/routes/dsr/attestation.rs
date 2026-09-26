@@ -581,11 +581,11 @@ mod tests {
 
     use serde_json::Value;
 
+    use crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext;
     use corelink_erasure_attestation::{
         verify_attestation_signature, ErasureAttestation, ErasureAttestationPayload,
         ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle, Region,
     };
-    use crate::storage::staging_load_test_admission::StagingLoadTestAdmissionContext;
 
     use super::{persist_signed_attestation, AttestationSinks, ERASE_MECHANISM};
 
