@@ -71,6 +71,7 @@ impl Fixture {
                 "0081_byok_tenant_config.sql",
                 "0118_byok_transition_fence.sql",
                 "0119_byok_control_transition_guard.sql",
+                "0120_byok_backfill_run.sql",
                 "0121_byok_activation_pipeline.sql",
                 "0147_staging_load_test_run_ownership.sql",
                 "0148_staging_load_test_admission_nonce.sql",
