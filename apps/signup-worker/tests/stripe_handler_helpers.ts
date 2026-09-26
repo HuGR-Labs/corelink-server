@@ -109,7 +109,7 @@ export function fakeDb(): {
             for (const statement of statements) {
                 const candidate = statement as { sql?: string; run(): Promise<{ meta?: { changes?: number } }> };
                 if (candidate.sql?.includes("WHERE changes() = 0") && priorChanges === 0) {
-                    throw new Error("ownership replay conflict");
+                    throw new Error("staging webhook replay rejected");
                 }
                 const result = await statement.run() as { meta?: { changes?: number } };
                 priorChanges = result.meta?.changes ?? 0;
