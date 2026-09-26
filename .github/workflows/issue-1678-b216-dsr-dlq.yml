@@ -7,7 +7,7 @@ on:
       - "apps/signup-worker/src/index.ts"
       - "apps/signup-worker/tests/dsr_consumer.test.ts"
       - "apps/signup-worker/wrangler.toml"
-      - ".github/workflows/staging-bootstrap.yml"
+      - ".github/workflows/staging-quarantine-apply.yml"
       - "scripts/verify_staging_topology_contract.py"
       - "infra/staging/topology.json"
       - "migrations/d1/0138_dsr_dlq_delivery_receipts.sql"

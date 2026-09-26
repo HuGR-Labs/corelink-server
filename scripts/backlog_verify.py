@@ -44,6 +44,7 @@ import json
 import os
 import posixpath
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -519,57 +520,98 @@ def _regular_control(root: Path, relative: str) -> bytes:
     return path.read_bytes()
 
 
-def _candidate_tree_files(root: Path) -> dict[str, Path]:
-    """Return regular candidate files while refusing symlink traversal."""
-    files: dict[str, Path] = {}
-    for current, directories, filenames in os.walk(root, topdown=True, followlinks=False):
+def _candidate_tree_entries(root: Path) -> dict[str, tuple[str, int, str]]:
+    """Return file modes and hashes or symlink targets without following links."""
+    entries: dict[str, tuple[str, int, str]] = {}
+
+    def fail_walk(error: OSError) -> None:
+        raise RuntimeError(f"candidate tree traversal failed: {error}") from error
+
+    try:
+        if not stat.S_ISDIR(root.lstat().st_mode):
+            raise RuntimeError("candidate tree root is not a regular directory")
+    except OSError as exc:
+        raise RuntimeError(f"candidate tree root unavailable: {exc}") from exc
+
+    for current, directories, filenames in os.walk(
+        root, topdown=True, onerror=fail_walk, followlinks=False
+    ):
         current_path = Path(current)
-        directories[:] = [name for name in directories if name != ".git"]
+        walk_directories: list[str] = []
         for name in directories:
             path = current_path / name
-            if path.is_symlink():
-                raise RuntimeError(f"candidate tree contains symlink directory: {path.relative_to(root)}")
+            relative = path.relative_to(root).as_posix()
+            try:
+                mode = path.lstat().st_mode
+            except OSError as exc:
+                raise RuntimeError(f"candidate tree entry unavailable: {relative}: {exc}") from exc
+            if name == ".git" and stat.S_ISDIR(mode):
+                continue
+            if stat.S_ISLNK(mode):
+                entries[relative] = ("symlink", stat.S_IMODE(mode), os.readlink(path))
+            elif stat.S_ISDIR(mode):
+                walk_directories.append(name)
+            else:
+                raise RuntimeError(f"candidate tree contains non-directory path: {relative}")
+        directories[:] = walk_directories
+
         for name in filenames:
             path = current_path / name
             relative = path.relative_to(root).as_posix()
-            if path.is_symlink() or not path.is_file():
+            try:
+                mode = path.lstat().st_mode
+            except OSError as exc:
+                raise RuntimeError(f"candidate tree entry unavailable: {relative}: {exc}") from exc
+            if stat.S_ISLNK(mode):
+                entries[relative] = ("symlink", stat.S_IMODE(mode), os.readlink(path))
+            elif stat.S_ISREG(mode):
+                entries[relative] = (
+                    "file",
+                    stat.S_IMODE(mode),
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                )
+            else:
                 raise RuntimeError(f"candidate tree contains non-regular file: {relative}")
-            files[relative] = path
-    return files
-
-
-def _sha256_path(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return entries
 
 
 def _preauthorized_b057_c0(candidate_root: Path, trusted_root: Path) -> bool:
     """Recognize the sole byte-pinned B-057 trusted-control migration."""
     try:
-        candidate_files = _candidate_tree_files(candidate_root)
-        trusted_files = _candidate_tree_files(trusted_root)
+        candidate_entries = _candidate_tree_entries(candidate_root)
+        trusted_entries = _candidate_tree_entries(trusted_root)
     except (OSError, RuntimeError):
         return False
 
     workflow = ".github/workflows/issue-2414-b057-sli.yml"
-    if workflow in trusted_files:
+    if workflow in trusted_entries:
         return False
-    if set(candidate_files) != set(trusted_files) | {workflow}:
+    if set(candidate_entries) != set(trusted_entries) | {workflow}:
+        return False
+    if any(
+        candidate_entries.get(relative, ("", 0, ""))[0] != "file"
+        for relative in B057_C0_TARGETS
+    ):
+        return False
+    if any(
+        trusted_entries.get(relative, ("", 0, ""))[0] != "file"
+        for relative in B057_C0_PREIMAGES
+    ):
         return False
     changed = {
         relative
-        for relative in candidate_files
-        if relative not in trusted_files
-        or _sha256_path(candidate_files[relative]) != _sha256_path(trusted_files[relative])
+        for relative, entry in candidate_entries.items()
+        if entry != trusted_entries.get(relative)
     }
     if changed != set(B057_C0_TARGETS):
         return False
     return (
         all(
-            _sha256_path(trusted_files[relative]) == expected
+            trusted_entries[relative][2] == expected
             for relative, expected in B057_C0_PREIMAGES.items()
         )
         and all(
-            _sha256_path(candidate_files[relative]) == expected
+            candidate_entries[relative][2] == expected
             for relative, expected in B057_C0_TARGETS.items()
         )
     )

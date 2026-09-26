@@ -222,7 +222,7 @@ workflow-paths-sha256: 2c7dac4e62e02cc708dcabda340965dd7668af9f73ff6b7627e367012
 .github/workflows/slo-instrumentation.yml | LEAD-BLOCKED | blocked
 .github/workflows/smoke-install.yml | LEAD-BLOCKED | blocked
 .github/workflows/spec_validation.yml | LEAD-BLOCKED | blocked
-.github/workflows/staging-bootstrap.yml | LEAD-BLOCKED | blocked
+.github/workflows/staging-quarantine-apply.yml | LEAD-BLOCKED | blocked
 .github/workflows/staging-provision-plan.yml | LEAD-BLOCKED | blocked
 .github/workflows/stale.yml | LEAD-BLOCKED | blocked
 .github/workflows/subprocessors-sync.yml | LEAD-BLOCKED | blocked

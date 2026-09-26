@@ -1,23 +1,23 @@
-name: staging bootstrap (#1700)
+name: staging quarantine apply (#1700)
 
-# Pull requests run only credentialless contract checks. Provider mutation is a
-# manual operation on protected main behind the existing staging environment.
+# This is the only provider-write path for the quarantined staging phase. It
+# deploys isolated Workers and binds staging-only secret names, but never
+# creates DNS records or publishes Worker routes. Health and route publication
+# remain separately reviewed operations.
 on:
   pull_request:
     paths:
-      - '.github/workflows/staging-bootstrap.yml'
-      - 'infra/staging/README.md'
+      - '.github/workflows/staging-quarantine-apply.yml'
       - 'infra/staging/topology.json'
       - 'scripts/render_staging_wrangler.py'
       - 'scripts/staging_bootstrap_provider.py'
-      - 'scripts/plan_staging_provider.py'
       - 'tests/test_render_staging_wrangler.py'
       - 'tests/test_staging_bootstrap_provider.py'
-      - 'tests/test_plan_staging_provider.py'
+      - 'tests/test_staging_quarantine_apply_contract.py'
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "bootstrap-staging-1700" to deploy the isolated staging target'
+        description: 'Type "quarantine-apply-staging-1700" to deploy isolated route-free Workers'
         required: true
         type: string
 
@@ -25,21 +25,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: staging-bootstrap
+  group: staging-quarantine-apply
   cancel-in-progress: false
 
 jobs:
   contract:
-    name: credentialless staging plan and contract
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    name: credentialless quarantine-apply contract
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout without credentials
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-
-      - name: Validate topology and rendered Worker contract
+      - name: Verify quarantine-only workflow contract
         run: |
           set -euo pipefail
           python3 scripts/verify_staging_target.py
@@ -47,10 +45,10 @@ jobs:
           python3 -S -m unittest -v \
             tests/test_render_staging_wrangler.py \
             tests/test_staging_bootstrap_provider.py \
-            tests/test_plan_staging_provider.py
+            tests/test_staging_quarantine_apply_contract.py
 
-  bootstrap:
-    name: protected staging bootstrap
+  quarantine-apply:
+    name: protected staging quarantine apply
     if: >-
       github.repository == 'HuGR-dev/corelink-server' &&
       github.event_name == 'workflow_dispatch' &&
@@ -77,21 +75,14 @@ jobs:
       PAGERDUTY_WEBHOOK_SECRET: ${{ secrets.STAGING_PAGERDUTY_WEBHOOK_SECRET }}
       R2_S3_ACCESS_KEY_ID: ${{ secrets.STAGING_R2_S3_ACCESS_KEY_ID }}
       R2_S3_SECRET_ACCESS_KEY: ${{ secrets.STAGING_R2_S3_SECRET_ACCESS_KEY }}
-      K6_STAGING_BYOK_CMK_ID: ${{ secrets.K6_STAGING_BYOK_CMK_ID }}
-      K6_STAGING_MFA_STUB: ${{ secrets.K6_STAGING_MFA_STUB }}
-      K6_STAGING_PAT: ${{ secrets.K6_STAGING_PAT }}
-      K6_STAGING_STRIPE_WHSEC: ${{ secrets.K6_STAGING_STRIPE_WHSEC }}
-      K6_STAGING_TEARDOWN_TOKEN: ${{ secrets.K6_STAGING_TEARDOWN_TOKEN }}
-      K6_TARGET_IDENTITY_RECEIPT: ${{ secrets.K6_TARGET_IDENTITY_RECEIPT }}
-      K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
 
     steps:
-      - name: Confirm the bounded staging operation
+      - name: Confirm the quarantined operation
         env:
           CONFIRM: ${{ inputs.confirm }}
         run: |
           set -euo pipefail
-          test "$CONFIRM" = "bootstrap-staging-1700"
+          test "$CONFIRM" = 'quarantine-apply-staging-1700'
 
       - name: Checkout the protected dispatch commit
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -99,22 +90,19 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Verify the canonical staging boundary and all required input names
+      - name: Verify the staging boundary and required input names
         run: |
           set -euo pipefail
           python3 scripts/verify_staging_target.py
           python3 scripts/verify_staging_topology_contract.py --expect ready
           test "$(jq -r '.deployment_state' infra/staging/topology.json)" = unprovisioned
-          test "$K6_TARGET_HOST" = 'https://staging.corelink.humangr.com'
           required=(
             STAGING_CF_API_TOKEN STAGING_CF_ACCOUNT_ID STAGING_CF_WORKER_API_TOKEN
             CF_ZONE_ID STAGING_R2_S3_ENDPOINT CLERK_ISSUER_URL CLERK_SECRET_KEY
             CLERK_WEBHOOK_SECRET ERASURE_SALT_KEY DSR_DLQ_REDRIVE_AUTH_KEY
             DSR_DLQ_ALERT_ENDPOINT DSR_DLQ_ALERT_AUTH_TOKEN
             PAGERDUTY_SYNTHETIC_ROUTING_KEY PAGERDUTY_WEBHOOK_SECRET
-            R2_S3_ACCESS_KEY_ID R2_S3_SECRET_ACCESS_KEY K6_STAGING_BYOK_CMK_ID
-            K6_STAGING_MFA_STUB K6_STAGING_PAT K6_STAGING_STRIPE_WHSEC
-            K6_STAGING_TEARDOWN_TOKEN K6_TARGET_IDENTITY_RECEIPT K6_TARGET_HOST
+            R2_S3_ACCESS_KEY_ID R2_S3_SECRET_ACCESS_KEY
           )
           missing=()
           for name in "${required[@]}"; do
@@ -132,7 +120,6 @@ jobs:
             echo '::error::DSR_DLQ_ALERT_ENDPOINT must be configured as HTTPS.'
             exit 1
           fi
-          echo 'Required staging input names are present.'
 
       - name: Install locked Wrangler dependencies
         run: |
@@ -140,7 +127,7 @@ jobs:
           corepack enable
           pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Confirm provider ownership and an empty staging route set
+      - name: Confirm provider ownership and empty canonical routes
         run: |
           set -euo pipefail
           python3 scripts/staging_bootstrap_provider.py --phase preflight
@@ -157,11 +144,11 @@ jobs:
           import sys, tomllib
           config = tomllib.load(open(sys.argv[1], "rb"))
           if not config.get("name", "").endswith("-staging"):
-              raise SystemExit("bootstrap config is not staging scoped")
+              raise SystemExit("quarantine config is not staging scoped")
           if config.get("workers_dev") is not False:
-              raise SystemExit("bootstrap config must disable workers.dev")
+              raise SystemExit("quarantine config must disable workers.dev")
           if any(key in config for key in ("routes", "route", "custom_domain")):
-              raise SystemExit("bootstrap config must have no public routes")
+              raise SystemExit("quarantine config must have no public routes")
           PY
           done
 
@@ -174,12 +161,12 @@ jobs:
             pnpm exec wrangler deploy --config "$RUNNER_TEMP/staging-config/$worker.toml"
           done
 
-      - name: Confirm the deployed Workers remain quarantined and route free
+      - name: Confirm deployed Workers remain route free
         run: |
           set -euo pipefail
           python3 scripts/staging_bootstrap_provider.py --phase quarantine
 
-      - name: Bind and read back only staging Worker secrets
+      - name: Bind and read back only staging Worker secret names
         run: |
           set -euo pipefail
           umask 077
@@ -196,8 +183,7 @@ jobs:
           }
           bind_generated_secret() {
             local config="$1" name="$2"
-            pnpm exec wrangler secret put "$name" --config "$config" \
-              < "$material/$name" >/dev/null
+            pnpm exec wrangler secret put "$name" --config "$config" < "$material/$name" >/dev/null
           }
           root="$RUNNER_TEMP/staging-config/root.toml"
           signup="$RUNNER_TEMP/staging-config/signup.toml"
@@ -236,25 +222,17 @@ jobs:
           verify_names "$signup" $'CLERK_SECRET_KEY\nCLERK_WEBHOOK_SECRET\nCORELINK_ERASE_AUTH_KEY\nCORELINK_INTERNAL_AUTH_KEY\nDSR_DLQ_ALERT_AUTH_TOKEN\nDSR_DLQ_ALERT_ENDPOINT\nDSR_DLQ_REDRIVE_AUTH_KEY\nERASURE_SALT_KEY'
           verify_names "$receiver" $'PAGERDUTY_SYNTHETIC_ROUTING_KEY\nPAGERDUTY_WEBHOOK_SECRET'
 
-      - name: Reconfirm exact staging bindings and empty routes before publication
+      - name: Capture redacted quarantined-provider readback
         run: |
           set -euo pipefail
-          python3 scripts/staging_bootstrap_provider.py --phase quarantine
+          python3 scripts/staging_bootstrap_provider.py --phase quarantine \
+            | tee "$RUNNER_TEMP/staging-quarantine-receipt.json"
 
-      - name: Publish only the two canonical staging routes last
-        run: |
-          set -euo pipefail
-          # The pager path is more specific and is attached before the root
-          # wildcard. Signup has service binding only and receives no route.
-          for worker in synthetic root; do
-            config="$RUNNER_TEMP/staging-config/final-$worker.toml"
-            python3 scripts/render_staging_wrangler.py \
-              --phase final --worker "$worker" --output "$config"
-            pnpm exec wrangler deploy --config "$config"
-          done
-
-      - name: Read back the exact canonical staging route set
-        if: success()
-        run: |
-          set -euo pipefail
-          python3 scripts/staging_bootstrap_provider.py --phase postflight
+      - name: Upload redacted quarantine receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-quarantine-apply-${{ github.run_id }}
+          path: ${{ runner.temp }}/staging-quarantine-receipt.json
+          retention-days: 30
+          if-no-files-found: warn

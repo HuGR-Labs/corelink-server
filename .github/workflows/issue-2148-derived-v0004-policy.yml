@@ -72,6 +72,10 @@ jobs:
           tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_pins_the_fresh_preimage_and_target_bytes
           tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_admission_is_byte_pinned_and_never_executes_candidate_code
           tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_admission_rejects_nearby_mutations_and_policy_mutation
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_allows_an_unchanged_inherited_symlink_without_following_it
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_rejects_added_deleted_and_mutated_symlinks
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_rejects_symlinks_at_every_pinned_target
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b057_c0_rejects_an_added_symlink_directory_without_traversing_it
       - name: Prove derived policy through v0009 and mutation rejection
         if: github.head_ref != 'codex/issue-2414-c0-policy' && github.ref_name != 'codex/issue-2414-c0-policy'
         run: >-
