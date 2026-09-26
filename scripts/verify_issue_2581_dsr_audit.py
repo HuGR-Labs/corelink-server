@@ -16,10 +16,14 @@ ATTESTATION = read("crates/corelink-container/src/routes/dsr/attestation.rs")
 PORTAL = read("crates/corelink-container/src/routes/dsr/portal/part-00-01.rs")
 CENSUS = read("docs/issue-2581-dsr-audit-writer-census.md")
 
-def rectification_contract(source: str) -> tuple[bool, bool]:
+def rectification_contract(source: str) -> tuple[bool, bool, bool]:
     marker = "pub(super) fn run_rectification("
-    if marker not in source:
-        return False, False
+    classify_marker = "pub(super) fn classify_rectify("
+    if marker not in source or classify_marker not in source:
+        return False, False, False
+    classify = source.split(classify_marker, 1)[1].split(
+        "\n}\n\n/// Outcome of a successful rectification.", 1
+    )[0]
     rectification = source.split(marker, 1)[1].split(
         "\n}\n\n#[cfg(test)]\n#[allow(", 1
     )[0]
@@ -31,12 +35,15 @@ def rectification_contract(source: str) -> tuple[bool, bool]:
         and "StagingLoadTestDisposition::Disposable" not in rectification
         and "D1BatchStatement" not in rectification
     )
-    return audit_precedes_update, no_disposable_batch
+    returns_updated_rows = "RETURNING 1 AS rows_updated" in classify
+    return audit_precedes_update, no_disposable_batch, returns_updated_rows
 
 
-RECTIFICATION_RETAINS_AUDIT_BEFORE_UPDATE, RECTIFICATION_HAS_NO_DISPOSABLE_BATCH = (
-    rectification_contract(ACCESS)
-)
+(
+    RECTIFICATION_RETAINS_AUDIT_BEFORE_UPDATE,
+    RECTIFICATION_HAS_NO_DISPOSABLE_BATCH,
+    RECTIFICATION_RETURNS_UPDATED_ROWS,
+) = rectification_contract(ACCESS)
 
 required = {
     "DSR request admission is scenario-bound": "StagingLoadTestScenario::Dsr" in DSR and "admit_request(&state, &headers).await" in DSR,
@@ -48,6 +55,7 @@ required = {
     "right-event audit uses retained audit evidence": "StagingLoadTestResourceClass::AuditEvidence" in ACCESS and "D1BatchStatement::new(sql, params), registration" in ACCESS,
     "rectification retains audit before the domain update": RECTIFICATION_RETAINS_AUDIT_BEFORE_UPDATE,
     "rectification omits disposable ownership and batch registration": RECTIFICATION_HAS_NO_DISPOSABLE_BATCH,
+    "rectification reports matched rows through RETURNING": RECTIFICATION_RETURNS_UPDATED_ROWS,
     "R2 object writes prepare and commit a durable intent": "intent.prepare_statement(prepared_at_ms)" in ACCESS and "intent.commit_statements(clamp_ms(now_ms))" in ACCESS,
     "R2 retry validates exact immutable identity before PUT": "staging R2 ownership intent conflicts with this write" in ACCESS and "target_deployment_sha" in ACCESS,
     "both export objects are attributed": "persist_owned_r2(" in ACCESS and "&sig_key" in ACCESS,

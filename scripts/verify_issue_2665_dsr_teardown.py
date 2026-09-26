@@ -26,6 +26,8 @@ teardown = SOURCE.split("pub(crate) async fn delete_staging_dsr_export_and_readb
 require("StagingLoadTestResourceClass::AuditEvidence" in SOURCE, "retained DSR audit registration missing")
 require("StagingLoadTestResourceClass::DsrArtifact" not in rectification, "rectification still registers disposable DSR state")
 require("StagingLoadTestDisposition::Disposable" not in rectification, "rectification still claims disposable ownership")
+require("RETURNING 1 AS rows_updated" in SOURCE, "rectification update count is not returned")
+require("u64::try_from(rows.len()).unwrap_or(0)" in rectification, "rectification result does not report matched rows")
 require(persist.index("intent.prepare_statement") < persist.index("put_object(object_key") < persist.index("intent.commit_statements"), "R2 prepare/PUT/commit order changed")
 require("INSERT INTO staging_load_test_teardown_locators" in persist, "typed 0151 locator insert missing")
 require("'dsr_r2_export_v1'" in persist, "DSR locator kind changed")

@@ -990,7 +990,9 @@ pub(super) fn classify_rectify(
         ));
     }
     Ok(RectifyPlan {
-        sql: format!("UPDATE {table} SET {field} = ?2 WHERE tenant_id = ?1"),
+        sql: format!(
+            "UPDATE {table} SET {field} = ?2 WHERE tenant_id = ?1 RETURNING 1 AS rows_updated"
+        ),
         stored_value: email_hash(email),
     })
 }
@@ -1383,7 +1385,7 @@ mod tests {
         let (database, endpoint) = ownership_d1_fixture(false, 3);
         let context = accepted_dsr_context(&endpoint).await;
         let d1 = Arc::new(test_d1_client(&endpoint));
-        run_rectification(
+        let result = run_rectification(
             &d1,
             "00000000-0000-7000-8000-000000000001",
             TID,
@@ -1395,6 +1397,7 @@ mod tests {
         )
         .expect("rectification audit and update succeed")
         .expect("email hash is rectifiable");
+        assert_eq!(result.rows_updated, 1);
 
         let db = database.lock().expect("fixture database");
         let (resource_class, disposition): (String, String) = db
