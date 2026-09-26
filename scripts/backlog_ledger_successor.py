@@ -1255,12 +1255,14 @@ def install(api):
             ))
             if actual_changed != changed_ids:
                 return False
-            if section_hashes and any(
-                _sha256(prior_sections.get(item_id, b"")) != hashes[0]
-                or _sha256(current_sections.get(item_id, b"")) != hashes[1]
-                for item_id, hashes in section_hashes[0].items()
-            ):
-                return False
+            if section_hashes:
+                expected_sections = section_hashes[0]
+                if set(expected_sections) != set(changed_ids) or any(
+                    _sha256(prior_sections.get(item_id, b"")) != hashes[0]
+                    or _sha256(current_sections.get(item_id, b"")) != hashes[1]
+                    for item_id, hashes in expected_sections.items()
+                ):
+                    return False
             reconstructed_ids.update(actual_changed)
         return (
             tuple(sorted(reconstructed_ids))
