@@ -133,15 +133,18 @@ or executed customer commitment.
 
 | Region Code | Geographic Area | Cloudflare Infrastructure | Data Localization Commitment |
 |---|---|---|---|
-| **WNAM** | Western North America | Cloudflare us-west infrastructure | Tenant data stored and processed in us-west facilities. |
-| **ENAM** | Eastern North America | Cloudflare us-east infrastructure | Tenant data stored and processed in us-east facilities. |
-| **WEUR** | Western Europe | Cloudflare eu-west infrastructure | Tenant data stored and processed in eu-west facilities. `jurisdictional_restriction = "eu"` enforced (WI-S14-001). |
-| **APAC** | Asia-Pacific | Cloudflare Tokyo (`nrt`) infrastructure and APAC R2 bucket | Tenant data stored and served through the provisioned APAC path. This is a physical-location commitment, not an APAC legal-jurisdiction claim. |
+| **WNAM** | Western North America | Cloudflare us-west infrastructure | R2 objects and tenant-pinned DO state use us-west facilities. |
+| **ENAM** | Eastern North America | Cloudflare us-east infrastructure | R2 objects and tenant-pinned DO state use us-east facilities. |
+| **WEUR** | Western Europe | Cloudflare eu-west infrastructure | R2 objects and tenant-pinned DO state use eu-west facilities. `jurisdictional_restriction = "eu"` enforced (WI-S14-001). |
+| **APAC** | Asia-Pacific | Cloudflare Tokyo (`nrt`) infrastructure and APAC R2 bucket | R2 objects and tenant-pinned DO state use the provisioned APAC path. This is a physical-location statement, not an APAC legal-jurisdiction claim. |
 | **SAM** | South America | **Not provisioned** | New SAM residency provisioning is rejected; this template makes no claim that SAM data is stored in Brazil. |
 
 ### 7.2 Failover Restrictions
 
-CoreLink may replicate data to a secondary region solely for high-availability purposes, subject to the following hard restrictions (enforced by INV-DATA-RESIDENCY and INV-REGION-NO-CROSS-LEAK):
+R2 objects and tenant-pinned Durable Object state may replicate to a secondary
+region solely for high-availability purposes, subject to the following hard
+restrictions (enforced by INV-DATA-RESIDENCY and INV-REGION-NO-CROSS-LEAK).
+These restrictions do not describe D1 replication or placement.
 
 | Primary Region | Permitted Failover Destinations |
 |---|---|
@@ -151,7 +154,10 @@ CoreLink may replicate data to a secondary region solely for high-availability p
 | APAC | APAC read-replica only, where provisioned |
 | SAM | Not applicable — SAM is not provisioned |
 
-**WEUR data NEVER replicates outside the EU jurisdiction.** This restriction is enforced at the infrastructure level (Cloudflare DO `jurisdictional_restriction`) and validated by `PAT-REGION-FAILOVER-001` (WI-S14-003).
+**WEUR R2/DO state NEVER replicates outside the EU jurisdiction.** This
+restriction is enforced at the infrastructure level (Cloudflare DO
+`jurisdictional_restriction`) and validated by `PAT-REGION-FAILOVER-001`
+(WI-S14-003). It is not a D1 replication claim.
 
 ### 7.3 International Transfer Mechanism
 
