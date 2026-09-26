@@ -101,6 +101,7 @@ export function fakeDb(): {
  */
 export function fakeDbClaimThrows(): {
     prepare: Mock;
+    batch: Mock;
     runCalls: Array<{ sql: string; params: unknown[] }>;
 } {
     const runCalls: Array<{ sql: string; params: unknown[] }> = [];
@@ -121,7 +122,12 @@ export function fakeDbClaimThrows(): {
         };
         return stmt;
     });
-    return { prepare, runCalls };
+    const batch = vi.fn(async (statements: Array<{ run(): Promise<unknown> }>) => {
+        const results = [];
+        for (const statement of statements) results.push(await statement.run());
+        return results;
+    });
+    return { prepare, batch, runCalls };
 }
 
 /**
@@ -135,6 +141,7 @@ export function fakeDbClaimThrows(): {
  */
 export function fakeDbFailableWrite(failWhile: (sql: string) => boolean): {
     prepare: Mock;
+    batch: Mock;
     runCalls: Array<{ sql: string; params: unknown[] }>;
 } {
     const runCalls: Array<{ sql: string; params: unknown[] }> = [];
@@ -170,7 +177,12 @@ export function fakeDbFailableWrite(failWhile: (sql: string) => boolean): {
         };
         return stmt;
     });
-    return { prepare, runCalls };
+    const batch = vi.fn(async (statements: Array<{ run(): Promise<unknown> }>) => {
+        const results = [];
+        for (const statement of statements) results.push(await statement.run());
+        return results;
+    });
+    return { prepare, batch, runCalls };
 }
 
 /** Build a signed Stripe webhook Request. */

@@ -236,7 +236,7 @@ def verify(root: Path) -> int:
     # accidental routing-key or endpoint additions while preserving the
     # receiver's real external-delivery responsibility.
     handler = active_code(schedule)
-    if re.search(r"pagerduty\.com|routing[_-]?key|PAGERDUTY", handler, re.IGNORECASE):
+    if re.search(r"pagerduty\.com|routing[_-]?key|PAGERDUTY_(?:EVENTS_URL|(?:SYNTHETIC_)?ROUTING_KEY|WEBHOOK_SECRET)", handler, re.IGNORECASE):
         return fail("scheduled handler contains direct PagerDuty credential/endpoint material")
 
     print("B-072 PASS: synthetic trigger absent; dormant handoff seam remains fail-closed (external evidence pending)")

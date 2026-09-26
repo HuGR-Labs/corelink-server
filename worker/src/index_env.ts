@@ -333,6 +333,9 @@ export interface Env {
   // The receiving Worker owns the drill-specific delivery integration; an
   // absent binding is a visible scheduled failure rather than a pretend drill.
   SCHEDULED_DRILL_DELIVERY?: { fetch: typeof fetch };
+  /** Explicit B-072 mode; absent preserves configured PagerDuty delivery. */
+  SYNTHETIC_DRILL_PROVIDER_MODE?: "pagerduty" | "provider_deferred";
+  /** Exact deployed Worker version identifier used in B-072 terminal receipts. */
   // ── Observability (Sentry error tracking) ───────────────────────────────────
   // OPTIONAL. The Sentry hook (see `export default` at the bottom of this file)
   // is a COMPLETE no-op until the operator sets SENTRY_DSN via

@@ -1,0 +1,95 @@
+name: issue-2612 B-072 provider-deferred receipt
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-2612-provider-deferred.yml"
+      - "apps/synthetic-pager-worker/src/**"
+      - "apps/synthetic-pager-worker/tests/**"
+      - "apps/synthetic-pager-worker/wrangler.toml"
+      - "worker/src/index_env.ts"
+      - "worker/src/index_schedule.ts"
+      - "worker/tests/scheduled_drills.test.ts"
+      - "migrations/d1/0150_b072_provider_deferred_receipts.sql"
+      - "scripts/test_b072_migration.py"
+      - "scripts/test_b072_receiver_mutations.py"
+      - "scripts/test_b072_terminal_race.py"
+      - "scripts/verify_b072_external_evidence.py"
+      - "scripts/test_b072_external_evidence.py"
+      - "scripts/verify_b072_provider_deferred.py"
+      - "scripts/test_b072_provider_deferred_mutations.py"
+      - "scripts/verify_b072_receiver.py"
+      - "scripts/verify_b072_scheduled_drills.py"
+      - "scripts/test_b072_scheduled_drills_mutations.py"
+      - "tests/fixtures/b072_provider_deferred_valid.json"
+      - "docs/knowledge/ops/scheduled-drills.md"
+      - "docs/internal/b072-scheduled-drills-owner-packet.md"
+      - "changelog.d/b072-scheduled-drills.md"
+      - "wrangler.toml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2612-provider-deferred-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provider-deferred-contract:
+    name: provider-deferred terminal receipt contract
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact pull request head without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Assert exact head and DCO signoff
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git show -s --format=%B HEAD | grep -Eq '^Signed-off-by: .+ <[^>]+>$'
+          git diff --check origin/main...HEAD
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install focused Worker dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter @corelink/worker... --filter @corelink/synthetic-pager-worker...
+
+      - name: Run focused receiver and scheduler tests
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/synthetic-pager-worker run typecheck
+          pnpm --dir apps/synthetic-pager-worker run test
+          pnpm --dir worker run typecheck
+          pnpm --dir worker exec vitest run tests/scheduled_drills.test.ts
+
+      - name: Run B-072 contract, migration, and negative controls
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_b072_provider_deferred.py
+          python3 scripts/test_b072_provider_deferred_mutations.py
+          python3 scripts/test_b072_migration.py
+          python3 scripts/test_b072_receiver_mutations.py
+          python3 scripts/test_b072_terminal_race.py
+          python3 scripts/test_b072_external_evidence.py
+          python3 scripts/verify_b072_receiver.py
+          python3 scripts/verify_b072_scheduled_drills.py
+          python3 scripts/test_b072_scheduled_drills_mutations.py
+          python3 scripts/validate_secrets_matrix.py
+
+      - name: Lint workflow syntax
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -no-color .github/workflows/issue-2612-provider-deferred.yml

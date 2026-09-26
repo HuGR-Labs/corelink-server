@@ -18,10 +18,11 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
 
     def test_evidence_contract_rejects_boundary_mutations(self) -> None:
         mutations = (
-            ("SHARD_COUNT: 27", "SHARD_COUNT: 26"),
-            ("TOTAL_RUNNER_MINUTE_CAP: 8200", "TOTAL_RUNNER_MINUTE_CAP: 2550"),
+            ("SHARD_COUNT: 120", "SHARD_COUNT: 119"),
+            ("MUTATION_JOB_LIMIT_MINUTES: 240", "MUTATION_JOB_LIMIT_MINUTES: 255"),
+            ("MUTATION_COMMAND_LIMIT_MINUTES: 210", "MUTATION_COMMAND_LIMIT_MINUTES: 240"),
             ("max-parallel: 9", "max-parallel: 27"),
-            ("timeout-minutes: 255", "timeout-minutes: 45"),
+            ("timeout-minutes: 240", "timeout-minutes: 255"),
             ("--jobs=8", "--jobs=1"),
             ("--build-timeout=60", "--build-timeout=300"),
             ("--timeout=60", "--timeout=300"),
@@ -44,8 +45,8 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
         text = WORKFLOW.read_text(encoding="utf-8")
         commands = (
             "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard 0/1 --list --json",
-            "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/27 --list --json",
-            "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --jobs=8 --build-timeout=60 --timeout=60 --sharding=round-robin --shard ${{ matrix.shard }}/27 --baseline=skip --output \"$output\"",
+            "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --sharding=round-robin --shard ${{ matrix.shard }}/120 --list --json",
+            "cargo mutants --workspace --no-config --no-shuffle --minimum-test-timeout=600 --jobs=8 --build-timeout=60 --timeout=60 --sharding=round-robin --shard ${{ matrix.shard }}/120 --baseline=skip --output \"$output\"",
         )
         for command in commands:
             with self.subTest(command=command):
