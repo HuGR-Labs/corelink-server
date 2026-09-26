@@ -65,6 +65,9 @@ jobs:
 
       - name: Run focused DSR writer tests
         run: |
+          cargo test --locked -p corelink-server --lib routes::dsr::access::tests::admitted_access_audit_batches_registration_from_accepted_context -- --exact
+          cargo test --locked -p corelink-server --lib routes::dsr::access::tests::admitted_access_audit_batch_failure_rolls_back_domain_write -- --exact
+          cargo test --locked -p corelink-server --lib routes::dsr::access::tests::admitted_r2_writer_recovers_exact_prepare_and_replays_once -- --exact
           cargo test --locked -p corelink-server --lib routes::dsr::access::tests::audit_event_id_is_deterministic -- --exact
           cargo test --locked -p corelink-server --lib routes::dsr::access::tests::rectify_rejects_content_and_non_editable_allows_email -- --exact
           cargo test --locked -p corelink-server --lib routes::dsr::access::tests::rectify_rejects_invalid_email -- --exact

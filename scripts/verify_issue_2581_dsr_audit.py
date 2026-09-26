@@ -32,6 +32,9 @@ required = {
     "attestation D1 mutations share registration batches": "d1_batch_blocking(" in ATTESTATION and "erasure-attestation:" in ATTESTATION,
     "ordinary callers keep None-compatible path": "self.emit_attributed(record, None)" in AUDIT and "return self.set_outcome_snapshot(dsr_id, outcome_json)" in LEDGER,
     "ordinary portal callers explicitly pass None": "run_access(&self.d1, dsr_id, tenant_id, now_ms, None)" in PORTAL and "now_ms,\n            None," in PORTAL,
+    "accepted-context D1 writer success and rollback tests exist": "admitted_access_audit_batches_registration_from_accepted_context" in ACCESS and "admitted_access_audit_batch_failure_rolls_back_domain_write" in ACCESS,
+    "accepted-context R2 exact recovery and replay test exists": "admitted_r2_writer_recovers_exact_prepare_and_replays_once" in ACCESS and "failed external PUT never reports a registered artifact" in ACCESS,
+    "accepted context is consumed through the shared verified-admission store": "consume_verified_admission(expectation, verified)" in ACCESS,
     "census records the closed family and exclusions": all(token in CENSUS for token in ("dsr_artifact", "dsr_obligation", "audit_evidence", "dsr_consumer.ts", "dsr_verify_cron.ts", "portal/part-00.rs", "adapter_r2_{cas,ac}.rs", "cas_retention")),
     "census rejects secret and PII claims": all(token not in CENSUS.lower() for token in ("raw nonce", "credential value", "personal email")),
 }
