@@ -27,6 +27,10 @@ from verify_hosted_runner_migration_contract import ContractError, job_blocks
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PROXY_ENV_KEYS = (
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+)
 FILES = {
     ".github/workflows/bot-pr-has-checks.yml": {"audit"},
     ".github/workflows/coverage.yml": {"coverage"},
@@ -681,6 +685,8 @@ def run_pinned_action(action_root: Path, action: str, root: Path, api_url: str, 
         "INPUT_GITHUB_TOKEN": "fixture-token-never-valid-outside-local-mock",
         "INPUT_REPO-TOKEN": "fixture-token-never-valid-outside-local-mock",
     }
+    for key in PROXY_ENV_KEYS:
+        env.pop(key, None)
     guard_path = tmp / "deny-action-egress.js"
     if not guard_path.exists():
         guard_path.write_text(action_network_guard_source(urlsplit(api_url).port), encoding="utf-8")
@@ -791,9 +797,13 @@ def action_network_guard_source(allowed_port: int | None) -> str:
             port = args[0];
             host = typeof args[1] === "string" ? args[1] : "localhost";
           }}
-          const allowedHosts = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"]);
-          if (!allowedHosts.has(String(host).toLowerCase()) || Number(port) !== allowedPort) {{
-            process.stderr.write("I2374_ACTION_EGRESS_BLOCKED\\n");
+          const allowedHosts = new Set(["127.0.0.1", "::1", "localhost"]);
+          if (!allowedHosts.has(String(host).toLowerCase())) {{
+            process.stderr.write("I2374_ACTION_EGRESS_BLOCKED_HOST\\n");
+            process.exit(86);
+          }}
+          if (Number(port) !== allowedPort) {{
+            process.stderr.write("I2374_ACTION_EGRESS_BLOCKED_PORT\\n");
             process.exit(86);
           }}
           return originalConnect.apply(this, args);
@@ -813,6 +823,8 @@ def verify_action_network_guard(api_url: str, tmp: Path) -> None:
         **os.environ,
         "NODE_OPTIONS": f"--require={guard_path}",
     }
+    for key in PROXY_ENV_KEYS:
+        env.pop(key, None)
     probe = subprocess.run(
         ["node", "-e", 'require("node:https").get("https://api.github.com.attacker.invalid/")'],
         env=env,
@@ -820,7 +832,13 @@ def verify_action_network_guard(api_url: str, tmp: Path) -> None:
         text=True,
         timeout=5,
     )
-    if probe.returncode != 86 or "I2374_ACTION_EGRESS_BLOCKED" not in probe.stderr:
+    if probe.returncode != 86 or not any(
+        marker in probe.stderr
+        for marker in (
+            "I2374_ACTION_EGRESS_BLOCKED_HOST",
+            "I2374_ACTION_EGRESS_BLOCKED_PORT",
+        )
+    ):
         fail("action network guard did not block a lookalike external API request")
 
 

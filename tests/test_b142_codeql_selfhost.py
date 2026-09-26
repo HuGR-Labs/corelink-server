@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from verify_issue_2374_hosted_proof import verify_action_network_guard
+from verify_issue_2374_hosted_proof import PROXY_ENV_KEYS, verify_action_network_guard
 
 
 SCANNER = ROOT / ".github" / "workflows" / "codeql.yml"
@@ -179,6 +179,8 @@ class I2374ActionNetworkGuardTest(unittest.TestCase):
                     **os.environ,
                     "NODE_OPTIONS": f"--require={Path(directory) / 'deny-action-egress.js'}",
                 }
+                for key in PROXY_ENV_KEYS:
+                    env.pop(key, None)
                 local_probe = subprocess.run(
                     [
                         "node",
