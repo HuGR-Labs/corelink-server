@@ -1,4 +1,5 @@
 /** Durable, tenant-scoped ownership writes for paid Checkout completions. */
+import { changesGuard, runOrStage, type StripeStagingWriteBatch } from "./stripe_staging_batch.js";
 
 export interface D1RunResult {
     meta?: { changes?: number };
@@ -27,11 +28,12 @@ export async function recoverCheckoutLedger(
     db: D1DatabaseLike,
     opts: { tenantId: string; tier: string; sessionId: string; stripeCustomerId: string;
         checkoutCreatedAtMs: number | null; nowMs: number },
+    batch?: StripeStagingWriteBatch,
 ): Promise<boolean> {
     if (opts.checkoutCreatedAtMs === null || !Number.isFinite(opts.checkoutCreatedAtMs)) {
         return false;
     }
-    const result = await db.prepare(`
+    const statement = db.prepare(`
       UPDATE stripe_checkout_ownership_ledger
       SET session_id = ?2,
           stripe_customer_id = CASE WHEN ?3 = '' THEN stripe_customer_id ELSE ?3 END,
@@ -51,7 +53,13 @@ export async function recoverCheckoutLedger(
         AND ?4 - created_at_ms >= -2000
         AND ?4 - created_at_ms <= ?7
     `).bind(opts.tenantId, opts.sessionId, opts.stripeCustomerId, opts.nowMs,
-        opts.tier, opts.checkoutCreatedAtMs, CHECKOUT_LEDGER_RECOVERY_TTL_MS).run();
+        opts.tier, opts.checkoutCreatedAtMs, CHECKOUT_LEDGER_RECOVERY_TTL_MS);
+    const result = await runOrStage(statement, batch, (actual) => {
+        const changes = actual.meta?.changes;
+        if (changes === undefined || changes > 1) {
+            throw new Error("checkout ledger recovery did not return D1 changes metadata");
+        }
+    }, batch ? [changesGuard(db, "changes() > 1")] : []);
     const changes = result.meta?.changes;
     if (changes === undefined || changes > 1) {
         throw new Error("checkout ledger recovery did not return D1 changes metadata");
@@ -70,6 +78,7 @@ export async function upsertBillingPaid(
     opts: { tenantId: string; stripeCustomerId: string; stripeSubscriptionId: string | null;
         sessionId: string; plan: string | null; currentPeriodEndMs: number | null; nowMs: number;
         checkoutCreatedAtMs?: number | null },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
     if (!opts.stripeSubscriptionId) throw new Error("paid checkout has no subscription id");
     await recoverCheckoutLedger(db, {
@@ -79,8 +88,8 @@ export async function upsertBillingPaid(
         stripeCustomerId: opts.stripeCustomerId,
         checkoutCreatedAtMs: opts.checkoutCreatedAtMs ?? null,
         nowMs: opts.nowMs,
-    });
-    const result = await db.prepare(`
+    }, batch);
+    const statement = db.prepare(`
       INSERT INTO tenant_billing
         (tenant_id, stripe_customer_id, stripe_subscription_id, status, plan,
          current_period_end_ms, schema_version, created_at_ms, updated_at_ms)
@@ -114,7 +123,10 @@ export async function upsertBillingPaid(
         AND (tenant_billing.status != 'paid'
              OR tenant_billing.stripe_subscription_id IS excluded.stripe_subscription_id)
     `).bind(opts.tenantId, opts.stripeCustomerId, opts.stripeSubscriptionId, opts.plan,
-        opts.currentPeriodEndMs, opts.nowMs, opts.sessionId).run();
+        opts.currentPeriodEndMs, opts.nowMs, opts.sessionId);
+    const result = await runOrStage(statement, batch, (actual) => {
+        if (actual.meta?.changes !== 1) throw new Error("Stripe subscription ownership conflict");
+    }, batch ? [changesGuard(db, "changes() != 1")] : []);
     if (result.meta?.changes !== 1) throw new Error("Stripe subscription ownership conflict");
 }
 
@@ -123,8 +135,9 @@ export async function activatePaidTierSelection(
     db: D1DatabaseLike,
     opts: { tenantId: string; tier: string; stripeCustomerId: string;
         stripeSubscriptionId: string; sessionId: string; nowMs: number; correlationId: string },
+    batch?: StripeStagingWriteBatch,
 ): Promise<void> {
-    const result = await db.prepare(`
+    const result = await runOrStage(db.prepare(`
       INSERT INTO tier_selections
         (tenant_id, tier, subscription_state, stripe_customer_id,
          subscription_started_at_ms, schema_version, correlation_id)
@@ -142,14 +155,19 @@ export async function activatePaidTierSelection(
           WHERE tenant_id = ?1 AND stripe_customer_id = ?3
             AND stripe_subscription_id = ?6 AND status = 'paid')
     `).bind(opts.tenantId, opts.tier, opts.stripeCustomerId, opts.nowMs,
-        opts.correlationId, opts.stripeSubscriptionId).run();
+        opts.correlationId, opts.stripeSubscriptionId), batch, (actual) => {
+            const actualChanges = actual.meta?.changes;
+            if (actualChanges !== 0 && actualChanges !== 1) {
+                throw new Error("tier activation write did not return D1 changes metadata");
+            }
+        }, batch ? [changesGuard(db, "changes() > 1")] : []);
     const changes = result.meta?.changes;
     if (changes !== 0 && changes !== 1) {
         throw new Error("tier activation write did not return D1 changes metadata");
     }
-    await db.prepare(`
+    await runOrStage(db.prepare(`
       UPDATE stripe_checkout_ownership_ledger
       SET state = 'completed', updated_at_ms = ?2
       WHERE tenant_id = ?1 AND session_id = ?3 AND state = 'session_created'
-    `).bind(opts.tenantId, opts.nowMs, opts.sessionId).run();
+    `).bind(opts.tenantId, opts.nowMs, opts.sessionId), batch);
 }

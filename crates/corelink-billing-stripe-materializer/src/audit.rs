@@ -135,6 +135,16 @@ pub trait BillingAuditEmitter: fmt::Debug + Send + Sync {
     /// retries → next delivery hits the dedup row → resolves without
     /// re-dispatch).
     fn emit_billing(&self, record: &BillingAuditRecord) -> Result<(), BillingAuditError>;
+
+    /// Emit with optional request-scoped ownership authority.
+    fn emit_billing_with_context(
+        &self,
+        record: &BillingAuditRecord,
+        context: Option<&dyn corelink_billing_stripe_traits::DurableWebhookRequestContext>,
+    ) -> Result<(), BillingAuditError> {
+        let _ = context;
+        self.emit_billing(record)
+    }
 }
 
 /// Native in-memory mirror of the audit emitter.
@@ -220,6 +230,14 @@ impl RealStripeAuditEmitter {
 
 impl AuditEmitter for RealStripeAuditEmitter {
     fn emit(&self, record: &AuditRecord) -> Result<(), String> {
+        self.emit_with_context(record, None)
+    }
+
+    fn emit_with_context(
+        &self,
+        record: &AuditRecord,
+        context: Option<&dyn corelink_billing_stripe_traits::DurableWebhookRequestContext>,
+    ) -> Result<(), String> {
         let canonical = BillingAuditRecord {
             event_name: "corelink.billing.stripe_event_processed.v1",
             stripe_event_id: record.stripe_event_id.clone(),
@@ -240,7 +258,7 @@ impl AuditEmitter for RealStripeAuditEmitter {
             }),
         };
         self.sink
-            .emit_billing(&canonical)
+            .emit_billing_with_context(&canonical, context)
             .map_err(|e| format!("{e}"))
     }
 }

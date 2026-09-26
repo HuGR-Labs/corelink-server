@@ -593,10 +593,22 @@ impl WebhookDispatcher {
         let start = self.clock.start_marker();
         let now_seconds = self.clock.now_seconds();
         let now_ms = self.clock.now_ms();
+        if request_context.is_some() && self.inbox.is_none() {
+            return DispatchResponse::InternalError500;
+        }
+        let emit_audit = |record, event_type, outcome, start_marker| {
+            self.emit_audit_and_sli_with_context(
+                record,
+                event_type,
+                outcome,
+                start_marker,
+                request_context,
+            )
+        };
 
         // (1) Header present?
         let Some(sig_header) = signature_header else {
-            self.emit_audit_and_sli(
+            emit_audit(
                 AuditRecord::new(
                     "corelink.billing.stripe_event_processed.v1",
                     String::new(),
@@ -621,7 +633,7 @@ impl WebhookDispatcher {
             now_seconds,
             self.tolerance_seconds,
         ) {
-            self.emit_audit_and_sli(
+            emit_audit(
                 AuditRecord::new(
                     "corelink.billing.stripe_event_processed.v1",
                     String::new(),
@@ -642,7 +654,7 @@ impl WebhookDispatcher {
         let env: StripeWebhookEnvelope = match serde_json::from_slice(body) {
             Ok(e) => e,
             Err(e) => {
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         String::new(),
@@ -676,11 +688,10 @@ impl WebhookDispatcher {
                 request_context,
             });
         }
-
         // (5) Idempotency dedup.
         match self.idempotency.try_insert(token, canon, now_ms) {
             Ok(IdempotencyOutcome::AlreadyProcessed) => {
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         env.id.clone(),
@@ -702,7 +713,7 @@ impl WebhookDispatcher {
             // any future variant conservatively as "proceed".
             Ok(_) => {}
             Err(e) => {
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         env.id.clone(),
@@ -722,19 +733,21 @@ impl WebhookDispatcher {
 
         // (6) Dispatch.
         let dispatch_result = match canon {
-            CanonicalWebhookEventType::SubscriptionDeleted => {
-                self.materializer.on_subscription_deleted(&env)
-            }
-            CanonicalWebhookEventType::SubscriptionUpdated => {
-                self.materializer.on_subscription_updated(&env)
-            }
-            CanonicalWebhookEventType::InvoicePaid => self.materializer.on_invoice_paid(&env),
-            CanonicalWebhookEventType::InvoicePaymentFailed => {
-                self.materializer.on_invoice_payment_failed(&env)
-            }
-            CanonicalWebhookEventType::ChargeDisputeCreated => {
-                self.materializer.on_charge_dispute_created(&env)
-            }
+            CanonicalWebhookEventType::SubscriptionDeleted => self
+                .materializer
+                .on_subscription_deleted_with_context(&env, request_context),
+            CanonicalWebhookEventType::SubscriptionUpdated => self
+                .materializer
+                .on_subscription_updated_with_context(&env, request_context),
+            CanonicalWebhookEventType::InvoicePaid => self
+                .materializer
+                .on_invoice_paid_with_context(&env, request_context),
+            CanonicalWebhookEventType::InvoicePaymentFailed => self
+                .materializer
+                .on_invoice_payment_failed_with_context(&env, request_context),
+            CanonicalWebhookEventType::ChargeDisputeCreated => self
+                .materializer
+                .on_charge_dispute_created_with_context(&env, request_context),
             // Refunds are a durable state transition when Stripe reports a
             // complete refund; the materializer still records partial refunds
             // without revoking access.
@@ -742,9 +755,11 @@ impl WebhookDispatcher {
             | CanonicalWebhookEventType::SubscriptionTrialWillEnd
             | CanonicalWebhookEventType::CustomerCreated
             | CanonicalWebhookEventType::InvoiceCreated => Ok(()),
-            CanonicalWebhookEventType::ChargeRefunded => self.materializer.on_charge_refunded(&env),
+            CanonicalWebhookEventType::ChargeRefunded => self
+                .materializer
+                .on_charge_refunded_with_context(&env, request_context),
             CanonicalWebhookEventType::Unknown => {
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         env.id.clone(),
@@ -769,7 +784,7 @@ impl WebhookDispatcher {
         // (7) Audit + SLI per dispatch outcome.
         match dispatch_result {
             Ok(()) => {
-                let resp = self.emit_audit_and_sli(
+                let resp = emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         env.id.clone(),
@@ -798,7 +813,7 @@ impl WebhookDispatcher {
                 // than lost. Best-effort: a DLQ backend failure must NOT
                 // mask the 500 (Stripe still retries within its window).
                 self.quarantine_transient(body, &env, canon, &token, &msg, now_ms);
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         env.id.clone(),
@@ -815,7 +830,7 @@ impl WebhookDispatcher {
                 DispatchResponse::InternalError500
             }
             Err(MaterializerError::InvalidPayload(msg)) => {
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         env.id.clone(),
@@ -842,7 +857,7 @@ impl WebhookDispatcher {
                 DispatchResponse::Unprocessable422
             }
             Err(MaterializerError::AppliedButUnconfirmed(msg)) => {
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         env.id.clone(),
@@ -866,7 +881,7 @@ impl WebhookDispatcher {
                 // (the dedup row is already committed) — quarantine too.
                 let msg = "unknown materializer error variant".to_string();
                 self.quarantine_transient(body, &env, canon, &token, &msg, now_ms);
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         env.id.clone(),
@@ -887,6 +902,15 @@ impl WebhookDispatcher {
 
     fn process_durable(&self, context: DurableDispatchContext<'_>) -> DispatchResponse {
         const OWNER: &str = "stripe-webhook-dispatcher";
+        let emit_audit = |record, event_type, outcome, start_marker| {
+            self.emit_audit_and_sli_with_context(
+                record,
+                event_type,
+                outcome,
+                start_marker,
+                context.request_context,
+            )
+        };
         let event = DurableWebhookEvent {
             event_id: context.env.id.clone(),
             event_type: context.canon.label().to_owned(),
@@ -899,7 +923,7 @@ impl WebhookDispatcher {
             .receive_with_context(&event, context.now_ms, context.request_context)
         {
             Ok(InboxReceiveOutcome::Terminal) => {
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         context.env.id.clone(),
@@ -916,7 +940,7 @@ impl WebhookDispatcher {
                 return DispatchResponse::Ok200;
             }
             Ok(InboxReceiveOutcome::LegacyAmbiguous) => {
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         context.env.id.clone(),
@@ -943,13 +967,14 @@ impl WebhookDispatcher {
             Ok(None) | Err(_) => return DispatchResponse::InternalError500,
         };
         let effect_key = format!("stripe-webhook-effect:{}", context.token.to_hex());
-        match context.inbox.reserve_effect(
+        match context.inbox.reserve_effect_with_context(
             &claim,
             OWNER,
             &event,
             &effect_key,
             context.canon.label(),
             context.now_ms,
+            context.request_context,
         ) {
             Ok(EffectReservation::Reserved) => {}
             Ok(EffectReservation::Applied) => {
@@ -973,24 +998,24 @@ impl WebhookDispatcher {
             }
         }
         let dispatch_result = match context.canon {
-            CanonicalWebhookEventType::SubscriptionDeleted => {
-                self.materializer.on_subscription_deleted(context.env)
-            }
-            CanonicalWebhookEventType::SubscriptionUpdated => {
-                self.materializer.on_subscription_updated(context.env)
-            }
-            CanonicalWebhookEventType::InvoicePaid => {
-                self.materializer.on_invoice_paid(context.env)
-            }
-            CanonicalWebhookEventType::InvoicePaymentFailed => {
-                self.materializer.on_invoice_payment_failed(context.env)
-            }
-            CanonicalWebhookEventType::ChargeDisputeCreated => {
-                self.materializer.on_charge_dispute_created(context.env)
-            }
-            CanonicalWebhookEventType::ChargeRefunded => {
-                self.materializer.on_charge_refunded(context.env)
-            }
+            CanonicalWebhookEventType::SubscriptionDeleted => self
+                .materializer
+                .on_subscription_deleted_with_context(context.env, context.request_context),
+            CanonicalWebhookEventType::SubscriptionUpdated => self
+                .materializer
+                .on_subscription_updated_with_context(context.env, context.request_context),
+            CanonicalWebhookEventType::InvoicePaid => self
+                .materializer
+                .on_invoice_paid_with_context(context.env, context.request_context),
+            CanonicalWebhookEventType::InvoicePaymentFailed => self
+                .materializer
+                .on_invoice_payment_failed_with_context(context.env, context.request_context),
+            CanonicalWebhookEventType::ChargeDisputeCreated => self
+                .materializer
+                .on_charge_dispute_created_with_context(context.env, context.request_context),
+            CanonicalWebhookEventType::ChargeRefunded => self
+                .materializer
+                .on_charge_refunded_with_context(context.env, context.request_context),
             CanonicalWebhookEventType::SubscriptionCreated
             | CanonicalWebhookEventType::SubscriptionTrialWillEnd
             | CanonicalWebhookEventType::CustomerCreated
@@ -1005,30 +1030,30 @@ impl WebhookDispatcher {
                 } else {
                     AuditOutcome::Dispatched
                 };
-                if self
-                    .emit_audit_and_sli(
-                        AuditRecord::new(
-                            "corelink.billing.stripe_event_processed.v1",
-                            context.env.id.clone(),
-                            context.canon,
-                            outcome,
-                            Some(context.token.to_hex()),
-                            context.now_ms,
-                            None,
-                        ),
+                if emit_audit(
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        context.env.id.clone(),
                         context.canon,
                         outcome,
-                        context.start,
-                    )
-                    .is_some()
+                        Some(context.token.to_hex()),
+                        context.now_ms,
+                        None,
+                    ),
+                    context.canon,
+                    outcome,
+                    context.start,
+                )
+                .is_some()
                     || !matches!(
-                        context.inbox.commit_effect(
+                        context.inbox.commit_effect_with_context(
                             &claim,
                             OWNER,
                             &event,
                             &effect_key,
                             context.canon.label(),
                             context.now_ms,
+                            context.request_context,
                         ),
                         Ok(true)
                     )
@@ -1039,17 +1064,18 @@ impl WebhookDispatcher {
             }
             Err(MaterializerError::AppliedButUnconfirmed(message)) => {
                 let sealed = matches!(
-                    context.inbox.commit_effect(
+                    context.inbox.commit_effect_with_context(
                         &claim,
                         OWNER,
                         &event,
                         &effect_key,
                         context.canon.label(),
                         context.now_ms,
+                        context.request_context,
                     ),
                     Ok(true)
                 );
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         context.env.id.clone(),
@@ -1093,7 +1119,7 @@ impl WebhookDispatcher {
                     context.canon.label(),
                     context.now_ms,
                 );
-                self.emit_audit_and_sli(
+                emit_audit(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",
                         context.env.id.clone(),
@@ -1201,7 +1227,18 @@ impl WebhookDispatcher {
         outcome: AuditOutcome,
         start_marker: u64,
     ) -> Option<String> {
-        let audit_err = self.audit.emit(&record).err();
+        self.emit_audit_and_sli_with_context(record, event_type, outcome, start_marker, None)
+    }
+
+    fn emit_audit_and_sli_with_context(
+        &self,
+        record: AuditRecord,
+        event_type: CanonicalWebhookEventType,
+        outcome: AuditOutcome,
+        start_marker: u64,
+        request_context: Option<&dyn corelink_billing_stripe_traits::DurableWebhookRequestContext>,
+    ) -> Option<String> {
+        let audit_err = self.audit.emit_with_context(&record, request_context).err();
         self.sli.observe(SliObservation::new(
             SLI_BILLING_STRIPE_EVENT_SECONDS,
             self.clock.observe_latency_seconds(start_marker),

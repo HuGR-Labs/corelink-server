@@ -3,6 +3,7 @@ import type { StripeWebhookEnv } from "./stripe.js";
 import { emit, newEventId } from "../lib/analytics-server";
 import { asPaidTier, centsToUsd } from "./stripe_contract.js";
 import { activatePaidTierSelection, upsertBillingPaid } from "./stripe_persistence_billing.js";
+import type { StripeStagingWriteBatch } from "./stripe_staging_batch.js";
 
 /**
  * Queue the checkout activation (audit fix 1 extraction): the tenant_billing
@@ -30,6 +31,7 @@ export function queueCheckoutActivation(
         nowMs: number;
         checkoutCreatedAtMs: number | null;
     },
+    batch?: StripeStagingWriteBatch,
 ): Parameters<typeof emit>[1] {
     if (env.BILLING_DB) {
         const db = env.BILLING_DB;
@@ -46,7 +48,7 @@ export function queueCheckoutActivation(
                 currentPeriodEndMs: null,
                 nowMs: opts.nowMs,
                 checkoutCreatedAtMs: opts.checkoutCreatedAtMs,
-            });
+            }, batch);
         // GAP-6: reconcile the canonical subscription FSM the money path
         // reads. Only a real paid tier may flip to 'active' (free never
         // reaches Stripe; enterprise uses the inquiry form). An unrecognised
@@ -64,7 +66,7 @@ export function queueCheckoutActivation(
                     sessionId: opts.sessionId ?? "",
                     nowMs: opts.nowMs,
                     correlationId: `stripe_checkout:${opts.sessionId ?? opts.stripeCustomerId}`,
-                });
+                }, batch);
             }
         });
     }
