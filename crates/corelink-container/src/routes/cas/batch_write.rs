@@ -77,6 +77,10 @@ async fn handle_batch_write(
     if let Some(resp) = pat_gate_reject_write(&state, &auth.0, &headers).await {
         return resp;
     }
+    let staging_context = match staging_cas_write_context(&headers).await {
+        Ok(context) => context,
+        Err(()) => return (StatusCode::FORBIDDEN, "invalid staging admission").into_response(),
+    };
     if body.len() > BATCH_REQUEST_BODY_LIMIT_BYTES {
         return (StatusCode::PAYLOAD_TOO_LARGE, "request body too large").into_response();
     }
@@ -172,15 +176,18 @@ async fn handle_batch_write(
         // chokepoint the single PUT uses): the handler hashes the bytes and
         // returns HashMismatch on a forged claim; the accounting decorator
         // reserves/commits the bytes. durable=true ⇒ fresh, false ⇒ idempotent.
-        match state.write.write(req) {
+        match state
+            .write
+            .write_with_effect_and_context(req, staging_context.clone())
+        {
             Ok(resp) => {
                 let status = if resp.durable { "created" } else { "exists" };
                 results.push(serde_json::json!({
                     "hash": entry.hash, "status": status, "error": serde_json::Value::Null,
                 }));
             }
-            Err(e) => {
-                let msg = batch_object_error_message(&e);
+            Err(failure) => {
+                let msg = batch_object_error_message(&failure.cause);
                 results.push(serde_json::json!({
                     "hash": entry.hash, "status": "error", "error": msg,
                 }));

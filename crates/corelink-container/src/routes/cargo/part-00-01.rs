@@ -193,7 +193,7 @@ async fn cargo_gate(
         };
         if let Some(context) = admission {
             req.extensions_mut().insert(server::GateCasWriteContext(
-                Arc::new(StagingCargoWriteContext(context)),
+                Arc::new(crate::storage::cas_write_fence::StagingCasWriteContext::new(context)),
             ));
         }
     }

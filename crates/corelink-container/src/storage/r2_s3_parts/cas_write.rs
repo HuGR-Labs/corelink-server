@@ -73,6 +73,24 @@ impl R2CasHandler {
                 actual,
             });
         }
+        let staging_context = match crate::storage::cas_write_fence::staging_admission_context(context) {
+            Ok(context) => context,
+            Err(error) => {
+                emit(true);
+                return Err(CasHandlerError::Internal(format!(
+                    "CAS staging write context rejected: {error}"
+                )));
+            }
+        };
+        if staging_context.is_some()
+            && (req.tenant == crate::adapter_cache::PUBLIC_NAMESPACE
+                || self.cas_write_fence.is_none())
+        {
+            emit(true);
+            return Err(CasHandlerError::Internal(
+                "CAS staging ownership fence unavailable".to_owned(),
+            ));
+        }
         let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Write, context)?;
 
         // B071: claim the D1 writer lease before resolving keys or touching
@@ -87,6 +105,7 @@ impl R2CasHandler {
                 &req.tenant,
                 &canonical_meta_digest(&req.claimed_hash),
                 req.at_unix_ms,
+                staging_context,
             ) {
                 Ok(lease) => Some(lease),
                 Err(e) => {
@@ -230,7 +249,12 @@ impl R2CasHandler {
                     if let (Some(fence), Some(lease)) =
                         (self.cas_write_fence.as_ref(), fence_lease.as_ref())
                     {
-                        if let Err(e) = fence.commit(lease, request_bytes_len, req.at_unix_ms) {
+                        if let Err(e) = fence.commit(
+                            lease,
+                            request_bytes_len,
+                            req.at_unix_ms,
+                            staging_context,
+                        ) {
                             abort_fence(&fence_lease);
                             emit(true);
                             return Err(CasHandlerError::Internal(format!(
@@ -324,7 +348,12 @@ impl R2CasHandler {
                 let metadata_result = if let (Some(fence), Some(lease)) =
                     (self.cas_write_fence.as_ref(), fence_lease.as_ref())
                 {
-                    Some(fence.commit(lease, request_bytes_len, req.at_unix_ms))
+                    Some(fence.commit(
+                        lease,
+                        request_bytes_len,
+                        req.at_unix_ms,
+                        staging_context,
+                    ))
                 } else {
                     None
                 };
