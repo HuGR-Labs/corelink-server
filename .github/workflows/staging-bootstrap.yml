@@ -10,8 +10,10 @@ on:
       - 'infra/staging/topology.json'
       - 'scripts/render_staging_wrangler.py'
       - 'scripts/staging_bootstrap_provider.py'
+      - 'scripts/plan_staging_provider.py'
       - 'tests/test_render_staging_wrangler.py'
       - 'tests/test_staging_bootstrap_provider.py'
+      - 'tests/test_plan_staging_provider.py'
   workflow_dispatch:
     inputs:
       confirm:
@@ -44,7 +46,8 @@ jobs:
           python3 scripts/verify_staging_topology_contract.py --expect ready
           python3 -S -m unittest -v \
             tests/test_render_staging_wrangler.py \
-            tests/test_staging_bootstrap_provider.py
+            tests/test_staging_bootstrap_provider.py \
+            tests/test_plan_staging_provider.py
 
   bootstrap:
     name: protected staging bootstrap
