@@ -1,0 +1,97 @@
+name: staging provider preflight (#1700)
+
+# This workflow only reads the current Cloudflare staging boundary. Provider
+# access is confined to workflow_dispatch on the protected canonical main.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/staging-provider-preflight.yml'
+      - 'scripts/staging_bootstrap_provider.py'
+      - 'scripts/render_staging_wrangler.py'
+      - 'scripts/verify_staging_provider_preflight.py'
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'Exact protected main commit SHA to inspect'
+        required: true
+        type: string
+      confirm:
+        description: 'Type "preflight-staging-1700" to run read-only provider inventory'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-provider-preflight
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: credentialless preflight safety check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Verify preflight remains read-only and guarded
+        run: python3 scripts/verify_staging_provider_preflight.py
+
+  preflight:
+    name: read-only Cloudflare provider inventory
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 10
+    env:
+      STAGING_CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      STAGING_CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+      # Cloudflare's R2 endpoint is account-derived; this read-only phase only
+      # validates its staging-scoped shape and never accesses R2 credentials.
+      STAGING_R2_S3_ENDPOINT: https://${{ secrets.CF_ACCOUNT_ID }}.r2.cloudflarestorage.com
+    steps:
+      - name: Confirm exact protected main commit and dispatch intent
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRM" = 'preflight-staging-1700'
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$EXPECTED_SHA" = "$GITHUB_SHA"
+
+      - name: Checkout the exact protected dispatch commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Recheck exact checkout and staging boundary
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 scripts/verify_staging_target.py
+          python3 scripts/verify_staging_topology_contract.py --expect ready
+
+      - name: Read current provider state without mutation
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/staging-provider-preflight"
+          python3 scripts/staging_bootstrap_provider.py --phase preflight \
+            | tee "$RUNNER_TEMP/staging-provider-preflight/receipt.json"
+
+      - name: Upload redacted provider receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-provider-preflight-${{ github.run_id }}
+          path: ${{ runner.temp }}/staging-provider-preflight/receipt.json
+          retention-days: 30
+          if-no-files-found: warn
