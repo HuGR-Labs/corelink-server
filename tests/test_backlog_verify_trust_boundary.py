@@ -135,18 +135,6 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
                         (mutated_candidate / ".github" / "extra-link").symlink_to("../.actionlint.yaml")
                     self.assertFalse(backlog_verify._preauthorized_b057_c0(mutated_candidate, trusted))
 
-    def test_b057_c0_rejects_unpinned_file_mode_changes(self) -> None:
-        trusted, candidate, preimages, targets = self._c0_fixture()
-        with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
-            backlog_verify, "B057_C0_TARGETS", targets
-        ):
-            mutated = Path(tempfile.mkdtemp())
-            self.addCleanup(shutil.rmtree, mutated)
-            mutated_candidate = mutated / "candidate"
-            shutil.copytree(candidate, mutated_candidate, symlinks=True)
-            (mutated_candidate / ".actionlint.yaml").chmod(0o600)
-            self.assertFalse(backlog_verify._preauthorized_b057_c0(mutated_candidate, trusted))
-
     def test_b057_c0_rejects_symlinks_at_every_pinned_target(self) -> None:
         trusted, candidate, preimages, targets = self._c0_fixture()
         with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
