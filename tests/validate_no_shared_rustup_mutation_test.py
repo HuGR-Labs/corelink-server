@@ -1025,7 +1025,7 @@ def test_live_repo_reach_is_not_vacuous() -> None:
     os.chdir(REPO_ROOT)
     try:
         with redirect_stdout(buf):
-            rc = vnsrm.main()
+            rc = vnsrm.main([])
     finally:
         os.chdir(cwd)
     out = buf.getvalue()
