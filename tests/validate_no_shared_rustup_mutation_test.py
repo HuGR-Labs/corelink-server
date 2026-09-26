@@ -1007,10 +1007,11 @@ def test_live_repo_reach_is_not_vacuous() -> None:
         ("okf_nightly.yml", "okf-nightly"),
         ("release-cli.yml", "build"),
     }
+    workflow_root = REPO_ROOT / vnsrm.WORKFLOWS
 
     actual = {
         (path.name, job.name)
-        for path in vnsrm.WORKFLOWS.glob("*.yml")
+        for path in workflow_root.glob("*.yml")
         for job in vnsrm._load_jobs(path)
         if vnsrm.job_is_self_hosted(job)
     }
