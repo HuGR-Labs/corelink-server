@@ -791,7 +791,7 @@ def action_network_guard_source(allowed_port: int | None) -> str:
             port = args[0];
             host = typeof args[1] === "string" ? args[1] : "localhost";
           }}
-          const allowedHosts = new Set(["127.0.0.1"]);
+          const allowedHosts = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"]);
           if (!allowedHosts.has(String(host).toLowerCase()) || Number(port) !== allowedPort) {{
             process.stderr.write("I2374_ACTION_EGRESS_BLOCKED\\n");
             process.exit(86);
