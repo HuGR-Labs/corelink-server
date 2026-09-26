@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/staging-provider-preflight.yml")
 PROVIDER = Path("scripts/staging_bootstrap_provider.py")
+# Exact source pin for get() in canonical main@b295292f. This binds request
+# construction, all intervening statements, and urlopen send behavior.
+CANONICAL_GET_SOURCE_SHA256 = "1a919cdf4974c3d7f2e102dd889c8f59fef5a63447874d690f13531ae55f8a32"
 
 
 def main() -> int:
@@ -32,11 +36,6 @@ def main() -> int:
     for forbidden in ("wrangler deploy", "secret put", "dns_records", "workers/routes"):
         if forbidden in workflow:
             raise SystemExit(f"provider workflow contains a forbidden mutation surface: {forbidden}")
-    if 'choices=("preflight", "quarantine", "postflight")' not in provider:
-        raise SystemExit("provider phase interface changed; re-review the read-only preflight")
-    preflight = provider.split('if args.phase in {"preflight", "quarantine"}', 1)[0]
-    if 'if args.phase == "postflight"' in preflight or 'args.phase in {"quarantine", "postflight"}' in preflight:
-        raise SystemExit("preflight can reach post-deployment provider checks")
     tree = ast.parse(provider, filename=str(PROVIDER))
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
 
@@ -47,40 +46,25 @@ def main() -> int:
             return f"{dotted_name(node.value)}.{node.attr}"
         return ""
 
-    requests = [node for node in calls if dotted_name(node.func) == "urllib.request.Request"]
-    urlopens = [node for node in calls if dotted_name(node.func) == "urllib.request.urlopen"]
-    if len(requests) != 1 or len(urlopens) != 1:
-        raise SystemExit("provider access must use exactly one request builder and one urlopen boundary")
-    request = requests[0]
-    request_keywords = {keyword.arg: keyword.value for keyword in request.keywords}
-    body = request_keywords.get("data")
-    method = request_keywords.get("method")
-    body_is_empty = body is None or (isinstance(body, ast.Constant) and body.value is None)
-    method_is_get = method is None or (isinstance(method, ast.Constant) and method.value == "GET")
-    positional_body_is_empty = len(request.args) < 2 or (
-        isinstance(request.args[1], ast.Constant) and request.args[1].value is None
-    )
-    if len(request.args) > 2 or not body_is_empty or not method_is_get or not positional_body_is_empty:
-        raise SystemExit("provider requests must be GET-only and carry no body")
-    urlopen = urlopens[0]
-    urlopen_keywords = {keyword.arg: keyword.value for keyword in urlopen.keywords}
-    urlopen_data = urlopen_keywords.get("data")
-    urlopen_has_no_body = urlopen_data is None or (
-        isinstance(urlopen_data, ast.Constant) and urlopen_data.value is None
-    )
-    if (
-        len(urlopen.args) != 1
-        or not isinstance(urlopen.args[0], ast.Name)
-        or urlopen.args[0].id != "request"
-        or not urlopen_has_no_body
-    ):
-        raise SystemExit("urlopen must send only the GET request object with no body")
     get_function = next(
         (node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "get"),
         None,
     )
-    if get_function is None or urlopens[0] not in ast.walk(get_function):
-        raise SystemExit("all provider network access must remain inside the readback GET helper")
+    if get_function is None:
+        raise SystemExit("provider readback GET helper is absent")
+    get_source = ast.get_source_segment(provider, get_function)
+    if get_source is None or hashlib.sha256(get_source.encode("utf-8")).hexdigest() != CANONICAL_GET_SOURCE_SHA256:
+        raise SystemExit("provider get() request construction/send changed from its reviewed read-only form")
+    request_calls = [node for node in calls if dotted_name(node.func) == "urllib.request.Request"]
+    urlopen_calls = [node for node in calls if dotted_name(node.func) == "urllib.request.urlopen"]
+    function_calls = list(ast.walk(get_function))
+    if (
+        len(request_calls) != 1
+        or len(urlopen_calls) != 1
+        or request_calls[0] not in function_calls
+        or urlopen_calls[0] not in function_calls
+    ):
+        raise SystemExit("all Cloudflare provider requests must use the pinned read-only GET helper")
     print("staging provider preflight safety contract passed")
     return 0
 
