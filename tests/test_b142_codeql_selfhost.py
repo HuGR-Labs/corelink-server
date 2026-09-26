@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
+import sys
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from verify_issue_2374_hosted_proof import verify_action_network_guard
+
+
 SCANNER = ROOT / ".github" / "workflows" / "codeql.yml"
 SEMGREP = ROOT / ".github" / "workflows" / "semgrep.yml"
 WATCHDOG = ROOT / ".github" / "workflows" / "codeql-evidence-watchdog.yml"
@@ -144,6 +153,50 @@ class B142WorkflowContractTest(unittest.TestCase):
             _assert_pin_contract(sha_mutant, self.semgrep, self.runbook)
         alarm_mutant = self.watchdog.replace("<!-- codeql-evidence-gap -->", "")
         self.assertNotIn("<!-- codeql-evidence-gap -->", alarm_mutant)
+
+
+class I2374ActionNetworkGuardTest(unittest.TestCase):
+    def test_lookalike_github_api_host_is_blocked_before_resolution(self) -> None:
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"local mock")
+
+            def log_message(self, *_args: object) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        with tempfile.TemporaryDirectory(prefix="i2374-network-guard-") as directory:
+            try:
+                verify_action_network_guard(
+                    f"http://127.0.0.1:{server.server_port}/api/v3",
+                    Path(directory),
+                )
+                env = {
+                    **os.environ,
+                    "NODE_OPTIONS": f"--require={Path(directory) / 'deny-action-egress.js'}",
+                }
+                local_probe = subprocess.run(
+                    [
+                        "node",
+                        "-e",
+                        f'require("node:http").get("http://127.0.0.1:{server.server_port}/", '
+                        '(r) => { r.pipe(process.stdout); })',
+                    ],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(local_probe.returncode, 0, local_probe.stderr)
+                self.assertEqual(local_probe.stdout, "local mock")
+            finally:
+                server.shutdown()
+                server.server_close()
+                worker.join(timeout=2)
 
 
 class B142EvidenceInspectionTest(unittest.TestCase):

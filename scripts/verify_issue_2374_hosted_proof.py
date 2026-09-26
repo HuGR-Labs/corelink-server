@@ -681,6 +681,13 @@ def run_pinned_action(action_root: Path, action: str, root: Path, api_url: str, 
         "INPUT_GITHUB_TOKEN": "fixture-token-never-valid-outside-local-mock",
         "INPUT_REPO-TOKEN": "fixture-token-never-valid-outside-local-mock",
     }
+    guard_path = tmp / "deny-action-egress.js"
+    if not guard_path.exists():
+        guard_path.write_text(action_network_guard_source(urlsplit(api_url).port), encoding="utf-8")
+    existing_node_options = env.get("NODE_OPTIONS", "")
+    env["NODE_OPTIONS"] = " ".join(
+        part for part in (existing_node_options, f"--require={guard_path}") if part
+    )
     in_inputs = False
     current_input: str | None = None
     for line in metadata.splitlines():
@@ -736,6 +743,7 @@ def verify_pinned_mutating_actions(root: Path, action_root: Path) -> None:
     try:
         with tempfile.TemporaryDirectory(prefix="i2374-actions-") as directory:
             tmp = Path(directory)
+            verify_action_network_guard(api_url, tmp)
             run_pinned_action(action_root, "labeler", root, api_url, event_path, tmp)
             run_pinned_action(action_root, "stale", root, api_url, event_path, tmp)
             run_pinned_action(action_root, "sticky", root, api_url, event_path, tmp)
@@ -764,8 +772,56 @@ def verify_pinned_mutating_actions(root: Path, action_root: Path) -> None:
         fail("pinned coverage comment action did not attempt its fixture comment")
     if not writes or any(request.get("status") != 403 for request in writes):
         fail(f"pinned action REST writes were not all denied: {writes}")
-    if any("api.github.com" in str(request) for request in LocalGitHubHandler.requests):
-        fail("a pinned action escaped the local GitHub API mock")
+
+
+def action_network_guard_source(allowed_port: int | None) -> str:
+    if allowed_port is None:
+        fail("local GitHub API mock URL is missing its port")
+    return textwrap.dedent(f"""\
+        const net = require("node:net");
+        const allowedPort = {allowed_port};
+        const originalConnect = net.Socket.prototype.connect;
+        net.Socket.prototype.connect = function (...args) {{
+          let host;
+          let port;
+          if (args[0] && typeof args[0] === "object") {{
+            host = args[0].host || args[0].hostname || "localhost";
+            port = args[0].port;
+          }} else {{
+            port = args[0];
+            host = typeof args[1] === "string" ? args[1] : "localhost";
+          }}
+          const allowedHosts = new Set(["127.0.0.1"]);
+          if (!allowedHosts.has(String(host).toLowerCase()) || Number(port) !== allowedPort) {{
+            process.stderr.write("I2374_ACTION_EGRESS_BLOCKED\\n");
+            process.exit(86);
+          }}
+          return originalConnect.apply(this, args);
+        }};
+    """)
+
+
+def verify_action_network_guard(api_url: str, tmp: Path) -> None:
+    """Prove a lookalike external API host is blocked before name resolution."""
+    parsed = urlsplit(api_url)
+    if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or parsed.port is None:
+        fail("local GitHub API mock URL must use an ephemeral 127.0.0.1 port")
+    port = parsed.port
+    guard_path = tmp / "deny-action-egress.js"
+    guard_path.write_text(action_network_guard_source(port), encoding="utf-8")
+    env = {
+        **os.environ,
+        "NODE_OPTIONS": f"--require={guard_path}",
+    }
+    probe = subprocess.run(
+        ["node", "-e", 'require("node:https").get("https://api.github.com.attacker.invalid/")'],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if probe.returncode != 86 or "I2374_ACTION_EGRESS_BLOCKED" not in probe.stderr:
+        fail("action network guard did not block a lookalike external API request")
 
 
 def verify_mock_deny_negative_control() -> None:

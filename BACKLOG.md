@@ -15023,8 +15023,8 @@ last-verified: 2026-09-05
 ### B-142 — bloqueio histórico de faturamento impediu jobs `ubuntu-*`; CodeQL nightly ficou sem análise desde 2026-08-25
 
 **Snapshot histórico de 2026-08-30.** Os fatos abaixo registram a indisponibilidade observada
-naquele período; a reconciliação de 2026-09-24 ao fim desta seção registra o estado hospedado
-posterior e atualiza o status do item.
+naquele período; as reconciliações posteriores nesta seção registram o estado hospedado e
+atualizam o status do item.
 
 **Medido, no nível do job.** `codeql.yml` run **33306916966** (2026-08-30, `schedule`):
 **3 de 3** jobs com `conclusion=failure`, `runner_name` **vazio**, `labels=[ubuntu-latest]`,
@@ -15143,25 +15143,70 @@ desse run de CodeQL. O estado `done` cobre a execução hospedada observada por 
 a configuração estrutural protegida pelo verificador; não declara mudança de billing/provider
 nem garante disponibilidade futura. O histórico permanece: [run 33306916966](https://github.com/HuGR-dev/corelink-server/actions/runs/33306916966) falhou antes da alocação do runner, com zero steps. Ele registra o bloqueio de billing daquela época e não descreve o estado atual. Nenhuma configuração de billing/provider foi alterada para este fechamento.
 
+**Reconciliação 2026-09-26 — gate de severidade ativo, alertas sem disposição.** Após o reparo
+do parser SARIF no [PR #2631](https://github.com/HuGR-dev/corelink-server/pull/2631), a única
+execução autorizada deste corte foi [CodeQL run 36218206018](https://github.com/HuGR-dev/corelink-server/actions/runs/36218206018),
+`workflow_dispatch`, `main@caf7bf552bd4a49ef646b4cca13dc66d5667cce6`, iniciada 04:33:55 UTC e
+concluída 05:10:24 UTC. Os três jobs completaram a análise, a guarda de SARIF, upload GHAS,
+retenção do artefato e relatório de upload. Os três falharam apenas no gate HIGH/CRITICAL:
+Rust job 108338320168; JavaScript/TypeScript job 108338320276; Python job 108338320268.
+Cada manifesto registra `scan_status=success`, `evidence_status=present` e `ghas_enabled=true`.
+
+| Linguagem | Resultados SARIF | HIGH | CRITICAL | Análise GHAS | Artefato retido (digest ZIP; SHA-256 do SARIF bruto) |
+|---|---:|---:|---:|---|---|
+| Rust | 290 | 66 | 224 | [1843477341](https://github.com/HuGR-dev/corelink-server/security/code-scanning/1843477341) | [10898521169](https://github.com/HuGR-dev/corelink-server/actions/runs/36218206018/artifacts/10898521169): `05b0e0a68cdef2d5dd60ebce1d1298e1e2d49b458c6b4a46449af27415269444`; `9d7c67d93cd6961a717f3e21adf98d0c767bdf635950b674a4d0f2d56280af1a` |
+| JavaScript/TypeScript | 127 | 14 | 0 | [1843482324](https://github.com/HuGR-dev/corelink-server/security/code-scanning/1843482324) | [10898637094](https://github.com/HuGR-dev/corelink-server/actions/runs/36218206018/artifacts/10898637094): `104cd8a00e6fc91bcc8d30d4093052e3698eb0b37a1394333d501e7d851472dc`; `e90167fd09275753deb68e1cc440aecb8350fa5403877a02c8a731a7427bb299` |
+| Python | 159 | 23 | 0 | [1843487447](https://github.com/HuGR-dev/corelink-server/security/code-scanning/1843487447) | [10898976078](https://github.com/HuGR-dev/corelink-server/actions/runs/36218206018/artifacts/10898976078): `989c58d4a2213f2190fc505b14c64e73d0f03a0f4820aa58abc80fc785fdd0dc`; `f6f7b41b6dec5f0cacbe840d1ef1de363f67e9ec0d9c564b951e644bc1c2b717` |
+
+Os 327 resultados HIGH/CRITICAL permanecem abertos no Code Scanning. Comparados por fingerprint
+com o SARIF da execução anterior em main, [run 36180301609](https://github.com/HuGR-dev/corelink-server/actions/runs/36180301609)
+(`839717f5f73ecf5465071a6478b8b9e8dbe39f8a`), 326/327 já estavam presentes: Rust tem
+`cleartext-logging` 59, `cleartext-transmission` 4 e `non-https-url` 3 HIGH; e
+`hard-coded-cryptographic-value` 222 e `request-forgery` 2 CRITICAL. JavaScript/TypeScript tem
+`file-system-race` 2, `incomplete-sanitization` 1, `incomplete-url-substring-sanitization` 1,
+`insecure-randomness` 3, `polynomial-redos` 3 e `regex/missing-regexp-anchor` 4 HIGH. Python tem
+`clear-text-logging-sensitive-data` 1, `clear-text-storage-sensitive-data` 5,
+`incomplete-url-substring-sanitization` 4, `insecure-protocol` 1, `overly-permissive-file` 4,
+`redos` 7 e `tarslip` 1 HIGH. Esses achados preexistentes continuam sem disposição explícita; a
+execução anterior não os dispôs.
+
+O único fingerprint HIGH novo é Python `py/incomplete-url-substring-sanitization` (7.8), em
+`scripts/verify_issue_2374_hosted_proof.py:767`: a asserção de escape do mock só procura a
+substring `api.github.com` em requisições já capturadas pelo servidor localhost e não observa
+uma chamada que o contorne. Foi criado o filho atômico [#2646](https://github.com/HuGR-dev/corelink-server/issues/2646)
+para corrigir esse limite de prova; nenhuma disposição ou supressão do alerta foi feita.
+
+O SHA de scan era o tip de `main` no dispatch. Desde então, `main` avançou para
+`f26858430cee9be93700cb08eecb128c540cc480` (seis commits / 33 caminhos posteriores ao SHA
+analisado, incluindo alterações em `crates/corelink-container/src/bin/issue_605_billing_ingest_fixture.rs`,
+`crates/corelink-container/Cargo.toml` e `apps/signup-worker/src/webhooks/dsr_consumer.ts`). Logo,
+este recibo comprova `caf7bf5…`, mas não a árvore atual. Não foi feito segundo dispatch; o workflow
+`codeql.yml` foi restaurado para `disabled_manually` logo após o run ficar visível e permanece
+assim. O histórico de Actions para o tip atual não contém recibos exatos da suíte Python nem
+dos comandos `verify`/`backlog-verify` exigidos pelo contrato. Os recibos agendados de
+`secrets-drift` e seus watchdogs continuam no escopo do B-132 e não foram alterados.
+
 ```backlog
 id: B-142
 repo: corelink-server
 owner: tl
-status: done
+status: open
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
   python3 -S scripts/verify_b142_workflows.py
 verify-means: |
-  done — **Critérios de fechamento:** o verificador estrutural passa para os quatro jobs
+  open — **Critérios de fechamento:** o verificador estrutural passa para os quatro jobs
   canônicos em `ubuntu-latest`, rejeitando comentários/string bait, renomeação de job e
-  alteração de runner. Além disso, os quatro recibos agendados acima devem permanecer
-  vinculados à evidência publicada: CodeQL com os três jobs concluídos, SARIF aceito e
-  artefatos retidos; secrets-drift com relatório/manifesto; ambos os watchdogs aprovados.
-  Esta fotografia hospedada satisfaz o contrato sem inferir que billing/provider foi
-  alterado ou que a disponibilidade futura está garantida. A falha histórica de
-  `33306916966` permanece registrada; o secrets-drift conserva seu contrato próprio em
-  B-132.
-last-verified: 2026-09-24
+  alteração de runner. Os quatro recibos agendados devem permanecer vinculados à evidência:
+  CodeQL com os três jobs concluídos, SARIF aceito e artefatos retidos; secrets-drift com
+  relatório/manifesto; ambos os watchdogs aprovados. Também é necessário um scan CodeQL com
+  SARIF/GHAS no tip exato de `main`, disposição explícita dos alertas HIGH/CRITICAL, a suíte
+  Python e os comandos `verify`/`backlog-verify` aprovados nesse mesmo tip. A execução
+  `36218206018` documenta `caf7bf5…`, não o `main` atual `f2685843…`; ela encontrou 327 alertas
+  HIGH/CRITICAL abertos, incluindo o novo alerta registrado em #2646. Não se presume que os
+  alertas anteriores estejam dispostos. A falha histórica de `33306916966` permanece
+  registrada; `secrets-drift` conserva seu contrato e ownership em B-132.
+last-verified: 2026-09-26
 ```
 
 ### B-143 — `id:` de placeholder passava CONFIRMED e a densidade não o via: o portão do BACKLOG falhava ABERTO — FECHADO
