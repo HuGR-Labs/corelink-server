@@ -35,6 +35,11 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         candidate = Path(directory.name) / "candidate"
         trusted.mkdir()
         candidate.mkdir()
+        for root in (trusted, candidate):
+            self._write(root, ".actionlint.yaml", b"shared actionlint policy\n")
+            link = root / ".github" / "actionlint.yaml"
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to("../.actionlint.yaml")
         preimages = {
             "scripts/verify_b057_sli.py": b"def trusted_verifier_preimage():\n    return True\n",
             "tests/test_b057_sli_contract.py": b"trusted contract preimage\n",
@@ -89,6 +94,91 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             self.assertTrue(backlog_verify._preauthorized_b057_c0(candidate, trusted))
         self.assertFalse(marker.exists(), "candidate verifier code was executed")
 
+    def test_b057_c0_allows_an_unchanged_inherited_symlink_without_following_it(self) -> None:
+        trusted, candidate, preimages, targets = self._c0_fixture()
+        outside = candidate.parent / "outside"
+        outside.mkdir()
+        (outside / "untracked.py").write_text("must not be traversed", encoding="utf-8")
+        for root in (trusted, candidate):
+            (root / ".github" / "outside-link").symlink_to(outside, target_is_directory=True)
+
+        with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
+            backlog_verify, "B057_C0_TARGETS", targets
+        ):
+            trusted_entries = backlog_verify._candidate_tree_entries(trusted)
+            candidate_entries = backlog_verify._candidate_tree_entries(candidate)
+            self.assertEqual(trusted_entries[".github/actionlint.yaml"][0], "symlink")
+            self.assertEqual(trusted_entries[".github/actionlint.yaml"][2], "../.actionlint.yaml")
+            self.assertIn(".github/outside-link", candidate_entries)
+            self.assertNotIn(".github/outside-link/untracked.py", candidate_entries)
+            self.assertTrue(backlog_verify._preauthorized_b057_c0(candidate, trusted))
+
+    def test_b057_c0_rejects_added_deleted_and_mutated_symlinks(self) -> None:
+        trusted, candidate, preimages, targets = self._c0_fixture()
+        link = ".github/actionlint.yaml"
+        with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
+            backlog_verify, "B057_C0_TARGETS", targets
+        ):
+            self.assertTrue(backlog_verify._preauthorized_b057_c0(candidate, trusted))
+            for mutation in ("mutated", "deleted", "added"):
+                with self.subTest(mutation=mutation):
+                    mutated = Path(tempfile.mkdtemp())
+                    self.addCleanup(shutil.rmtree, mutated)
+                    mutated_candidate = mutated / "candidate"
+                    shutil.copytree(candidate, mutated_candidate, symlinks=True)
+                    if mutation == "mutated":
+                        (mutated_candidate / link).unlink()
+                        (mutated_candidate / link).symlink_to("../different.yaml")
+                    elif mutation == "deleted":
+                        (mutated_candidate / link).unlink()
+                    else:
+                        (mutated_candidate / ".github" / "extra-link").symlink_to("../.actionlint.yaml")
+                    self.assertFalse(backlog_verify._preauthorized_b057_c0(mutated_candidate, trusted))
+
+    def test_b057_c0_rejects_unpinned_file_mode_changes(self) -> None:
+        trusted, candidate, preimages, targets = self._c0_fixture()
+        with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
+            backlog_verify, "B057_C0_TARGETS", targets
+        ):
+            mutated = Path(tempfile.mkdtemp())
+            self.addCleanup(shutil.rmtree, mutated)
+            mutated_candidate = mutated / "candidate"
+            shutil.copytree(candidate, mutated_candidate, symlinks=True)
+            (mutated_candidate / ".actionlint.yaml").chmod(0o600)
+            self.assertFalse(backlog_verify._preauthorized_b057_c0(mutated_candidate, trusted))
+
+    def test_b057_c0_rejects_symlinks_at_every_pinned_target(self) -> None:
+        trusted, candidate, preimages, targets = self._c0_fixture()
+        with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
+            backlog_verify, "B057_C0_TARGETS", targets
+        ):
+            for relative, contents in targets.items():
+                with self.subTest(target=relative):
+                    mutated = Path(tempfile.mkdtemp())
+                    self.addCleanup(shutil.rmtree, mutated)
+                    mutated_candidate = mutated / "candidate"
+                    shutil.copytree(candidate, mutated_candidate, symlinks=True)
+                    link = mutated_candidate / relative
+                    link.unlink()
+                    external = mutated / "pinned-bytes"
+                    external.write_bytes(contents)
+                    link.symlink_to(external)
+                    self.assertFalse(backlog_verify._preauthorized_b057_c0(mutated_candidate, trusted))
+
+    def test_b057_c0_rejects_an_added_symlink_directory_without_traversing_it(self) -> None:
+        trusted, candidate, preimages, targets = self._c0_fixture()
+        outside = candidate.parent / "outside"
+        outside.mkdir()
+        (outside / "unapproved.txt").write_text("unapproved", encoding="utf-8")
+        (candidate / ".github" / "unapproved-dir").symlink_to(outside, target_is_directory=True)
+        with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
+            backlog_verify, "B057_C0_TARGETS", targets
+        ):
+            entries = backlog_verify._candidate_tree_entries(candidate)
+            self.assertIn(".github/unapproved-dir", entries)
+            self.assertNotIn(".github/unapproved-dir/unapproved.txt", entries)
+            self.assertFalse(backlog_verify._preauthorized_b057_c0(candidate, trusted))
+
     def test_b057_c0_admission_rejects_nearby_mutations_and_policy_mutation(self) -> None:
         trusted, candidate, preimages, targets = self._c0_fixture()
         with patch.object(backlog_verify, "B057_C0_PREIMAGES", preimages), patch.object(
@@ -100,14 +190,14 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
                     mutated = Path(tempfile.mkdtemp())
                     self.addCleanup(shutil.rmtree, mutated)
                     mutated_candidate = mutated / "candidate"
-                    shutil.copytree(candidate, mutated_candidate)
+                    shutil.copytree(candidate, mutated_candidate, symlinks=True)
                     self._write(mutated_candidate, relative, b"unauthorized mutation\n")
                     self.assertFalse(backlog_verify._preauthorized_b057_c0(mutated_candidate, trusted))
 
             mutated = Path(tempfile.mkdtemp())
             self.addCleanup(shutil.rmtree, mutated)
             mutated_trusted = mutated / "trusted"
-            shutil.copytree(trusted, mutated_trusted)
+            shutil.copytree(trusted, mutated_trusted, symlinks=True)
             self._write(mutated_trusted, "scripts/verify_b057_sli.py", b"wrong preimage\n")
             self.assertFalse(backlog_verify._preauthorized_b057_c0(candidate, mutated_trusted))
 
