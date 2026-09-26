@@ -871,7 +871,7 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use rusqlite::Connection;
 
     use super::*;
