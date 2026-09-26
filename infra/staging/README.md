@@ -21,13 +21,18 @@ USD 25 per load run, USD 50 per endurance run, and USD 250 per month, with a
 must be synthetic and staging-only. Teardown is manual, fail-closed, and ordered
 as load data, queues, Workers, bindings, then DNS.
 
-## Protected bootstrap
+## Protected quarantine apply
 
-The only deployment path is `.github/workflows/staging-bootstrap.yml`. Its
-provider job requires a manual dispatch of protected `main`, the exact
-confirmation `bootstrap-staging-1700`, and release of the protected `staging`
-environment by its required reviewers. Pull requests run the credentialless
-topology and renderer checks only.
+The only provider-write path before health is
+`.github/workflows/staging-quarantine-apply.yml`. Its provider job requires a
+manual dispatch of protected `main`, the exact confirmation
+`quarantine-apply-staging-1700`, and release of the protected `staging`
+environment by its required reviewers. Pull requests run credentialless
+topology, renderer, and quarantine-only workflow checks. The workflow deploys
+the three Workers with no `workers.dev`, DNS, custom-domain, or route
+publication, binds only staging secret names, and captures a redacted
+quarantine readback. Health and route publication require separately reviewed
+workflows after this receipt.
 
 Before dispatch, the `staging` environment must contain these bootstrap inputs
 by name. Values stay in the protected environment and must never appear in git,
